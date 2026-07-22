@@ -85,17 +85,27 @@ something to call during a run you care about. Block ids collected this way
 belong to objects that are destroyed when the scan finishes; only the returned
 structure is durable.
 
-Objects a visited scene moves to `DontDestroyOnLoad` would survive its unload,
-since that is a scene of its own. The walk records which objects were there
-before it started and destroys any newcomer after each scene, so the game is
-left with the ones it began with. What that cannot undo:
+Two ways a visited scene leaves objects behind, both swept after each scene:
+
+- **`DontDestroyOnLoad`.** That is a scene of its own, untouched by the unload.
+  The walk records what was there before it started and destroys any newcomer.
+- **Spawns into the active scene.** A scene's `Awake` and `Start` run before the
+  walk can make that scene active, so anything they `Instantiate` lands in
+  whatever is active then — the game's own scene. The walk keeps an empty
+  quarantine scene active across every load and unload to catch them instead.
+
+What that cannot undo:
 
 - `static` fields and event subscriptions a destroyed manager left behind.
 - Singletons that destroy the *duplicate* on `Awake` — the game's own instance
   may be the one that died.
 - Side effects already committed: audio played, requests sent, prefs written.
-- A `DontDestroyOnLoad` object the game itself creates during the walk is
-  indistinguishable from a newcomer, and is destroyed with them.
+- Objects a visited scene parents under something the game owns. They move to
+  the game's scene and are indistinguishable from its own.
+- Anything the game itself creates during the walk — a `DontDestroyOnLoad`
+  object, or an `Instantiate` while quarantine holds the active slot — is
+  swept along with the rest.
+- Mutated `ScriptableObject` and other asset state, which no scene owns.
 
 ### Exporting the map without running anything
 
