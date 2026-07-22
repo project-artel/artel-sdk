@@ -129,22 +129,6 @@ What that cannot undo:
   other and goes with them.
 - Mutated `ScriptableObject` and other asset state, which no scene owns.
 
-### Exporting the map without running anything
-
-**Artel ▸ Export Scene Map…** produces the same `ALL_SCENES` document from the
-Editor with the game stopped. Each build scene is opened, scanned, and the
-user's original scene setup is restored; the result is written to a JSON file.
-
-Nothing in the scanned scenes executes, so this has none of the side effects
-above — no `Awake`, no `DontDestroyOnLoad`, no audio or network calls. The
-trade is that values a scene fills in at runtime are absent: text a `Start`
-writes reads as whatever is serialized in the scene asset, and `[ArtelState]`
-values are the inspector's, not a live game's.
-
-It is a separate menu command rather than a mode of `scan_all_scenes` because
-`EditorSceneManager.OpenScene` is rejected during play mode. Use the export for
-structure, the action for a running game.
-
 ## Agent keyboard input
 
 Keep using `UnityEngine.Input` for keyboard polling. Artel's IL post-processor
