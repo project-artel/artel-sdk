@@ -19,6 +19,7 @@ namespace Artel
         private IArtelWebSocketTransport webSocketTransport;
         private bool ownsTransport = true;
         private SceneScanner scanner;
+        private AllSceneScanner allSceneScanner;
         private ActionExecutor actionExecutor;
         private CursorController cursorController;
         private IJsonCodec jsonCodec;
@@ -45,6 +46,7 @@ namespace Artel
         private void Awake()
         {
             scanner = new SceneScanner();
+            allSceneScanner = new AllSceneScanner(scanner);
             cursorController = GetComponent<CursorController>();
             if (cursorController == null)
             {
@@ -264,6 +266,15 @@ namespace Artel
                     continue;
                 }
 
+                if (action.Method == "scan_all_scenes")
+                {
+                    List<ScannedSceneDto> scenes = null;
+                    yield return allSceneScanner.ScanAll(result => scenes = result);
+                    SendAllScenes(scenes);
+                    results.Add(ActionResultDto.Success(action.Id));
+                    continue;
+                }
+
                 yield return actionExecutor.Execute(
                     action.Id,
                     action.Method,
@@ -303,6 +314,21 @@ namespace Artel
 
             webSocketTransport.Send(SerializeGameState(poll.Scene));
             poll.ScanResult.CommitActions();
+        }
+
+        private void SendAllScenes(List<ScannedSceneDto> scenes)
+        {
+            if (webSocketTransport == null)
+            {
+                return;
+            }
+
+            webSocketTransport.Send(jsonCodec.Serialize(new AllScenesMessageDto
+            {
+                Type = "ALL_SCENES",
+                Id = nextMessageId++,
+                Scenes = scenes
+            }));
         }
 
         private void PollSceneState()
