@@ -22,7 +22,7 @@ WebSocket server and manages both test servers:
 
 - WebSocket URL: `ws://127.0.0.1:17311/ws`
 - Scan request: `{ "jsonrpc": "2.0", "id": 1, "method": "scan_scene", "params": [] }`
-- Action message: `ACTION` with `button_click`, `enter_text`, `key_click`, and `scan_scene`
+- Action message: `ACTION` with `button_click`, `enter_text`, `key_click`, `scan_scene`, and `scan_all_scenes`
 
 ## Ordering a scan against actions
 
@@ -46,6 +46,38 @@ The batched scan sends its own `GAME_STATE` message — the same shape the polle
 pushes — and leaves `{ "id": 2, "success": true }` in the `ACTION_RESULT` that
 follows. The top-level request keeps working so existing clients can migrate at
 their own pace.
+
+## Scanning every scene in the build
+
+`scan_all_scenes` walks Build Settings from index 0 upward, scanning each scene,
+and answers with a single `ALL_SCENES` message. It is a batch method only —
+the walk spans many frames, so there is no top-level form.
+
+```json
+{ "type": "ACTION", "id": 10, "actions": [{ "id": 1, "method": "scan_all_scenes", "params": [] }] }
+```
+
+```json
+{
+  "type": "ALL_SCENES",
+  "id": 11,
+  "scenes": [
+    { "buildIndex": 0, "path": "Assets/Scenes/Lobby.unity", "scene": { "id": -1234, "type": "scene", "name": "Lobby", "children": [] } }
+  ]
+}
+```
+
+Each `scene` is the same shape `GAME_STATE` sends. Scenes are loaded
+`Additive`, scanned, then unloaded; a scene the game already has open is scanned
+in place and left alone. The original active scene is restored and rescanned
+afterwards, so `button_click` and `enter_text` target ids keep working.
+
+This runs the game's other scenes, briefly. Their `Awake`, `OnEnable`, and
+`Start` execute — anything they do on load (audio, network calls, writing to
+`PlayerPrefs`, `DontDestroyOnLoad` objects that outlive the unload) happens for
+real. Treat `scan_all_scenes` as a discovery step, not something to call during a
+run you care about. Block ids collected this way belong to objects that are
+destroyed when the scan finishes; only the returned structure is durable.
 
 ## Agent keyboard input
 
