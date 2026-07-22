@@ -13,6 +13,14 @@ namespace Artel
     /// </summary>
     internal sealed class AllSceneScanner
     {
+        /// <summary>
+        /// How long a freshly loaded scene is left alone before it is scanned and torn down.
+        /// Awake and Start are covered well inside this; work a scene defers further than this —
+        /// a coroutine, an Invoke, a web request callback — is not, and no fixed value would
+        /// cover it.
+        /// </summary>
+        private const float SettleSeconds = 0.1f;
+
         private readonly SceneScanner scanner;
 
         public AllSceneScanner(SceneScanner scanner)
@@ -25,18 +33,7 @@ namespace Artel
             var scanned = new List<ScannedSceneDto>();
             var originalScene = SceneManager.GetActiveScene();
 
-            // Unloading a scene does not touch what its Awake moved to DontDestroyOnLoad — that
-            // is a scene of its own. Without this the walk leaves a manager from every scene it
-            // visited running alongside the game's own.
-            var guard = new DontDestroyOnLoadGuard();
-            guard.Capture();
-
-            // A scene's Awake and Start run before this walk can make that scene active, so
-            // anything they Instantiate lands in whatever scene is active at the time — the
-            // game's own. Unloading the visited scene never touches those objects. An empty
-            // scene, kept active across every load, catches them instead and takes them with it
-            // when it goes.
-            var quarantine = SceneManager.CreateScene("Artel Scan Quarantine");
+            var strays = new StraySpawnTracker();
 
             for (var buildIndex = 0; buildIndex < SceneManager.sceneCountInBuildSettings; buildIndex++)
             {
@@ -50,13 +47,14 @@ namespace Artel
                 var wasAlreadyLoaded = scene.IsValid() && scene.isLoaded;
                 if (!wasAlreadyLoaded)
                 {
-                    SceneManager.SetActiveScene(quarantine);
+                    strays.Capture();
                     yield return SceneManager.LoadSceneAsync(path, LoadSceneMode.Additive);
                     scene = SceneManager.GetSceneByPath(path);
 
-                    // Awake and OnEnable have run by now, but Start has not. Anything a scene
-                    // fills in there — most UI text — is missing without this frame.
-                    yield return null;
+                    // Awake and OnEnable ran during the load, Start runs on the next frame, and
+                    // scenes routinely fill their UI a little after that. Unscaled, because a
+                    // game sitting at timeScale 0 would otherwise wait here forever.
+                    yield return new WaitForSecondsRealtime(SettleSeconds);
                 }
 
                 SceneManager.SetActiveScene(scene);
@@ -73,45 +71,27 @@ namespace Artel
 
                 if (!wasAlreadyLoaded)
                 {
-                    // Hand the active slot back to the quarantine scene before the unload, so
-                    // anything OnDestroy spawns is caught the same way.
-                    SceneManager.SetActiveScene(quarantine);
+                    // Collected and unloaded without yielding in between, so nothing spawned
+                    // after the comparison slips past it.
+                    var strayCount = strays.MoveInto(scene);
+                    SceneManager.SetActiveScene(originalScene);
                     yield return SceneManager.UnloadSceneAsync(scene);
 
-                    // Swept per scene rather than once at the end, so what one scene leaves
-                    // behind is not still running while the next one is scanned.
-                    var discarded = DestroyRoots(quarantine) + guard.DestroyNewcomers();
-                    if (discarded > 0)
+                    if (strayCount > 0)
                     {
                         Debug.Log(
-                            "[Artel] Discarded " + discarded +
+                            "[Artel] Unloaded " + strayCount +
                             " object(s) left behind by " + path + ".");
-
-                        // Destroy lands at the end of the frame.
-                        yield return null;
                     }
                 }
             }
 
             SceneManager.SetActiveScene(originalScene);
-            yield return SceneManager.UnloadSceneAsync(quarantine);
-            guard.DestroyNewcomers();
 
             // Target ids come from whichever scene was scanned last, and that scene is now
             // unloaded. Rescan so button_click and enter_text address live objects again.
             scanner.Scan();
             completed(scanned);
-        }
-
-        private static int DestroyRoots(Scene scene)
-        {
-            var roots = scene.GetRootGameObjects();
-            foreach (var root in roots)
-            {
-                UnityEngine.Object.Destroy(root);
-            }
-
-            return roots.Length;
         }
     }
 }

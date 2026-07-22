@@ -85,14 +85,17 @@ something to call during a run you care about. Block ids collected this way
 belong to objects that are destroyed when the scan finishes; only the returned
 structure is durable.
 
-Two ways a visited scene leaves objects behind, both swept after each scene:
+A visited scene escapes its own unload two ways. `DontDestroyOnLoad` moves
+objects to a scene of their own, and anything its `Awake` or `Start`
+instantiates lands in whatever scene is active then — the game's, since a scene
+cannot be made active until it has finished loading. Both surface as new root
+objects.
 
-- **`DontDestroyOnLoad`.** That is a scene of its own, untouched by the unload.
-  The walk records what was there before it started and destroys any newcomer.
-- **Spawns into the active scene.** A scene's `Awake` and `Start` run before the
-  walk can make that scene active, so anything they `Instantiate` lands in
-  whatever is active then — the game's own scene. The walk keeps an empty
-  quarantine scene active across every load and unload to catch them instead.
+So before each load the walk records every root alive, and after scanning it
+hands the new ones to the scene it is about to unload with
+`MoveGameObjectToScene`. They are destroyed by that unload, `OnDestroy` and all.
+The comparison and the unload happen without yielding in between, so nothing
+spawned after the comparison slips past it.
 
 What that cannot undo:
 
@@ -100,11 +103,12 @@ What that cannot undo:
 - Singletons that destroy the *duplicate* on `Awake` — the game's own instance
   may be the one that died.
 - Side effects already committed: audio played, requests sent, prefs written.
-- Objects a visited scene parents under something the game owns. They move to
-  the game's scene and are indistinguishable from its own.
-- Anything the game itself creates during the walk — a `DontDestroyOnLoad`
-  object, or an `Instantiate` while quarantine holds the active slot — is
-  swept along with the rest.
+- Objects a visited scene parents under something the game owns. Only roots can
+  move between scenes, so those stay.
+- Work a scene defers past the settle window — a coroutine, an `Invoke`, a web
+  request callback. No fixed wait covers it.
+- Anything the game itself creates during the walk, which is a new root like any
+  other and goes with them.
 - Mutated `ScriptableObject` and other asset state, which no scene owns.
 
 ### Exporting the map without running anything
