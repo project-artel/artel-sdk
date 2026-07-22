@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Artel.Protocol.Dto;
 using Artel.Protocol.Mapping;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace Artel
@@ -23,6 +24,12 @@ namespace Artel
         {
             var scanned = new List<ScannedSceneDto>();
             var originalScene = SceneManager.GetActiveScene();
+
+            // Unloading a scene does not touch what its Awake moved to DontDestroyOnLoad — that
+            // is a scene of its own. Without this the walk leaves a manager from every scene it
+            // visited running alongside the game's own.
+            var guard = new DontDestroyOnLoadGuard();
+            guard.Capture();
 
             for (var buildIndex = 0; buildIndex < SceneManager.sceneCountInBuildSettings; buildIndex++)
             {
@@ -59,6 +66,19 @@ namespace Artel
                 if (!wasAlreadyLoaded)
                 {
                     yield return SceneManager.UnloadSceneAsync(scene);
+
+                    // Swept per scene rather than once at the end, so what one scene leaves
+                    // behind is not still running while the next one is scanned.
+                    var destroyed = guard.DestroyNewcomers();
+                    if (destroyed > 0)
+                    {
+                        Debug.Log(
+                            "[Artel] Destroyed " + destroyed +
+                            " DontDestroyOnLoad object(s) left by " + path + ".");
+
+                        // Destroy lands at the end of the frame.
+                        yield return null;
+                    }
                 }
             }
 

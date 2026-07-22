@@ -80,10 +80,38 @@ stays clickable.
 
 This runs the game's other scenes, briefly. Their `Awake`, `OnEnable`, and
 `Start` execute — anything they do on load (audio, network calls, writing to
-`PlayerPrefs`, `DontDestroyOnLoad` objects that outlive the unload) happens for
-real. Treat `scan_all_scenes` as a discovery step, not something to call during a
-run you care about. Block ids collected this way belong to objects that are
-destroyed when the scan finishes; only the returned structure is durable.
+`PlayerPrefs`) happens for real. Treat `scan_all_scenes` as a discovery step, not
+something to call during a run you care about. Block ids collected this way
+belong to objects that are destroyed when the scan finishes; only the returned
+structure is durable.
+
+Objects a visited scene moves to `DontDestroyOnLoad` would survive its unload,
+since that is a scene of its own. The walk records which objects were there
+before it started and destroys any newcomer after each scene, so the game is
+left with the ones it began with. What that cannot undo:
+
+- `static` fields and event subscriptions a destroyed manager left behind.
+- Singletons that destroy the *duplicate* on `Awake` — the game's own instance
+  may be the one that died.
+- Side effects already committed: audio played, requests sent, prefs written.
+- A `DontDestroyOnLoad` object the game itself creates during the walk is
+  indistinguishable from a newcomer, and is destroyed with them.
+
+### Exporting the map without running anything
+
+**Artel ▸ Export Scene Map…** produces the same `ALL_SCENES` document from the
+Editor with the game stopped. Each build scene is opened, scanned, and the
+user's original scene setup is restored; the result is written to a JSON file.
+
+Nothing in the scanned scenes executes, so this has none of the side effects
+above — no `Awake`, no `DontDestroyOnLoad`, no audio or network calls. The
+trade is that values a scene fills in at runtime are absent: text a `Start`
+writes reads as whatever is serialized in the scene asset, and `[ArtelState]`
+values are the inspector's, not a live game's.
+
+It is a separate menu command rather than a mode of `scan_all_scenes` because
+`EditorSceneManager.OpenScene` is rejected during play mode. Use the export for
+structure, the action for a running game.
 
 ## Agent keyboard input
 
