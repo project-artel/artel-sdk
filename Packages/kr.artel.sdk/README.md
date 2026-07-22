@@ -72,6 +72,12 @@ Each `scene` is the same shape `GAME_STATE` sends. Scenes are loaded
 in place and left alone. The original active scene is restored and rescanned
 afterwards, so `button_click` and `enter_text` target ids keep working.
 
+The local test page drives this from its **Scan all scenes** button. It lists
+every returned scene under its build index and path, drawn by the same renderer
+`GAME_STATE` uses. Controls belonging to a scene the walk unloaded are disabled,
+since clicking them would address nothing; the scene the game already had open
+stays clickable.
+
 This runs the game's other scenes, briefly. Their `Awake`, `OnEnable`, and
 `Start` execute — anything they do on load (audio, network calls, writing to
 `PlayerPrefs`, `DontDestroyOnLoad` objects that outlive the unload) happens for
