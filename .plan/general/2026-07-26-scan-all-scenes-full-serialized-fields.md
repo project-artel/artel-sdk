@@ -69,7 +69,10 @@
     스캔은 `SceneScanOptions.Default`.
   - `Runtime/ArtelManager.cs` — `scan_all_scenes` 파라미터 파싱. 없으면 `Default`, `"full"`이면
     `Full`, 그 밖은 `ActionResultDto.Failure`.
-  - `README.md` — full 모드와 상한, 부작용 문구 갱신.
+  - `Runtime/ArtelTestPage.cs` — `Scan all scenes (full)` 버튼. 결과는 라이브 씬과 분리된 고정
+    섹션에 그려 `GAME_STATE` 푸시에 덮이지 않게 하고, `Clear`까지 남긴다. 컴포넌트의 states는
+    기본 펼침 + 접기 가능, 비활성 블록은 라벨과 흐림 처리, 원본 JSON은 disclosure에 보관.
+  - `README.md` — full 모드와 상한, 부작용, 테스트 페이지 사용법 갱신.
 - [x] **Step 2: Tests**
   - `Tests/Runtime/SerializedFieldReaderTests.cs` 신규 — 공개 필드/`[SerializeField]` 포함,
     `[NonSerialized]`·static·프로퍼티 제외, `Vector3`가 `{x,y,z}`로 낮아지는지, `GameObject` 참조가
@@ -89,6 +92,10 @@
   검증되지 않았다.
 - **자동화 공백:** ARTEL-88과 동일하게 씬 로드 순회 자체는 EditMode에서 검증 불가. 리더·필터·직렬화
   계약만 자동 검증되고 full 모드의 실제 다중 씬 순회는 수동 확인이 필요하다.
+- **테스트 페이지 스크립트는 검증됨:** ARTEL-88과 같은 방식으로 페이지 스크립트를 C# 문자열에서
+  추출해 Node에서 DOM 스텁과 가짜 `ALL_SCENES` 페이로드로 실행했다. full 버튼이 `["full"]`을
+  보내는지, 결과가 고정 섹션에 그려지고 라이브 씬을 덮지 않는지, 뒤이은 `GAME_STATE`가 그것을
+  지우지 않는지, 비활성 블록 표시와 상태 값 노출, `Clear` 동작까지 통과.
 
 ## Risks & Rollback
 
