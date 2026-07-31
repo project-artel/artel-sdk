@@ -11,6 +11,8 @@ namespace Artel.Tests.Auth
         {
             "Artel.SdkToken",
             "Artel.SdkTokenExpiresAt",
+            "Artel.SdkRefreshToken",
+            "Artel.SdkRefreshTokenExpiresAt",
             "Artel.SdkDisplayName",
             "Artel.ProjectId",
             "Artel.InstanceId"
@@ -179,6 +181,43 @@ namespace Artel.Tests.Auth
             ArtelSdkSession.SaveToken("jwt-token", "언젠가", "octocat");
 
             Assert.That(ArtelSdkSession.TryLoadToken(out _), Is.True);
+        }
+
+        [Test]
+        public void Session_KeepsRefreshTokenWhenAccessTokenExpires()
+        {
+            // 재발급의 전제. 만료를 발견한 자리에서 세션을 통째로 버리면 다시 받을 수단까지 사라진다.
+            ArtelSdkSession.SaveToken("jwt-token", "2000-01-01T00:00:00Z", "octocat");
+            ArtelSdkSession.SaveRefreshToken("refresh-token", "2999-01-01T00:00:00Z");
+            ArtelSdkSession.SaveProjectId("1");
+
+            Assert.That(ArtelSdkSession.TryLoadToken(out _), Is.False);
+            Assert.That(ArtelSdkSession.TryLoadRefreshToken(out var refreshToken), Is.True);
+            Assert.That(refreshToken, Is.EqualTo("refresh-token"));
+            Assert.That(ArtelSdkSession.TryLoadProjectId(out _), Is.True);
+        }
+
+        [Test]
+        public void Session_DropsEverythingWhenRefreshTokenExpiresToo()
+        {
+            ArtelSdkSession.SaveToken("jwt-token", "2000-01-01T00:00:00Z", "octocat");
+            ArtelSdkSession.SaveRefreshToken("refresh-token", "2000-01-01T00:00:00Z");
+            ArtelSdkSession.SaveProjectId("1");
+
+            Assert.That(ArtelSdkSession.TryLoadToken(out _), Is.False);
+            Assert.That(ArtelSdkSession.TryLoadRefreshToken(out _), Is.False);
+            Assert.That(ArtelSdkSession.TryLoadProjectId(out _), Is.False);
+        }
+
+        [Test]
+        public void Session_ClearRemovesRefreshToken()
+        {
+            ArtelSdkSession.SaveToken("jwt-token", "2999-01-01T00:00:00Z", "octocat");
+            ArtelSdkSession.SaveRefreshToken("refresh-token", "2999-01-01T00:00:00Z");
+
+            ArtelSdkSession.Clear();
+
+            Assert.That(ArtelSdkSession.TryLoadRefreshToken(out _), Is.False);
         }
 
         private static void ClearSession()
