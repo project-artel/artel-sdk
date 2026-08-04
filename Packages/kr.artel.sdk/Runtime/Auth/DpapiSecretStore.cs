@@ -60,11 +60,17 @@ namespace Artel.Auth
 
         private static string ResolvePath(string key)
         {
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Artel",
-                "Secrets",
-                key + ".bin");
+            // GetFolderPath는 폴더를 찾지 못하면 예외 대신 빈 문자열을 준다. 그대로 Combine하면
+            // 경로가 상대 경로가 되어, 암호문이 사용자 프로필이 아니라 실행 파일 옆(에디터에서는
+            // 프로젝트 폴더) 에 떨어진다. 소스 트리에 커밋될 수도 있는 자리라 조용히 넘기지 않는다.
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrEmpty(localAppData))
+            {
+                throw new InvalidOperationException(
+                    "LocalApplicationData 경로를 찾지 못해 토큰을 저장할 곳이 없습니다.");
+            }
+
+            return Path.Combine(localAppData, "Artel", "Secrets", key + ".bin");
         }
 
         /// <summary>
