@@ -8,13 +8,15 @@ namespace Artel.Auth
     /// 브라우저 로그인으로 받은 SDK 토큰과, 그 토큰으로 고른 프로젝트·인스턴스를 담아 둔다.
     /// </summary>
     /// <remarks>
-    /// ponytail: PlayerPrefs 평문. OS 키체인이 필요해지면 그때.
+    /// 두 토큰만 <see cref="ArtelSecretStore"/>로 간다. 만료 시각·표시 이름·프로젝트·인스턴스는
+    /// 그 자체로 아무것도 열지 못하므로 PlayerPrefs에 그대로 둔다 — 옮기면 값 하나마다 키체인
+    /// 왕복이 붙기만 하고 지키는 것은 없다.
     /// </remarks>
     internal static class ArtelSdkSession
     {
-        private const string TokenPlayerPrefsKey = "Artel.SdkToken";
+        private const string TokenSecretKey = "Artel.SdkToken";
         private const string ExpiresAtPlayerPrefsKey = "Artel.SdkTokenExpiresAt";
-        private const string RefreshTokenPlayerPrefsKey = "Artel.SdkRefreshToken";
+        private const string RefreshTokenSecretKey = "Artel.SdkRefreshToken";
         private const string RefreshExpiresAtPlayerPrefsKey = "Artel.SdkRefreshTokenExpiresAt";
         private const string DisplayNamePlayerPrefsKey = "Artel.SdkDisplayName";
         private const string ProjectIdPlayerPrefsKey = "Artel.ProjectId";
@@ -38,8 +40,7 @@ namespace Artel.Auth
         /// </remarks>
         public static bool TryLoadToken(out string token)
         {
-            var storedToken = PlayerPrefs.GetString(TokenPlayerPrefsKey, string.Empty);
-            if (string.IsNullOrWhiteSpace(storedToken))
+            if (!ArtelSecretStore.TryLoad(TokenSecretKey, out var storedToken))
             {
                 token = string.Empty;
                 return false;
@@ -73,7 +74,7 @@ namespace Artel.Auth
                 throw new ArgumentException("SDK token is required.", nameof(token));
             }
 
-            PlayerPrefs.SetString(TokenPlayerPrefsKey, token.Trim());
+            ArtelSecretStore.Save(TokenSecretKey, token.Trim());
             PlayerPrefs.SetString(ExpiresAtPlayerPrefsKey, expiresAt ?? string.Empty);
             PlayerPrefs.SetString(DisplayNamePlayerPrefsKey, displayName ?? string.Empty);
             PlayerPrefs.Save();
@@ -84,10 +85,12 @@ namespace Artel.Auth
         /// </summary>
         public static bool TryLoadRefreshToken(out string refreshToken)
         {
-            if (!TryLoadNonEmpty(RefreshTokenPlayerPrefsKey, out refreshToken))
+            if (!ArtelSecretStore.TryLoad(RefreshTokenSecretKey, out refreshToken))
             {
                 return false;
             }
+
+            refreshToken = refreshToken.Trim();
 
             if (HasExpired(RefreshExpiresAtPlayerPrefsKey))
             {
@@ -108,7 +111,7 @@ namespace Artel.Auth
                 throw new ArgumentException("Refresh token is required.", nameof(refreshToken));
             }
 
-            PlayerPrefs.SetString(RefreshTokenPlayerPrefsKey, refreshToken.Trim());
+            ArtelSecretStore.Save(RefreshTokenSecretKey, refreshToken.Trim());
             PlayerPrefs.SetString(RefreshExpiresAtPlayerPrefsKey, expiresAt ?? string.Empty);
             PlayerPrefs.Save();
         }
@@ -159,9 +162,9 @@ namespace Artel.Auth
         /// </summary>
         public static void Clear()
         {
-            PlayerPrefs.DeleteKey(TokenPlayerPrefsKey);
+            ArtelSecretStore.Delete(TokenSecretKey);
+            ArtelSecretStore.Delete(RefreshTokenSecretKey);
             PlayerPrefs.DeleteKey(ExpiresAtPlayerPrefsKey);
-            PlayerPrefs.DeleteKey(RefreshTokenPlayerPrefsKey);
             PlayerPrefs.DeleteKey(RefreshExpiresAtPlayerPrefsKey);
             PlayerPrefs.DeleteKey(DisplayNamePlayerPrefsKey);
             PlayerPrefs.DeleteKey(ProjectIdPlayerPrefsKey);
