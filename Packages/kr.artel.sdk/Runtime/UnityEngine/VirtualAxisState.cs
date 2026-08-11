@@ -90,15 +90,26 @@ namespace Artel
                    held.Value > 0f;
         }
 
+        /// <summary>
+        /// Drops holds whose up edge has already been read. The list is allocated only once
+        /// something has actually expired, because this runs on every frame and an empty list per
+        /// frame is garbage nobody asked for.
+        /// </summary>
         public void Refresh(int frame)
         {
-            var expiredAxes = new List<string>();
+            List<string> expiredAxes = null;
             foreach (var pair in holds)
             {
                 if (pair.Value.ReleaseFrame.HasValue && pair.Value.ReleaseFrame.Value < frame)
                 {
+                    expiredAxes = expiredAxes ?? new List<string>();
                     expiredAxes.Add(pair.Key);
                 }
+            }
+
+            if (expiredAxes == null)
+            {
+                return;
             }
 
             foreach (var axisName in expiredAxes)

@@ -232,6 +232,12 @@ namespace Artel.Tests.Input
             try
             {
                 Assert.That(
+                    fixture.ReadHorizontalAxis(),
+                    Is.EqualTo(0f),
+                    "an axis nobody is driving reports the real input, not a virtual zero");
+                Assert.That(fixture.ReadJumpButton(), Is.False);
+
+                Assert.That(
                     ExecuteAction(7, "set_axis", new List<object> { "Horizontal", 1d }).IsSuccess,
                     Is.True);
                 Assert.That(
