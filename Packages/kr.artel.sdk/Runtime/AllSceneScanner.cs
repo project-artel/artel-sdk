@@ -12,6 +12,11 @@ namespace Artel
     /// <summary>
     /// Walks every scene listed in Build Settings and scans each one.
     /// </summary>
+    /// <remarks>
+    /// This actually loads and runs those scenes, which is why <c>scan_all_scenes</c> answers from
+    /// the build-time map by default and only comes here for <c>["live"]</c>. Registration reporting
+    /// uses it too, at a point in the session where the side effects are affordable.
+    /// </remarks>
     internal sealed class AllSceneScanner
     {
         /// <summary>

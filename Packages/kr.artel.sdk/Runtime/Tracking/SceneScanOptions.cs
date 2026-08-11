@@ -6,8 +6,9 @@ namespace Artel.Tracking
     /// <remarks>
     /// <see cref="Default"/> is what <c>GAME_STATE</c> and the poller run: opted-in state only,
     /// active objects only. <see cref="Full"/> is the discovery mode behind
-    /// <c>scan_all_scenes ["full"]</c> — every serialized field of the game's own behaviours, and
-    /// inactive objects too. Nothing on the live-play path uses it.
+    /// <c>scan_all_scenes</c> — every serialized field of the game's own behaviours, and inactive
+    /// objects too. Both the build-time scene map and the live walk are scanned with it, since a
+    /// map baked once cannot be narrowed later. Nothing on the live-play path uses it.
     /// </remarks>
     internal readonly struct SceneScanOptions
     {

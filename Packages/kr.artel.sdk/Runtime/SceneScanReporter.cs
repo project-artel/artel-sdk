@@ -12,9 +12,12 @@ namespace Artel
     /// <summary>
     /// 등록 시점의 씬 구성을 서버에 보고할 형태로 만든다.
     ///
-    /// 내용 스캔은 <see cref="AllSceneScanner"/>에 맡긴다. 런타임 scan_all_scenes와
+    /// 내용 스캔은 <see cref="AllSceneScanner"/>에 맡긴다. scan_all_scenes의 live 모드와
     /// 같은 씬 워크를 쓰므로 잔여 오브젝트 정리와 활성 씬 복구가 함께 따라온다.
     /// 씬을 실제로 로드하는 비동기 작업이라 코루틴으로만 실행할 수 있다.
+    ///
+    /// 등록은 세션이 시작되는 시점이라 그 부작용을 감수할 수 있는 유일한 자리다. 이미 돌고 있는
+    /// 세션 한가운데서 같은 것을 물어보는 경로는 빌드 타임 씬 지도(<see cref="SceneMap"/>)다.
     /// </summary>
     internal static class SceneScanReporter
     {

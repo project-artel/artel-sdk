@@ -322,18 +322,25 @@ namespace Artel.Tests.Transport
             Assert.That(ArtelTestPage.Html, Does.Contain("sendAction('scan_all_scenes', mode ? [mode] : [])"));
             Assert.That(ArtelTestPage.Html, Does.Contain("if (message.type === 'ALL_SCENES') renderAllScenes(message.scenes, message)"));
 
-            // Blocks from a scene the walk unloaded are gone by the time the page draws
-            // them, so only the scene that was already open stays clickable.
+            // Neither source gives ids the page can act on: the map's came from the Editor
+            // and the live walk's belong to scenes it has unloaded. Only the scene that was
+            // already open stays clickable.
             Assert.That(ArtelTestPage.Html, Does.Contain("renderNode(entry.scene, entry.scene.id === liveSceneId)"));
             Assert.That(ArtelTestPage.Html, Does.Contain("button.disabled = !interactive"));
             Assert.That(ArtelTestPage.Html, Does.Contain("input.disabled = !interactive"));
         }
 
         [Test]
-        public void TestPage_PinsTheFullScanResultOutsideTheLiveScene()
+        public void TestPage_PinsTheAllScenesResultOutsideTheLiveScene()
         {
-            Assert.That(ArtelTestPage.Html, Does.Contain("id=\"scan-all-full\""));
-            Assert.That(ArtelTestPage.Html, Does.Contain("scanAllScenes('full')"));
+            Assert.That(ArtelTestPage.Html, Does.Contain("id=\"scan-all-live\""));
+            Assert.That(ArtelTestPage.Html, Does.Contain("scanAllScenes('live')"));
+
+            // A build with no scene map answers with a failed result and no ALL_SCENES, so the
+            // page has to read that rather than sit on its 'reading the scene map…' status.
+            Assert.That(
+                ArtelTestPage.Html,
+                Does.Contain("(message.results || []).find(result => !result.success)"));
 
             // The poller pushes a GAME_STATE within a second of any change. A scan that
             // took the whole walk to produce has to survive that, so it is drawn into its

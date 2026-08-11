@@ -405,15 +405,31 @@ namespace Artel
 
                 if (action.Method == "scan_all_scenes")
                 {
-                    if (!TryReadScanOptions(action.Parameters, out var scanOptions))
+                    if (!TryReadScanMode(action.Parameters, out var walksScenes))
                     {
                         results.Add(ActionResultDto.Failure(
-                            action.Id, "scan_all_scenes params must be [] or [\"full\"]."));
+                            action.Id,
+                            "scan_all_scenes params must be [], [\"default\"], [\"full\"], or [\"live\"]."));
+                        continue;
+                    }
+
+                    if (!walksScenes)
+                    {
+                        // The map answers in place: no scene load, no frame spent, and none of the
+                        // Awake and Start the walk sets off in scenes the player is not in.
+                        if (!SceneMap.TryLoad(out var mapped, out var mapError))
+                        {
+                            results.Add(ActionResultDto.Failure(action.Id, mapError));
+                            continue;
+                        }
+
+                        SendAllScenes(mapped);
+                        results.Add(ActionResultDto.Success(action.Id));
                         continue;
                     }
 
                     List<ScannedSceneDto> scenes = null;
-                    yield return allSceneScanner.ScanAll(scanOptions, result => scenes = result);
+                    yield return allSceneScanner.ScanAll(SceneScanOptions.Full, result => scenes = result);
                     SendAllScenes(scenes);
                     results.Add(ActionResultDto.Success(action.Id));
                     continue;
@@ -444,12 +460,18 @@ namespace Artel
         }
 
         /// <summary>
-        /// Reads the optional scan mode of <c>scan_all_scenes</c>. No parameter keeps the original
-        /// behaviour, so callers written before the mode existed are unaffected.
+        /// Reads the optional mode of <c>scan_all_scenes</c> and answers whether it asks for the
+        /// live walk. Everything else answers from the build-time scene map.
         /// </summary>
-        private static bool TryReadScanOptions(List<object> parameters, out SceneScanOptions options)
+        /// <remarks>
+        /// <c>default</c> and <c>full</c> used to pick how much of each scene the walk reported.
+        /// The map is baked once, at export time, so a reader can no longer choose — it is always
+        /// the wider of the two. Both spellings stay accepted rather than starting to fail on
+        /// callers written before the map existed; they simply no longer vary the answer.
+        /// </remarks>
+        internal static bool TryReadScanMode(List<object> parameters, out bool walksScenes)
         {
-            options = SceneScanOptions.Default;
+            walksScenes = false;
             if (parameters == null || parameters.Count == 0)
             {
                 return true;
@@ -461,14 +483,14 @@ namespace Artel
             }
 
             var mode = parameters[0] as string;
-            if (mode == "default")
+            if (mode == "default" || mode == "full")
             {
                 return true;
             }
 
-            if (mode == "full")
+            if (mode == "live")
             {
-                options = SceneScanOptions.Full;
+                walksScenes = true;
                 return true;
             }
 

@@ -1,0 +1,24 @@
+{
+  "name": "Artel.Editor.Tests",
+  "rootNamespace": "Artel.Tests.EditorTools",
+  "references": [
+    "Artel.Editor",
+    "Artel.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "Newtonsoft.Json.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

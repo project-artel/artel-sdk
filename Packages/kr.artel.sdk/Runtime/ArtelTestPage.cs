@@ -33,7 +33,7 @@ namespace Artel
     <button id=""connect"">Connect</button>
     <button id=""scan"">Scan</button>
     <button id=""scan-all"">Scan all scenes</button>
-    <button id=""scan-all-full"">Scan all scenes (full)</button>
+    <button id=""scan-all-live"">Scan all scenes (live)</button>
     <span id=""status"">idle</span>
   </header>
   <section class=""controls"" aria-label=""Keyboard input"">
@@ -104,7 +104,7 @@ namespace Artel
     let ws;
     let actionId = 1;
     let liveSceneId = null;
-    let scanMode = 'default';
+    let scanMode = 'map';
     const status = document.getElementById('status');
     const sceneRoot = document.getElementById('scene');
     const log = document.getElementById('log');
@@ -121,7 +121,7 @@ namespace Artel
     document.getElementById('connect').onclick = connect;
     document.getElementById('scan').onclick = scan;
     document.getElementById('scan-all').onclick = () => scanAllScenes();
-    document.getElementById('scan-all-full').onclick = () => scanAllScenes('full');
+    document.getElementById('scan-all-live').onclick = () => scanAllScenes('live');
     document.getElementById('snapshot-clear').onclick = clearSnapshot;
     document.getElementById('key-click').onclick = clickKey;
     document.getElementById('key-down').onclick = () => holdKey('key_down');
@@ -145,8 +145,8 @@ namespace Artel
     }
 
     function scanAllScenes(mode) {
-      status.textContent = mode ? `scanning every scene (${mode})…` : 'scanning every scene…';
-      scanMode = mode || 'default';
+      status.textContent = mode ? `scanning every scene (${mode})…` : 'reading the scene map…';
+      scanMode = mode || 'map';
       sendAction('scan_all_scenes', mode ? [mode] : []);
     }
 
@@ -234,6 +234,13 @@ namespace Artel
       log.textContent = JSON.stringify(message, null, 2);
       if (message.type === 'GAME_STATE') renderScene(message.scene);
       if (message.type === 'ALL_SCENES') renderAllScenes(message.scenes, message);
+
+      // Otherwise a scan_all_scenes with no map to read leaves the status sitting on
+      // 'reading the scene map…' and the reason buried in the raw log.
+      if (message.type === 'ACTION_RESULT') {
+        const failed = (message.results || []).find(result => !result.success);
+        if (failed) status.textContent = failed.error;
+      }
     }
 
     function renderScene(scene) {
@@ -260,9 +267,10 @@ namespace Artel
         label.textContent = `build #${entry.buildIndex} — ${entry.path}`;
         snapshotScene.appendChild(label);
 
-        // The walk unloads every scene it opened, so those block ids address objects
-        // that no longer exist and their controls are rendered dead. The scene the
-        // game already had open survived it and stays clickable.
+        // These block ids do not address anything clickable. The map's came from the
+        // Editor and never belonged to this session at all; the live walk's belong to
+        // scenes it has since unloaded. Either way the controls render dead, except for
+        // the scene the game already had open, which a live walk scans in place.
         snapshotScene.appendChild(renderNode(entry.scene, entry.scene.id === liveSceneId));
       }
     }

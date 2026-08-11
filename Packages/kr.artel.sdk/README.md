@@ -68,9 +68,10 @@ their own pace.
 
 ## Scanning every scene in the build
 
-`scan_all_scenes` walks Build Settings from index 0 upward, scanning each scene,
-and answers with a single `ALL_SCENES` message. It is a batch method only —
-the walk spans many frames, so there is no top-level form.
+`scan_all_scenes` answers with a single `ALL_SCENES` message describing every
+scene in Build Settings. It reads a map built when the game was built — no scene
+is loaded and nothing in those scenes runs. It is a batch method only, because
+the `live` mode below spans many frames and both modes answer the same way.
 
 ```json
 { "type": "ACTION", "id": 10, "actions": [{ "id": 1, "method": "scan_all_scenes", "params": [] }] }
@@ -86,23 +87,58 @@ the walk spans many frames, so there is no top-level form.
 }
 ```
 
-### Full mode
+`params` accepts `[]`, `["default"]`, `["full"]`, or `["live"]`. The first three
+are the same request: the map is baked once, so its detail cannot be chosen
+after the fact and it always carries the widest scan. `default` and `full` stay
+accepted for callers written before the map existed. `["live"]` is the escape
+hatch described under [Live mode](#live-mode).
 
-`params: ["full"]` widens the same walk. It reads every field Unity would
-serialize on the MonoBehaviours the game itself wrote — public fields and
-`[SerializeField]` private ones, whether or not they carry `[ArtelState]` — it
-walks into inactive objects, which come back as blocks with `"active": false`,
-and it reports what each button is wired to call. Everything else about the walk
-is unchanged.
+When there is no map to read, `scan_all_scenes` fails with a result saying so
+rather than sending an empty `ALL_SCENES`.
 
-```json
-{ "type": "ACTION", "id": 10, "actions": [{ "id": 1, "method": "scan_all_scenes", "params": ["full"] }] }
-```
+### Building the map
 
-Omitting `params` keeps the original behaviour: opted-in state only, active
-objects only. `GAME_STATE` and the poller are never affected by this mode.
+Run **Artel ▸ Export Scene Map…** with play mode stopped. Each scene in Build
+Settings is opened with `EditorSceneManager.OpenScene`, scanned, and the scene
+setup you had open is restored afterwards. The result is written to
+`Assets/Resources/ArtelSceneMap.json`, which is what puts it into the build.
 
-What full mode leaves out, on purpose:
+A build preprocessor fails the build when that file is missing, was written by a
+different SDK version, or is older than any scene it claims to describe. It only
+checks — exporting stays a menu command you run — so **a project installing this
+SDK has to export once before its next build**. A build that ships the SDK
+without a map ships a `scan_all_scenes` that cannot answer, and finding that out
+from a QA run is worse than finding it out here.
+
+Re-export after changing a scene, adding or reordering scenes in Build Settings,
+or upgrading the SDK. The check compares file timestamps against the scene
+assets, so it does not notice a prefab a scene merely references changing.
+
+### What the map cannot tell you
+
+The map is what the scenes hold on disk, not what they become once running.
+Text a `Start` writes reads as whatever the scene asset serializes, and
+`[ArtelState]` values are the inspector's rather than a live game's. A screen
+built entirely in code has nothing in the scene asset to find.
+
+Its `rect` values were measured against the Editor's Game view, not the device.
+The scene reports the screen it measured against, so a straight scale is
+possible, but a different aspect ratio makes canvas scalers and anchors lay out
+differently and no scaling recovers that. Treat the map's rects as indicative.
+
+Block ids in the map came from the Editor and address nothing in the running
+game, so they cannot be used with `button_click` or `enter_text`. Only the
+structure is durable. `live` mode is the answer to all of this.
+
+### Detail
+
+The map reads every field Unity would serialize on the MonoBehaviours the game
+itself wrote — public fields and `[SerializeField]` private ones, whether or not
+they carry `[ArtelState]` — it walks into inactive objects, which come back as
+blocks with `"active": false`, and it reports what each button is wired to call.
+`GAME_STATE` and the poller are never affected by any of this.
+
+What it leaves out, on purpose:
 
 - Components shipped by Unity or by this SDK. Reading every field of `Image` or
   `TMP_Text` buries the game's own data.
@@ -118,8 +154,8 @@ stores in plain sight — tokens, keys — are sent as they are; nothing is mask
 
 ### What a button calls
 
-A button in a full scan carries its `onClick` wiring, since the scene it belongs
-to is unloaded before anyone can click it and see for themselves:
+A button carries its `onClick` wiring, since nobody can click it in a scene the
+scan only read and see for themselves:
 
 ```json
 {
@@ -135,32 +171,41 @@ to is unloaded before anyone can click it and see for themselves:
 name, and `method` the method invoked. Only calls wired in the inspector are
 listed — Unity keeps `AddListener` registrations in a delegate it never exposes,
 so a button wired entirely in code reports nothing. `onClick` is absent when
-there is nothing to report, which is every button outside a full scan.
+there is nothing to report.
 
-Each `scene` is the same shape `GAME_STATE` sends. Scenes are loaded
-`Additive`, scanned, then unloaded; a scene the game already has open is scanned
-in place and left alone. The original active scene is restored and rescanned
-afterwards, so `button_click` and `enter_text` target ids keep working.
+Each `scene` is the same shape `GAME_STATE` sends, so a server parses one form
+whichever mode produced it.
 
 The local test page drives this from its **Scan all scenes** and **Scan all
-scenes (full)** buttons. It lists every returned scene under its build index and
-path, drawn by the same renderer `GAME_STATE` uses. Controls belonging to a scene
-the walk unloaded are disabled, since clicking them would address nothing; the
-scene the game already had open stays clickable.
+scenes (live)** buttons. It lists every returned scene under its build index and
+path, drawn by the same renderer `GAME_STATE` uses. Controls are disabled, since
+clicking them would address nothing; the one exception is the scene the game
+already had open, which a live walk scans in place.
 
 The result is pinned in its own section, above the live scene, and stays there
 until **Clear** — the poller pushes a `GAME_STATE` within a second of any change,
-and a scan that took the whole walk to produce would otherwise vanish under it.
+and a scan that took a whole walk to produce would otherwise vanish under it.
 Each component lists its states and actions, open by default and foldable,
 buttons list their `onClick` calls, and inactive blocks are labelled and dimmed.
 The section also keeps the raw `ALL_SCENES` JSON behind a disclosure.
 
-This runs the game's other scenes, briefly. Their `Awake`, `OnEnable`, and
-`Start` execute — anything they do on load (audio, network calls, writing to
-`PlayerPrefs`) happens for real. Treat `scan_all_scenes` as a discovery step, not
-something to call during a run you care about. Block ids collected this way
-belong to objects that are destroyed when the scan finishes; only the returned
-structure is durable.
+### Live mode
+
+`params: ["live"]` ignores the map and walks the scenes for real, at the same
+detail. It exists for what a static map cannot see — a screen assembled in code,
+state a `Start` computes, layout at the device's actual resolution.
+
+It runs the game's other scenes, briefly. Their `Awake`, `OnEnable`, and `Start`
+execute — anything they do on load (audio, network calls, writing to
+`PlayerPrefs`) happens for real. This is why it is the exception and not the
+default: prefer the map during a run you care about. Block ids collected this
+way belong to objects that are destroyed when the walk finishes; only the
+returned structure is durable.
+
+Scenes are loaded `Additive`, scanned, then unloaded; a scene the game already
+has open is scanned in place and left alone. The original active scene is
+restored and rescanned afterwards, so `button_click` and `enter_text` target ids
+keep working.
 
 A visited scene escapes its own unload two ways. `DontDestroyOnLoad` moves
 objects to a scene of their own, and anything its `Awake` or `Start`
@@ -374,8 +419,8 @@ components are listed separately, so one block can expose multiple capabilities:
 into the target at scan time. It is false for a disabled component, a `Selectable`
 with `interactable` off, and one blocked by a parent `CanvasGroup`. `button_click`
 and `enter_text` on a target that is not interactable fail with
-`Target is not interactable: <id>` instead of invoking the handler. Blocks a full
-scan reveals with `"active": false` carry `"interactable": false` for the same
+`Target is not interactable: <id>` instead of invoking the handler. Blocks a
+scan reports with `"active": false` carry `"interactable": false` for the same
 reason: their UI cannot receive input while the object is off.
 
 ### What is on screen
