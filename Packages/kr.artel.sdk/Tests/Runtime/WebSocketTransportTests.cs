@@ -401,9 +401,9 @@ namespace Artel.Tests.Transport
             viewModel.Initialize();
 
             // An unconfigured Server throws while the request is built, before anything is sent.
-            var registration = viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { });
+            RunToCompletionWithoutWaiting(
+                viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
 
-            Assert.That(registration.MoveNext(), Is.False);
             Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.ChoosingProject));
             Assert.That(viewModel.ShowPanel, Is.True);
             Assert.That(viewModel.Status, Does.StartWith("설정 오류: "));
@@ -420,9 +420,9 @@ namespace Artel.Tests.Transport
             var viewModel = CreateViewModel();
             viewModel.Initialize();
 
-            var registration = viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { });
+            RunToCompletionWithoutWaiting(
+                viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
 
-            Assert.That(registration.MoveNext(), Is.False);
             Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.NeedsLogin));
             Assert.That(viewModel.HasError, Is.True);
         }
@@ -524,8 +524,8 @@ namespace Artel.Tests.Transport
 
             // 설정되지 않은 Server는 요청을 만드는 중에 던진다. 401이 아니므로 세션이
             // 그대로 남는 실패 경로다.
-            var registration = viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { });
-            Assert.That(registration.MoveNext(), Is.False);
+            RunToCompletionWithoutWaiting(
+                viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
 
             Assert.That(viewModel.HasToken, Is.True);
             Assert.That(viewModel.HasError, Is.True);
@@ -849,6 +849,34 @@ namespace Artel.Tests.Transport
                 }
 
                 UnityEngine.Object.DestroyImmediate(host);
+            }
+        }
+
+        /// <summary>
+        /// Unity의 코루틴 실행기처럼 중첩 IEnumerator까지 끝까지 돌린다. 요청을 보내기 전에
+        /// 끝나야 하는 경로를 보는 테스트이므로, 기다림을 뜻하는 값을 yield하면 —
+        /// <c>UnityWebRequest.SendWebRequest()</c>가 그렇다 — 그 자리에서 실패시킨다.
+        /// </summary>
+        /// <remarks>
+        /// 한 번의 <c>MoveNext</c>로 끝나는지 보던 자리를 대신한다. Register는 토큰 재발급을
+        /// 위해 <c>yield return EnsureToken(...)</c>으로 다른 코루틴을 품는데, 손으로 펌프하면
+        /// 그 중첩 자체가 한 걸음으로 세어져 네트워크에 나가지 않는 실패 경로까지 기다린 것처럼
+        /// 보였다.
+        /// </remarks>
+        private static void RunToCompletionWithoutWaiting(IEnumerator routine)
+        {
+            while (routine.MoveNext())
+            {
+                if (routine.Current is IEnumerator nested)
+                {
+                    RunToCompletionWithoutWaiting(nested);
+                    continue;
+                }
+
+                Assert.Fail(
+                    "요청을 보내기 전에 끝나야 하는 경로인데 " +
+                    (routine.Current == null ? "다음 프레임" : routine.Current.ToString()) +
+                    "을(를) 기다렸습니다.");
             }
         }
 
