@@ -9,10 +9,11 @@
   build named only Unity's own generated preserve files. The check in ManagedStrippingWarning is
   what makes the failure say so either way; that check arrives with ARTEL-395.
 
-  Artel.Affordances.Scan is preserved too once it exists. It is left out here rather than written
-  ahead of time because what the linker does with a name that resolves to no assembly has not been
-  checked, and this file is not the place to find out. Added by ARTEL-394.
+  Artel.Affordances.Scan arrived with ARTEL-394 and is preserved from here on. It was left out
+  until the assembly existed rather than written ahead of time, because what the linker does with a
+  name that resolves to nothing had not been checked and this file was not the place to find out.
 -->
 <linker>
   <assembly fullname="Artel.Affordances.Runtime" preserve="all"/>
+  <assembly fullname="Artel.Affordances.Scan" preserve="all"/>
 </linker>
