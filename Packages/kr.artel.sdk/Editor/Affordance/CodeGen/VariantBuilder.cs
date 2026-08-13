@@ -20,6 +20,20 @@ namespace Artel.Affordances.CodeGen
     {
         private const string InputType = "UnityEngine.Input";
 
+        /// <summary>What the engine's input class is called after this package has rewritten it.</summary>
+        /// <remarks>
+        /// The SDK's own weaver redirects these very calls so an agent's input can be read alongside
+        /// a person's, and it ships in the same package as this analysis. Which of the two runs
+        /// first is not something Unity says, and there is no supported way to ask for an order — so
+        /// rather than depend on one, both names are answered to.
+        ///
+        /// The members keep their names through that rewrite, so nothing below here needs to know
+        /// which of the two it is looking at. Reading only the engine's name would have cost every
+        /// gesture in a project where the other weaver happened to go first, and cost it silently:
+        /// the analysis would still finish, still write its report, and simply never mention a key.
+        /// </remarks>
+        private const string ProxiedInputType = "Artel.ArtelInput";
+
         private const byte Unvisited = 0;
         private const byte Computing = 1;
         private const byte Settled = 2;
@@ -766,11 +780,13 @@ namespace Artel.Affordances.CodeGen
             if (instruction == null ||
                 !(instruction.Operand is MethodReference called) ||
                 instruction.OpCode.FlowControl != FlowControl.Call ||
-                called.DeclaringType?.FullName != InputType)
+                !ReadsInput(called.DeclaringType?.FullName))
             {
                 return null;
             }
 
+            // Whichever of the two the call now names, the member is the same one and is asked for
+            // in the same way below.
             switch (called.Name)
             {
                 case "GetKeyDown": return Key(instruction, called, "down");
@@ -784,6 +800,10 @@ namespace Artel.Affordances.CodeGen
                 default: return null;
             }
         }
+
+        /// <summary>Whether a call reads player input, under either of the names it can carry.</summary>
+        private static bool ReadsInput(string declaringType) =>
+            declaringType == InputType || declaringType == ProxiedInputType;
 
         private static InputRead Key(Instruction instruction, MethodReference called, string phase)
         {

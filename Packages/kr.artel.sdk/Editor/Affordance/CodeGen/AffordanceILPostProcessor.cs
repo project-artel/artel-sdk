@@ -87,21 +87,8 @@ namespace Artel.Affordances.CodeGen
         /// </remarks>
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
-            return Unlocked && IsEnabledFor(compiledAssembly) && !IsSkipped(compiledAssembly.Name);
+            return IsEnabledFor(compiledAssembly) && !IsSkipped(compiledAssembly.Name);
         }
-
-        /// <summary>Held shut while this analyser is carried into the SDK. ARTEL-393 deletes it.</summary>
-        /// <remarks>
-        /// Nine and a half thousand lines arrived here in one move, and whether they arrived intact
-        /// is a different question from whether they should run — different evidence, different way
-        /// of being wrong. So the move lands with the analyser unable to touch anything, and the
-        /// issue that lets it run carries only the change that lets it run.
-        ///
-        /// A field rather than a constant so it reads as a switch someone flips, not a literal the
-        /// compiler folds away. Left in front of the real conditions rather than replacing them:
-        /// the reader can still see what would be asked, and unlocking is one term deleted.
-        /// </remarks>
-        private static readonly bool Unlocked = false;
 
         public override ILPostProcessResult Process(ICompiledAssembly compiledAssembly)
         {
