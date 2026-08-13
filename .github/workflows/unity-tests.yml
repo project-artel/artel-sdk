@@ -160,7 +160,7 @@ jobs:
       - name: Report test results
         if: always()
         run: |
-          set -uo pipefail
+          set -euo pipefail
           results="$(find "artifacts/${{ matrix.testMode }}" -name '*.xml' -print -quit 2>/dev/null || true)"
           python3 .github/scripts/summarize-test-results.py \
             "${results:-artifacts/${{ matrix.testMode }}/missing-results.xml}" \
@@ -174,10 +174,26 @@ jobs:
           path: artifacts/${{ matrix.testMode }}
           if-no-files-found: warn
 
+      # 원본을 그대로 올리지 않는다. 로그를 올리는 목적이 라이선스 활성화 실패 진단인데,
+      # 하필 그 실패 경로에서 Unity가 계정 이메일과 시리얼을 로그에 남긴다. GitHub의 시크릿
+      # 마스킹은 콘솔 출력에만 걸리고 아티팩트 파일 내용은 훑지 않으므로, 저장소 읽기 권한이
+      # 있는 사람 누구나 받아 볼 수 있게 된다.
+      - name: Scrub credentials from Unity log
+        if: failure()
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/scrub-unity-log.py \
+            "${TEST_PROJECT_PATH}/Logs" \
+            "artifacts/unity-log-${{ matrix.testMode }}"
+
       - name: Upload Unity log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: unity-editor-log-${{ matrix.testMode }}
-          path: ${{ env.TEST_PROJECT_PATH }}/Logs
+          path: artifacts/unity-log-${{ matrix.testMode }}
           if-no-files-found: ignore
