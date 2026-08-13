@@ -591,9 +591,9 @@ namespace Artel
             // timeScale이 아니라 실제 경과 시간이 필요하다. pause_time 계열 액션이 timeScale을
             // 임의로 바꾸므로 deltaTime은 프레임 성능 지표가 되지 못한다.
             //
-            // isFocused는 에디터에서 에디터 애플리케이션의 포커스를 뜻한다. Game view가 아니라
-            // 창 기준이라 작업 중에는 대체로 true이고, 다른 앱으로 넘어간 동안만 빠진다.
-            frameTimeRecorder.Record(Time.unscaledDeltaTime, Application.isFocused);
+            // 백그라운드 throttling도 사용자가 실제로 겪는 실행 상태다. 포커스 여부는 보고의
+            // status.isFocused로 함께 보내므로 소비자가 필요에 따라 구분할 수 있다.
+            frameTimeRecorder.Record(Time.unscaledDeltaTime);
         }
 
         /// <summary>

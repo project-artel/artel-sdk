@@ -6,7 +6,7 @@
 
 ## Goal
 
-게임 창이 포커스를 잃어도 스트림이 살아 있게 한다. 두 가지를 고친다.
+게임 창이 포커스를 잃어도 스트림과 성능 보고가 살아 있게 한다. 세 가지를 고친다.
 
 1. **프레임 루프가 멈추는 것** — SDK 어디에서도 `Application.runInBackground`를 켜지 않는다. Player
    Settings 기본값이 꺼짐이면 포커스를 잃는 순간 `Update()`가 멈추고, 그 안에서 도는
@@ -15,6 +15,9 @@
 2. **복귀 시점에 임대가 즉사하는 것** — `StreamLease`는 절대 시각(`Time.unscaledTime`)으로 마감을
    판정한다. 프로세스가 멈춰 있던 동안 흐른 벽시계 시간이 첫 Tick에 한꺼번에 실려 임대가 이미 만료된
    것으로 읽히고, 돌아오자마자 세션이 무너진다.
+3. **성능 보고가 사라지는 것** — 프레임 레코더가 `Application.isFocused == false`인 프레임을 모두
+   버린다. `runInBackground`로 루프가 계속 돌아도 집계할 샘플이 없어 PERFORMANCE를 보내지 않는다.
+   백그라운드 프레임도 기록하고 기존 `status.isFocused`로 포커스 상태를 보존한다.
 
 ## Non-goals
 
@@ -204,6 +207,7 @@ expired = remaining <= 0
 - **실행 결과 (2026-08-13)**: 베이스라인 대비 **신규 실패 0건**
   - merge-base `2c3b795`: 총 228, 통과 217, 실패 11
   - 브랜치(pair review 반영 후 최종): 총 232, 통과 221, 실패 11 (동일한 이름의 환경적 실패 집합)
+  - 비포커스 성능 보고 반영 후: 총 232, 통과 221, 실패 11. `FrameTimeRecorderTests` 13/13 통과
   - `ArtelStreamHostTests` 12건 + `ScreenVideoSourceTests` 4건 전부 통과. 신규 4건
     (`Tick_SurvivesTheFrameThatResumesFromASuspendedApp`,
     `Tick_StillExpiresAfterAResumeWhenNoRenewalFollows`, `Renew_AfterAResumeKeepsTheSessionAlive`,

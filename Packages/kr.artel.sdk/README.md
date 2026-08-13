@@ -500,6 +500,11 @@ queue. With the Player Settings default, losing window focus stops all three —
 so switching from the game to a browser to watch the stream would be the very
 thing that froze it, and no later message could restart it either.
 
+Performance reports also continue while the window is not focused. Their frame
+statistics include the background frames, which may reflect platform
+throttling; `status.isFocused` remains available so consumers can identify
+those reports.
+
 The setting is a desktop one. On mobile the OS suspends the app regardless, so
 the stream stops there while the game is in the background. What the SDK
 guarantees on the way back is that the session survives the resume: the stream
