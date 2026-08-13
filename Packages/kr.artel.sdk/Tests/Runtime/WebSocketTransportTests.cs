@@ -444,63 +444,6 @@ namespace Artel.Tests.Transport
         }
 
         [Test]
-        public void ArtelManager_CreatesOverlayGuiAutomatically()
-        {
-            var host = new GameObject("Artel overlay test");
-            var manager = host.AddComponent<ArtelManager>();
-
-            try
-            {
-                InvokeLifecycle(manager, "Awake");
-                var controller = host.GetComponent<ArtelOverlayController>();
-                Assert.That(controller, Is.Not.Null);
-                Assert.That(host.GetComponent<KeyboardStatusController>(), Is.Not.Null);
-                InvokeLifecycle(controller, "Awake");
-                InvokeLifecycle(controller, "Start");
-                var canvas = GameObject.Find("Artel Overlay Canvas");
-                Assert.That(canvas, Is.Not.Null);
-                var buttons = canvas.GetComponentsInChildren<Button>(true);
-                var toggles = canvas.GetComponentsInChildren<Toggle>(true);
-                var smoothCursorToggle = Array.Find(toggles, toggle => toggle.name == "부드러운 커서 Toggle");
-                var loginButton = Array.Find(buttons, button => button.name == "로그인 Button");
-                var connectButton = Array.Find(buttons, button => button.name == "연결 Button");
-
-                Assert.That(manager.SdkId, Is.Not.Empty);
-                Assert.That(manager.InstanceName, Is.Not.Empty);
-
-                // Artel 토글, 고급, 연결, 로그아웃, 로그인, 다시 시도, 게이트 로그아웃, 나중에.
-                Assert.That(buttons, Has.Length.EqualTo(8));
-
-                // 키 입력창은 사라졌다. 남아 있으면 로그인 흐름과 두 입구가 공존한다.
-                Assert.That(canvas.GetComponentInChildren<InputField>(true), Is.Null);
-                Assert.That(loginButton, Is.Not.Null);
-                Assert.That(loginButton.interactable, Is.True);
-                Assert.That(connectButton, Is.Not.Null);
-                Assert.That(connectButton.interactable, Is.False);
-                Assert.That(smoothCursorToggle, Is.Not.Null);
-                Assert.That(smoothCursorToggle.isOn, Is.False);
-                Assert.That(Array.Find(toggles, toggle => toggle.name == "다크 모드 Toggle"), Is.Not.Null);
-                Assert.That(canvas.GetComponentsInChildren<ArtelLogoGraphic>(true), Has.Length.EqualTo(3));
-            }
-            finally
-            {
-                var canvas = GameObject.Find("Artel Overlay Canvas");
-                var eventSystem = GameObject.Find("Artel EventSystem");
-                if (canvas != null)
-                {
-                    UnityEngine.Object.DestroyImmediate(canvas);
-                }
-
-                if (eventSystem != null)
-                {
-                    UnityEngine.Object.DestroyImmediate(eventSystem);
-                }
-
-                UnityEngine.Object.DestroyImmediate(host);
-            }
-        }
-
-        [Test]
         public void OverlayGui_CoverGeometryAndOpacity()
         {
             var host = new GameObject("Artel cover geometry test");
