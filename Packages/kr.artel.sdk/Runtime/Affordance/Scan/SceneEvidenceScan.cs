@@ -72,6 +72,11 @@ namespace Artel.Affordances.Scan
 
             var roots = scene.GetRootGameObjects();
 
+            // The second question this walk answers needs a camera, and finding one is a scene-wide
+            // search. Asked once here rather than once per object.
+            AimableTargets.Forget(scene.name);
+            ScreenArea.Begin();
+
             for (var rootIndex = 0; rootIndex < roots.Length; rootIndex++)
             {
                 var root = roots[rootIndex];
@@ -91,11 +96,55 @@ namespace Artel.Affordances.Scan
                     {
                         objects++;
                     }
+
+                    // Asked of every object the walk reaches, including the ones the report turned
+                    // down. The two questions do not contain each other: a controller with no
+                    // picture belongs to the report and cannot be aimed at, and a background sprite
+                    // is the other way round.
+                    Aim(transform, scene.name, rootIndex);
                 }
             }
 
+            ScreenArea.Forget();
+
             AffordanceReport.Merge(scene.name, text.ToString(), gaps);
             return true;
+        }
+
+        /// <summary>Records an object as somewhere a pointer could be sent, when it is one.</summary>
+        private static void Aim(Transform transform, string scene, int rootIndex)
+        {
+            var subject = transform.gameObject;
+
+            Component[] components;
+
+            try
+            {
+                components = subject.GetComponents<Component>();
+            }
+            catch (Exception)
+            {
+                // Already reported as a gap by the report's own pass over this object.
+                return;
+            }
+
+            if (!Aimable.Is(components))
+            {
+                return;
+            }
+
+            AimableTargets.Keep(new AimableTarget
+            {
+                Id = subject.GetInstanceID(),
+                Path = ScenePath.Of(transform),
+                Selector = ScenePath.SelectorOf(transform, rootIndex),
+                Scene = scene,
+                Kind = Aimable.KindOf(components),
+                Active = subject.activeInHierarchy,
+                Interactable = Aimable.Interactable(subject, components),
+                Area = ScreenArea.Of(transform),
+                Subject = subject
+            });
         }
 
         /// <summary>
