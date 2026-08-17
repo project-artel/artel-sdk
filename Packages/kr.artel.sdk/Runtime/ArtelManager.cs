@@ -281,12 +281,50 @@ namespace Artel
                     "[Artel] WebSocket transport is owned by another component, " +
                     "so this game will not connect to the orchestration server. " +
                     "Remove ArtelTestPageManager from the scene to connect.");
+
+                // Discovery is already following: whoever installed that transport went through
+                // SetWebSocketTransport, which begins it. Beginning it again here would be a second
+                // claim on the same connection, and the two would drift the moment one of them moved.
                 return;
             }
 
             webSocketTransport.Start();
             sceneStatePoller.Reset(Time.unscaledTime);
+            BeginDiscovery();
             Debug.Log("[Artel] WebSocket transport started.");
+        }
+
+        /// <summary>
+        /// Starts reading the game, now that somebody is connected to watch it.
+        /// </summary>
+        /// <remarks>
+        /// Connecting an instance is the consent. A game carries this SDK for several reasons and
+        /// only one of them is QA — a project streaming its screen or sampling frame times never
+        /// asked to have every scene load scanned, nor for a report to appear on a player's disk.
+        /// Merely starting the game used to be enough to make both happen.
+        ///
+        /// Called wherever a transport comes to exist, which is two places: <see cref="StartTransport"/>
+        /// building its own, and <see cref="SetWebSocketTransport"/> being handed one. The second is
+        /// how the local test page connects, and it never reaches StartTransport at all — so a
+        /// begin placed only there reads the whole test-page path as nobody being connected.
+        ///
+        /// Having a transport rather than a completed handshake is the trigger. The socket opens
+        /// asynchronously and the test page's server is listening before any browser attaches, so
+        /// waiting for the far end would mean the first scan arrives at an unpredictable moment or,
+        /// for a page nobody opens, never. Asking to connect is the consent; the handshake is
+        /// plumbing.
+        /// </remarks>
+        private void BeginDiscovery()
+        {
+            Affordances.Scan.AffordanceBootstrap.Follow();
+            Affordances.Scan.AffordanceBootstrap.WatchLiveState();
+        }
+
+        /// <summary>Stops reading the game when the connection goes.</summary>
+        private void EndDiscovery()
+        {
+            Affordances.Scan.AffordanceBootstrap.StopFollowing();
+            Affordances.Scan.AffordanceBootstrap.StopWatching();
         }
 
         public void StopTransport()
@@ -307,6 +345,10 @@ namespace Artel
             // Ahead of the ownership checks: whoever owns the socket, a run that ends mid-drag must
             // not leave the game holding a button nobody will ever send the release for.
             ReleaseAgentInput();
+
+            // Reading the game outlasting the connection that asked for it is the cost this pairing
+            // exists to avoid — a scan on every scene load and a growing file, for nobody.
+            EndDiscovery();
 
             if (webSocketTransport == null)
             {
@@ -355,6 +397,10 @@ namespace Artel
             ReleaseAgentInput();
             webSocketTransport = null;
             ownsTransport = true;
+
+            // The connection that asked for the reading is gone, so the reading goes with it — the
+            // same pairing StopTransport keeps for a transport this manager built itself.
+            EndDiscovery();
         }
 
         internal void SetWebSocketTransport(IArtelWebSocketTransport transport, bool takeOwnership)
@@ -367,6 +413,11 @@ namespace Artel
             webSocketTransport = transport ?? throw new ArgumentNullException(nameof(transport));
             ownsTransport = takeOwnership;
             sceneStatePoller.Reset(Time.unscaledTime);
+
+            // An injected transport is a connection like any other. The local test page arrives
+            // only here — it never calls StartTransport — so this is the sole place its run can be
+            // recognised as somebody asking to read the game.
+            BeginDiscovery();
         }
 
         public void SetServer(Server configuredServer)

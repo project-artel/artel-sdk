@@ -17,9 +17,9 @@ namespace Artel.Affordances.Scan
     /// an account of everywhere it has been. Reaching the screens nobody walked to is what
     /// <see cref="WalkAllScenes"/> is for.
     ///
-    /// Always compiled, and doing nothing is the release build's business rather than the
-    /// compiler's: the subscription below is the only thing that makes any of this run, and it is
-    /// held only where <c>UNITY_EDITOR</c> or <c>DEVELOPMENT_BUILD</c> is true.
+    /// Booting is not the same as running. Nothing here reads anything until <see cref="Follow"/>
+    /// is called, which is what connecting an instance does — installing the package leaves this
+    /// present and idle.
     /// </remarks>
     public static class AffordanceBootstrap
     {
@@ -28,24 +28,74 @@ namespace Artel.Affordances.Scan
         /// <summary>Where the report is written.</summary>
         public static string ReportPath => Path.Combine(Application.persistentDataPath, FileName);
 
+        private static bool _following;
+
+        /// <summary>Whether scene loads are currently being read.</summary>
+        public static bool Following => _following;
+
+        /// <summary>
+        /// Begins reading scenes as the game loads them, and says whether it started.
+        /// </summary>
         /// <remarks>
-        /// Nothing is subscribed to in a released game. Asked as an <c>#if</c> rather than a runtime
-        /// test so a shipping player holds no subscription, no callback, and no reason to have
-        /// loaded any of this.
+        /// Called when an instance connects, because that is the moment a person asked for this.
+        /// A game carries the SDK for other reasons — streaming, remote input, frame timing — and
+        /// somebody who never opens a QA run should not be paying for a scan on every scene load,
+        /// nor finding a report they did not ask for on their disk.
         ///
-        /// The same pair of symbols is read from the other side in
-        /// <c>AffordanceILPostProcessor.IsDiscoveryBuild</c>, which decides whether the evidence
-        /// this reads was ever baked. Change one and change the other: this one cannot share a
-        /// constant with it, because a preprocessor test is evaluated where its own assembly is
-        /// compiled and cannot read a value from anywhere.
+        /// This used to subscribe from a <c>RuntimeInitializeOnLoadMethod</c>, so merely starting the
+        /// game was enough to make it run — every project that installed the package got scans and a
+        /// report on disk whether or not anybody was there to read them.
+        ///
+        /// Idempotent, because a reconnect is a connection too and the transport is allowed to open
+        /// more than once in a session.
+        ///
+        /// A released game refuses rather than starts, asked as an <c>#if</c> so a shipping player
+        /// holds no subscription and no callback. The same pair of symbols is read from the other
+        /// side in <c>AffordanceILPostProcessor.IsDiscoveryBuild</c>, which decides whether the
+        /// evidence this reads was ever baked. Change one and change the other: this one cannot
+        /// share a constant with it, because a preprocessor test is evaluated where its own
+        /// assembly is compiled and cannot read a value from anywhere.
         /// </remarks>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void Install()
+        public static bool Follow()
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            SceneManager.sceneLoaded += (scene, mode) => Capture(scene);
-            Debug.Log("[Artel] Discovery is on. The report is written to " + ReportPath);
+            if (_following)
+            {
+                return true;
+            }
+
+            SceneManager.sceneLoaded += OnSceneLoaded;
+            _following = true;
+
+            // Whatever is already up was loaded before anyone was listening, and a reader given only
+            // what loads next would be missing the screen the game is actually on.
+            CaptureNow();
+
+            Debug.Log("[Artel] Discovery is following scene loads. The report is written to " + ReportPath);
+            return true;
+#else
+            // A released build has no business reading scenes, and saying so is better than a
+            // caller wondering why nothing arrived.
+            Debug.Log("[Artel] Discovery does not run in a release build.");
+            return false;
 #endif
+        }
+
+        /// <summary>Stops reading scenes. Safe to call when it was never started.</summary>
+        public static void StopFollowing()
+        {
+            if (!_following)
+            {
+                return;
+            }
+
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            _following = false;
+        }
+
+        private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            Capture(scene);
         }
 
         private static void Capture(Scene scene)
