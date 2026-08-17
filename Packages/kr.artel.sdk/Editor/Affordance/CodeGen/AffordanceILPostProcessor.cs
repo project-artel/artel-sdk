@@ -17,21 +17,27 @@ namespace Artel.Affordances.CodeGen
     /// attribute 도, 수정도, 그들 자신의 빌드 단계도 없다. IL2CPP 가 무엇을 변환하기 전에 돌기도 하므로 최종
     /// 빌드 형식이 무엇이든 결과는 거기 있다.
     ///
-    /// <see cref="EnableDefine"/> 가 설정되지 않으면 여기서는 아무것도 돌지 않는다. 이 분석은 세 번에 걸쳐
-    /// 에디터를 먹통으로 만들었고, 그때마다 왜 그런지 알아보려고 그것을 열 수조차 없었으며, 빠져나오는 길은
-    /// Unity 를 죽이고 매니페스트를 손으로 고치는 것이었다. 제거하지 않고 통째로 끄는 스위치는 그것이 찾아낼 수
-    /// 있는 무엇보다 값지다.
+    /// This used to sit behind a scripting define a project had to set. Three separate times, while
+    /// this analysis was being written, it wedged an editor that then could not be opened to
+    /// investigate why — and a switch that turned it off without uninstalling was worth more than
+    /// anything it could find.
+    ///
+    /// What replaced the switch is three layers that were not there then: every loop here is
+    /// bounded, an assembly gets ten seconds before whatever was reached is reported and the rest
+    /// left undone, and any throw at all lands in <see cref="Process"/> and hands back the
+    /// compiler's own assembly. The last of those was proven by injecting a failure and watching a
+    /// build survive it.
+    ///
+    /// The define had stopped earning that. A project had to be opted in for the tooling to exist,
+    /// so something had to opt it in on their behalf, and then the state it protected against —
+    /// installed but switched off — was one nobody arrived at except by hand. Meanwhile everything
+    /// downstream had to ask whether the analysis existed at all before it could rely on it.
+    ///
+    /// What is written into a game assembly is an attribute and two compressed resources. No method
+    /// body is touched, nothing is renamed, and a game runs exactly as it did.
     /// </remarks>
     public sealed class AffordanceILPostProcessor : ILPostProcessor
     {
-        /// <summary>프로젝트가 분석을 받아들이겠다고 말하는 스크립팅 define 심볼.</summary>
-        /// <remarks>
-        /// 일부러 두 겹으로 지킨다. assembly definition 이 스스로를 이 심볼로 제한하므로, 그것이 없으면 이 코드는
-        /// 컴파일되지도 않고 프로젝트에 아무 값도 치르게 하지 않는다 — 출시 빌드까지 패키지를 설치해 둔 채로 두어도
-        /// 안전하게 만드는 것이 그것이다. 아래의 검사는 어셈블리가 어떤 다른 경로로 빌드되더라도 게임 어셈블리를
-        /// 건드리지 않음을 보장하는 것이고, 스스로를 보고할 수 있는 것은 그쪽뿐이다.
-        /// </remarks>
-        internal const string EnableDefine = "ARTEL_AFFORDANCE";
 
         /// <summary>
         /// 나머지를 남겨 둔 채 끊기까지 한 어셈블리를 얼마나 오래 분석할 수 있는지.
@@ -70,15 +76,16 @@ namespace Artel.Affordances.CodeGen
         public override ILPostProcessor GetInstance() => this;
 
         /// <remarks>
-        /// 이 빌드가 어떤 종류인지는 어셈블리를 건드리지 않을 이유이고 그런 것들이 사는 자리가 여기인데도,
-        /// 여기가 아니라 <see cref="Process"/> 에서 묻는다. 여기서 아니오라고 답하면 <see cref="Process"/> 가
-        /// 한 번도 불리지 않는데, 진단을 쥐고 있는 것이 <see cref="Process"/> 다 — 그래서 여기서 결정된 거절은
-        /// 아무에게도 알려지지 않는 거절이다. 여기서 답하는 둘은 사람이 이미 답을 아는 것들이다: 그들이 define 을
-        /// 설정했고, 자기 어셈블리를 무엇이라 이름 지었는지 안다.
+        /// What kind of build this is gets asked in <see cref="Process"/> rather than here, even
+        /// though it is a reason not to touch the assembly and this is where those live. Answering
+        /// no here means <see cref="Process"/> is never called, and <see cref="Process"/> is what
+        /// holds the diagnostics — so a refusal decided here is a refusal nobody is told about.
+        /// The one answered here is the one a person already knows the answer to: they know what
+        /// they named their assemblies.
         /// </remarks>
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
-            return IsEnabledFor(compiledAssembly) && !IsSkipped(compiledAssembly.Name);
+            return !IsSkipped(compiledAssembly.Name);
         }
 
         public override ILPostProcessResult Process(ICompiledAssembly compiledAssembly)
@@ -719,26 +726,6 @@ namespace Artel.Affordances.CodeGen
                 (related.Count > 0 ? string.Join(", ", related) : "none") + ".");
 
             return null;
-        }
-
-        /// <summary><see cref="EnableDefine"/> 를 정의해 프로젝트가 분석을 청했을 때 참.</summary>
-        private static bool IsEnabledFor(ICompiledAssembly compiledAssembly)
-        {
-            var defines = compiledAssembly.Defines;
-            if (defines == null)
-            {
-                return false;
-            }
-
-            foreach (var define in defines)
-            {
-                if (string.Equals(define, EnableDefine, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         /// <summary>
