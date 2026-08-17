@@ -18,22 +18,27 @@ namespace Artel.Affordances.CodeGen
     /// It also runs before IL2CPP converts anything, so the result is present whatever the final
     /// build format is.
     ///
-    /// Nothing here runs unless <see cref="EnableDefine"/> is set. Three separate times this
-    /// analysis wedged an editor that then could not be opened to investigate why, and the way out
-    /// was killing Unity and editing the manifest by hand. A switch that turns the whole thing off
-    /// without uninstalling it is worth more than anything it can find.
+    /// This used to sit behind a scripting define a project had to set. Three separate times, while
+    /// this analysis was being written, it wedged an editor that then could not be opened to
+    /// investigate why — and a switch that turned it off without uninstalling was worth more than
+    /// anything it could find.
+    ///
+    /// What replaced the switch is three layers that were not there then: every loop here is
+    /// bounded, an assembly gets ten seconds before whatever was reached is reported and the rest
+    /// left undone, and any throw at all lands in <see cref="Process"/> and hands back the
+    /// compiler's own assembly. The last of those was proven by injecting a failure and watching a
+    /// build survive it.
+    ///
+    /// The define had stopped earning that. A project had to be opted in for the tooling to exist,
+    /// so something had to opt it in on their behalf, and then the state it protected against —
+    /// installed but switched off — was one nobody arrived at except by hand. Meanwhile everything
+    /// downstream had to ask whether the analysis existed at all before it could rely on it.
+    ///
+    /// What is written into a game assembly is an attribute and two compressed resources. No method
+    /// body is touched, nothing is renamed, and a game runs exactly as it did.
     /// </remarks>
     public sealed class AffordanceILPostProcessor : ILPostProcessor
     {
-        /// <summary>Scripting define symbol that opts a project into analysis.</summary>
-        /// <remarks>
-        /// Guarded twice on purpose. The assembly definition constrains itself to this symbol, so
-        /// without it this code is never compiled and costs a project nothing — that is what keeps
-        /// the package safe to leave installed through a shipping build. The check below is what
-        /// guarantees no game assembly is touched even if the assembly does get built some other
-        /// way, and it is the only one that can report itself.
-        /// </remarks>
-        internal const string EnableDefine = "ARTEL_AFFORDANCE";
 
         /// <summary>
         /// How long one assembly may be analysed before the rest is left undone.
@@ -82,12 +87,12 @@ namespace Artel.Affordances.CodeGen
         /// though it is a reason not to touch the assembly and this is where those live. Answering
         /// no here means <see cref="Process"/> is never called, and <see cref="Process"/> is what
         /// holds the diagnostics — so a refusal decided here is a refusal nobody is told about.
-        /// The two answered here are ones a person already knows the answer to: they set the
-        /// define, and they know what they named their assemblies.
+        /// The one answered here is the one a person already knows the answer to: they know what
+        /// they named their assemblies.
         /// </remarks>
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
-            return IsEnabledFor(compiledAssembly) && !IsSkipped(compiledAssembly.Name);
+            return !IsSkipped(compiledAssembly.Name);
         }
 
         public override ILPostProcessResult Process(ICompiledAssembly compiledAssembly)
@@ -746,26 +751,6 @@ namespace Artel.Affordances.CodeGen
                 (related.Count > 0 ? string.Join(", ", related) : "none") + ".");
 
             return null;
-        }
-
-        /// <summary>True when the project asked for analysis by defining <see cref="EnableDefine"/>.</summary>
-        private static bool IsEnabledFor(ICompiledAssembly compiledAssembly)
-        {
-            var defines = compiledAssembly.Defines;
-            if (defines == null)
-            {
-                return false;
-            }
-
-            foreach (var define in defines)
-            {
-                if (string.Equals(define, EnableDefine, StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         /// <summary>

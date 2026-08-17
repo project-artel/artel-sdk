@@ -17,7 +17,9 @@ namespace Artel.Affordances.Scan
     /// an account of everywhere it has been. Reaching the screens nobody walked to is what
     /// <see cref="WalkAllScenes"/> is for.
     ///
-    /// Compiled only under the discovery define, so a shipping build has none of this in it.
+    /// Always compiled, and doing nothing is the release build's business rather than the
+    /// compiler's: the subscription below is the only thing that makes any of this run, and it is
+    /// held only where <c>UNITY_EDITOR</c> or <c>DEVELOPMENT_BUILD</c> is true.
     /// </remarks>
     public static class AffordanceBootstrap
     {
@@ -27,14 +29,11 @@ namespace Artel.Affordances.Scan
         public static string ReportPath => Path.Combine(Application.persistentDataPath, FileName);
 
         /// <remarks>
-        /// Nothing is subscribed to in a released game. The define this assembly compiles behind
-        /// says the tooling may exist; this says it should actually do something, and the two are
-        /// different questions — the first is a project's decision and stays set for as long as
-        /// they are working on the game, the second is true only while someone is developing.
+        /// Nothing is subscribed to in a released game. Asked as an <c>#if</c> rather than a runtime
+        /// test so a shipping player holds no subscription, no callback, and no reason to have
+        /// loaded any of this.
         ///
-        /// Asked as an <c>#if</c> rather than a runtime test so a shipping player holds no
-        /// subscription, no callback, and no reason to have loaded any of this. The same pair of
-        /// symbols is read from the other side in
+        /// The same pair of symbols is read from the other side in
         /// <c>AffordanceILPostProcessor.IsDiscoveryBuild</c>, which decides whether the evidence
         /// this reads was ever baked. Change one and change the other: this one cannot share a
         /// constant with it, because a preprocessor test is evaluated where its own assembly is
