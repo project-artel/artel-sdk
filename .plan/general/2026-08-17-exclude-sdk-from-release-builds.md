@@ -59,6 +59,10 @@ Editor와 Development Build에서만 SDK 런타임 어셈블리(`Artel.Runtime`)
     `defineConstraints`에 `UNITY_EDITOR || DEVELOPMENT_BUILD` 추가.
   - `Tests/Fixtures/Artel.Tracking.Fixtures.asmdef`에 `Artel.Attributes` 참조 추가
     (fixture가 어트리뷰트를 단다).
+  - 같은 asmdef에 `UNITY_INCLUDE_TESTS` 제약 추가. 이 어셈블리에는 제약도
+    `TestAssemblies` 표시도 없어서, 로컬 패키지로 설치된 프로젝트의 플레이어 빌드에
+    fixture MonoBehaviour가 그대로 실려 나갔다(첫 릴리스 빌드 산출물에서 확인).
+    다른 테스트 asmdef는 이미 Editor 전용이거나 `TestAssemblies`라 대상이 아니다.
 - [x] **Step 2: 위버가 릴리스에서 스스로 꺼지게 한다**
   - `ArtelILPostProcessor.WillProcess`: 대상 판정 기준을
     "`Artel.Runtime` 또는 `Artel.Attributes`를 참조" 로 넓히고, 두 SDK 어셈블리 자신과
@@ -115,6 +119,11 @@ Editor와 Development Build에서만 SDK 런타임 어셈블리(`Artel.Runtime`)
     위빙이 실제로 꺼졌다.
   - 개발 빌드: `Artel.Runtime.dll`, `websocket-sharp.dll` 포함,
     `Assembly-CSharp.dll`에 위빙 흔적 그대로.
+- `samples/WordVenture`(서브모듈 커밋 `20623b1`) Windows Standalone 릴리스·개발 빌드 모두
+  Succeeded. 릴리스 `WordVenture_Data/Managed`에 남은 SDK 어셈블리는
+  `Artel.Attributes.dll` 하나뿐이고, 어트리뷰트를 쓰는 `Assets/Scenes/Test/TrackingTest.cs`도
+  정상 컴파일된다. 개발 빌드에는 `Artel.Runtime.dll`, `websocket-sharp.dll`, 위빙 흔적이
+  모두 있다.
 - `Unity.WebRTC.dll`은 릴리스 산출물에 남는다. 참조하는 어셈블리가 사라져도 패키지
   의존성이라 어셈블리 자체는 실린다 — 아래 Open Questions 참고.
 
