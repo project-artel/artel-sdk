@@ -9,7 +9,7 @@ namespace Artel.CodeGen
 {
     internal sealed class ActionMethodWeaver
     {
-        private const string RuntimeAssemblyName = "Artel.Runtime";
+        private const string AttributesAssemblyName = "Artel.Attributes";
         private const string ActionAttributeName = "Artel.Tracking.ArtelActionAttribute";
         private const string AsyncAttributeName = "System.Runtime.CompilerServices.AsyncStateMachineAttribute";
         private const string IteratorAttributeName = "System.Runtime.CompilerServices.IteratorStateMachineAttribute";
@@ -27,39 +27,39 @@ namespace Artel.CodeGen
         private readonly TypeReference exceptionType;
 
         /// <summary>
-        /// 대상 어셈블리가 런타임을 실제로 참조할 때만 위버를 만든다. 참조가 없으면 null.
+        /// 대상 어셈블리가 어트리뷰트 어셈블리를 실제로 참조할 때만 위버를 만든다. 참조가 없으면 null.
         /// </summary>
         /// <remarks>
         /// <c>ArtelILPostProcessor.WillProcess</c>의 검사만으로는 부족하다. 거기서 보는
         /// <c>ICompiledAssembly.References</c>는 컴파일러에 넘긴 참조 목록이고,
-        /// <c>Artel.Runtime</c>은 <c>autoReferenced</c>라 SDK를 쓰지 않는 게임 어셈블리에도
+        /// SDK 어셈블리는 <c>autoReferenced</c>라 SDK를 쓰지 않는 게임 어셈블리에도
         /// 항상 들어 있다. 반면 여기서 보는 <c>module.AssemblyReferences</c>는 IL이 실제로
         /// 사용한 것만 남는 메타데이터라, SDK 타입을 한 번도 안 쓴 <c>Assembly-CSharp</c>에는
         /// 없다. 둘을 같은 것으로 보면 게임 스크립트가 하나만 있어도 위버가 죽고 프로젝트
         /// 전체 컴파일이 멈춘다.
         ///
-        /// 참조가 없다는 것은 <c>[ArtelAction]</c>도 없다는 뜻이다. 어트리뷰트 타입 자체가
-        /// 런타임 어셈블리에 있으므로, 하나라도 붙었다면 참조가 남는다. 그래서 조용히
-        /// 건너뛰는 것이 맞고, 놓치는 위빙은 없다.
+        /// 기준이 <c>Artel.Attributes</c>인 이유는 <c>[ArtelAction]</c> 타입이 거기 있기
+        /// 때문이다. 참조가 없다는 것은 어트리뷰트도 없다는 뜻이므로 조용히 건너뛰는 것이
+        /// 맞고, 놓치는 위빙은 없다.
         /// </remarks>
-        public static ActionMethodWeaver TryCreate(ModuleDefinition module, List<DiagnosticMessage> diagnostics)
+        public static ActionMethodWeaver TryCreate(
+            ModuleDefinition module,
+            ModuleDefinition runtimeModule,
+            List<DiagnosticMessage> diagnostics)
         {
-            var runtimeReference = module.AssemblyReferences
-                .FirstOrDefault(reference => reference.Name == RuntimeAssemblyName);
+            var usesAttributes = module.AssemblyReferences
+                .Any(reference => reference.Name == AttributesAssemblyName);
 
-            return runtimeReference == null
-                ? null
-                : new ActionMethodWeaver(module, diagnostics, runtimeReference);
+            return usesAttributes ? new ActionMethodWeaver(module, runtimeModule, diagnostics) : null;
         }
 
         private ActionMethodWeaver(
             ModuleDefinition module,
-            List<DiagnosticMessage> diagnostics,
-            AssemblyNameReference runtimeReference)
+            ModuleDefinition runtimeModule,
+            List<DiagnosticMessage> diagnostics)
         {
             this.module = module;
             this.diagnostics = diagnostics;
-            var runtimeModule = module.AssemblyResolver.Resolve(runtimeReference).MainModule;
             var actionSource = runtimeModule.GetType("Artel.Tracking.IArtelActionSource");
             var buffer = runtimeModule.GetType("Artel.Tracking.ActionInvocationBuffer");
             var recorder = runtimeModule.GetType("Artel.Tracking.ArtelActionRecorder");
@@ -244,6 +244,10 @@ namespace Artel.CodeGen
                 HandlerEnd = handlerEnd
             });
         }
+
+        /// <summary>이 모듈 어딘가에 <c>[ArtelAction]</c>이 붙어 있는지.</summary>
+        public static bool ContainsActionAttribute(ModuleDefinition module) =>
+            module.Types.SelectMany(SelfAndNestedTypes).SelectMany(type => type.Methods).Any(HasActionAttribute);
 
         private static bool HasActionAttribute(MethodDefinition method) =>
             method.CustomAttributes.Any(attribute => attribute.AttributeType.FullName == ActionAttributeName);

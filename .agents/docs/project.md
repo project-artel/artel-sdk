@@ -12,7 +12,12 @@ Fill this document during project initialization. Agents must verify commands ag
 ## Architecture
 
 - Entry points: TODO
-- Main modules: TODO
+- Main modules: `Packages/kr.artel.sdk` ships two runtime assemblies —
+  `Artel.Attributes` (`Runtime/Attributes/`, `[ArtelAction]` and `[ArtelState]`
+  only, always compiled) and `Artel.Runtime` (everything else, constrained to
+  `UNITY_EDITOR || DEVELOPMENT_BUILD`). `Unity.Artel.CodeGen`
+  (`Editor/CodeGen/`) weaves game assemblies and is Editor-only. See *Release
+  builds* in `README.md` for how to verify the exclusion.
 - Dependency direction: TODO
 - External systems: GitHub repository `project-artel/artel-sdk`; Notion workspace via the `ntn` CLI; Jira project `ARTEL` via the `mcp-atlassian` MCP server
 - Persistent data: TODO

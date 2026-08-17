@@ -2,6 +2,7 @@
   "name": "Artel.Runtime.Tests",
   "rootNamespace": "Artel.Tests.Protocol",
   "references": [
+    "Artel.Attributes",
     "Artel.Runtime",
     "Artel.Tracking.Fixtures",
     "Unity.TextMeshPro"

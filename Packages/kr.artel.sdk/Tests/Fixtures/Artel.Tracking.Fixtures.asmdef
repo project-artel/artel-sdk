@@ -2,6 +2,7 @@
   "name": "Artel.Tracking.Fixtures",
   "rootNamespace": "Artel.Tests.Tracking",
   "references": [
+    "Artel.Attributes",
     "Artel.Runtime"
   ],
   "includePlatforms": [],

@@ -23,6 +23,18 @@ namespace Artel.Tests.Tracking
             UnityEngine.Object.DestroyImmediate(gameObject);
         }
 
+        /// <remarks>
+        /// 어트리뷰트는 릴리스 빌드에서도 컴파일되는 <c>Artel.Attributes</c>에만 있어야 한다.
+        /// 런타임 어셈블리로 되돌아가면 게임 코드가 릴리스 빌드에서 타입을 찾지 못해 컴파일이
+        /// 깨지는데, 그건 빌드를 만들어 봐야 알 수 있다. 여기서 잡는다.
+        /// </remarks>
+        [Test]
+        public void TrackingAttributes_LiveInTheAlwaysCompiledAssembly()
+        {
+            Assert.That(typeof(ArtelActionAttribute).Assembly.GetName().Name, Is.EqualTo("Artel.Attributes"));
+            Assert.That(typeof(ArtelStateAttribute).Assembly.GetName().Name, Is.EqualTo("Artel.Attributes"));
+        }
+
         [Test]
         public void IlPostProcessor_InjectsActionSourceAndRecordsSuccess()
         {

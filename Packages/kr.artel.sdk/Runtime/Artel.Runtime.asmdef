@@ -2,6 +2,7 @@
   "name": "Artel.Runtime",
   "rootNamespace": "Artel",
   "references": [
+    "Artel.Attributes",
     "Unity.TextMeshPro",
     "Unity.WebRTC",
     "UnityEngine.UI",
@@ -16,7 +17,9 @@
     "websocket-sharp.dll"
   ],
   "autoReferenced": true,
-  "defineConstraints": [],
+  "defineConstraints": [
+    "UNITY_EDITOR || DEVELOPMENT_BUILD"
+  ],
   "versionDefines": [],
   "noEngineReferences": false
 }

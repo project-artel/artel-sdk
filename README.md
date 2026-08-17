@@ -13,6 +13,40 @@ Packages/kr.artel.sdk
 Runtime scripts are under `Runtime/` and compiled through
 `Artel.Runtime.asmdef`.
 
+## Release builds
+
+The SDK is a QA tool, so its runtime is kept out of release players. Two
+assemblies split that responsibility:
+
+| Assembly | Location | Compiled in |
+| --- | --- | --- |
+| `Artel.Attributes` | `Runtime/Attributes/` | always |
+| `Artel.Runtime` | `Runtime/` | Editor and Development Build only |
+
+`Artel.Runtime.asmdef` carries the define constraint
+`UNITY_EDITOR || DEVELOPMENT_BUILD`, and `Runtime/Plugins/websocket-sharp.dll`
+carries the same constraint through its plugin importer.
+
+`Artel.Attributes` holds `[ArtelAction]` and `[ArtelState]` only. Game code that
+tags its own `MonoBehaviour`s keeps compiling in release builds without any
+conditional compilation of its own; the attributes stay as metadata and nothing
+reads them. Action and input weaving is skipped in the same builds, because the
+IL post-processor finds no `Artel.Runtime` to weave against.
+
+### Verifying that a release build excludes the SDK
+
+Build the player without *Development Build*, then list the managed assemblies
+in the output:
+
+```bash
+ls <Build>_Data/Managed | grep -i artel
+```
+
+A release build lists `Artel.Attributes.dll` and nothing else from the SDK — no
+`Artel.Runtime.dll` and no `websocket-sharp.dll`. A development build of the same
+project lists all three. On macOS the same files live under
+`<Build>.app/Contents/Resources/Data/Managed`.
+
 ## Sample
 
 `samples/WordVenture` is included as the sample Unity project. It references

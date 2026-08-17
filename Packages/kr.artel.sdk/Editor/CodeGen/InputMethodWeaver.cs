@@ -7,6 +7,7 @@ namespace Artel.CodeGen
     internal sealed class InputMethodWeaver
     {
         private const string RuntimeAssemblyName = "Artel.Runtime";
+        private const string AttributesAssemblyName = "Artel.Attributes";
         private const string UnityInputTypeName = "UnityEngine.Input";
         private static readonly HashSet<string> SupportedMethodNames = new HashSet<string>
         {
@@ -30,22 +31,22 @@ namespace Artel.CodeGen
         private readonly Dictionary<string, MethodReference> proxyMethods;
 
         /// <summary>
-        /// 대상 어셈블리가 런타임을 실제로 참조할 때만 위버를 만든다. 참조가 없으면 null.
+        /// 대상 어셈블리가 SDK 어셈블리를 실제로 참조할 때만 위버를 만든다. 참조가 없으면 null.
         /// 이유는 <see cref="ActionMethodWeaver.TryCreate"/>와 같다 — 컴파일러 참조 목록과
-        /// IL 메타데이터 참조 목록이 다르다.
+        /// IL 메타데이터 참조 목록이 다르다. 어트리뷰트만 쓰는 어셈블리도 SDK 사용자이므로
+        /// 두 어셈블리 중 하나만 참조해도 입력 치환 대상이다.
         /// </summary>
-        public static InputMethodWeaver TryCreate(ModuleDefinition module)
+        public static InputMethodWeaver TryCreate(ModuleDefinition module, ModuleDefinition runtimeModule)
         {
-            var runtimeReference = module.AssemblyReferences
-                .FirstOrDefault(reference => reference.Name == RuntimeAssemblyName);
+            var usesSdk = module.AssemblyReferences.Any(reference =>
+                reference.Name == RuntimeAssemblyName || reference.Name == AttributesAssemblyName);
 
-            return runtimeReference == null ? null : new InputMethodWeaver(module, runtimeReference);
+            return usesSdk ? new InputMethodWeaver(module, runtimeModule) : null;
         }
 
-        private InputMethodWeaver(ModuleDefinition module, AssemblyNameReference runtimeReference)
+        private InputMethodWeaver(ModuleDefinition module, ModuleDefinition runtimeModule)
         {
             this.module = module;
-            var runtimeModule = module.AssemblyResolver.Resolve(runtimeReference).MainModule;
             var proxyType = runtimeModule.GetType("Artel.ArtelInput");
 
             proxyMethods = proxyType.Methods
