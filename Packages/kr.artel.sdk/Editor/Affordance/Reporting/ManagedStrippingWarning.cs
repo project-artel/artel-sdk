@@ -30,10 +30,13 @@ namespace Artel.Affordances.Editor
                 return;
             }
 
+            // No longer offers a switch to turn off instead. There is not one any more, and naming a
+            // menu that does not exist would send someone looking for it. Lowering the level is the
+            // only answer, and a build that reports nothing is worth saying so about either way.
             Debug.LogWarning(
                 "[Artel] Managed stripping is set to High, which removes this package from the " +
-                "build. The game will run and write no report. Lower the stripping level, or turn " +
-                "discovery off under Artel / Discovery so the absence is intended.");
+                "build. The game will run and write no report. Lower the stripping level to keep " +
+                "it, or expect no readings from this build.");
         }
     }
 }
