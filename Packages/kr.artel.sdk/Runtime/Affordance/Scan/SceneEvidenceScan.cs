@@ -7,16 +7,15 @@ using UnityEngine.SceneManagement;
 namespace Artel.Affordances.Scan
 {
     /// <summary>
-    /// Joins what the code was found to do with what one scene actually holds.
+    /// 코드가 하는 것으로 밝혀진 것과, 한 씬이 실제로 쥐고 있는 것을 잇는다.
     /// </summary>
     /// <remarks>
-    /// The compiled evidence knows types and methods and nothing about screens. The scene knows
-    /// which objects exist, which are switched off, and which button was wired to which method, and
-    /// nothing about what any of it does. Neither half is a specification on its own.
+    /// 컴파일된 근거는 타입과 메서드를 알고 화면에 대해서는 아무것도 모른다. 씬은 어떤 객체가 존재하는지, 어느 것이 꺼져
+    /// 있는지, 어느 버튼이 어느 메서드에 연결됐는지를 알고, 그것들이 무엇을 하는지에 대해서는 아무것도 모른다. 어느 절반도
+    /// 홀로 명세가 아니다.
     ///
-    /// The evidence documents are copied through untouched. Their schema belongs to the analyser
-    /// that wrote them and to the agent that reads them; re-parsing here would put a third opinion
-    /// in the middle that has to be kept in step with both.
+    /// 근거 문서는 손대지 않고 그대로 통과시킨다. 그 스키마는 그것을 쓴 분석기와 그것을 읽는 에이전트의 것이다. 여기서 다시
+    /// 파싱하면 그 둘 모두와 발을 맞춰야 하는 세 번째 의견을 한가운데 두게 된다.
     /// </remarks>
     public static class SceneEvidenceScan
     {
@@ -25,16 +24,15 @@ namespace Artel.Affordances.Scan
         private const int MaxCallsPerComponent = 64;
 
         /// <summary>
-        /// How far under an object its label is looked for.
+        /// 객체 아래로 그 라벨을 얼마나 깊이 찾는지.
         /// </summary>
         /// <remarks>
-        /// A caption sits a child or two down. Walking the whole subtree would make a canvas claim
-        /// every word on the screen, and the answer to that is not a wrong label but no label —
-        /// which is what several words already means here.
+        /// 캡션은 자식 한둘 아래에 앉아 있다. 서브트리 전체를 걸으면 캔버스가 화면의 모든 단어를 제 것이라 주장하게 되고,
+        /// 그에 대한 답은 틀린 라벨이 아니라 라벨 없음이다 — 여기서 단어가 여럿이라는 것이 이미 뜻하는 바가 그것이다.
         /// </remarks>
         private const int MaxLabelDepth = 3;
 
-        /// <summary>Reads every loaded scene into the report.</summary>
+        /// <summary>로드된 모든 씬을 리포트로 읽어 들인다.</summary>
         public static int CaptureLoaded()
         {
             var captured = 0;
@@ -50,7 +48,7 @@ namespace Artel.Affordances.Scan
             return captured;
         }
 
-        /// <summary>Reads one scene into the report, replacing anything said about it before.</summary>
+        /// <summary>씬 하나를 리포트로 읽어 들이고, 전에 그것에 대해 말한 것을 갈아치운다.</summary>
         public static bool Capture(Scene scene)
         {
             if (!scene.IsValid())
@@ -76,9 +74,8 @@ namespace Artel.Affordances.Scan
             {
                 var root = roots[rootIndex];
 
-                // Inactive objects included on purpose. A menu that is switched off right now is
-                // still something the game can show, and leaving it out makes the result true of
-                // one moment rather than of the screen.
+                // 비활성 객체를 일부러 포함한다. 지금 꺼져 있는 메뉴도 게임이 보여 줄 수 있는 것이고, 그것을 빼면 결과가 화면이 아니라
+                // 한순간에 대해서만 참이 된다.
                 foreach (var transform in root.GetComponentsInChildren<Transform>(true))
                 {
                     if (objects >= MaxObjects)
@@ -99,22 +96,18 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Reads the objects the game kept across scene loads.
+        /// 게임이 씬 로드를 건너 쥐고 있던 객체들을 읽는다.
         /// </summary>
         /// <remarks>
-        /// They sit in a scene of their own that walking the build settings never reaches, and it is
-        /// where a game puts what it does not want to lose — the save controller, the singletons,
-        /// the run's progress. Every scene in the report used to carry a gap saying so; a gap is the
-        /// right thing to say about something nobody looked at, and the wrong thing to keep saying
-        /// once somebody can.
+        /// 그것들은 빌드 설정을 순회해서는 결코 닿지 않는 제 씬에 앉아 있고, 거기가 게임이 잃고 싶지 않은 것을 두는 자리다 —
+        /// 세이브 컨트롤러, 싱글턴, 실행의 진행 상황. 리포트의 모든 씬이 예전에는 그렇다고 말하는 공백을 나르고 있었다. 공백은
+        /// 아무도 들여다보지 않은 것에 대해 할 말로는 옳지만, 일단 누군가 들여다볼 수 있게 된 뒤에도 계속 할 말로는 틀렸다.
         ///
-        /// Kept apart from the scenes rather than copied into each. One of these objects is not in
-        /// any screen and is in all of them, and writing it under a scene name would make it look
-        /// like something a tester could find there.
+        /// 씬마다 복사해 넣지 않고 씬들과 떼어 둔다. 이 객체들 중 하나는 어느 화면에도 없으면서 모든 화면에 있고, 그것을 씬
+        /// 이름 아래에 쓰면 테스터가 거기서 찾을 수 있는 무엇처럼 보이게 된다.
         ///
-        /// Nothing is here before the game has run. An editor walk opens scenes as they were saved,
-        /// so there is no such scene to read and the report says that instead of pretending the
-        /// game has none.
+        /// 게임이 돌기 전에는 여기 아무것도 없다. 에디터 순회는 씬을 저장된 대로 여는 것이므로 읽을 그런 씬이 아예 없고,
+        /// 리포트는 게임에 그런 것이 없는 척하는 대신 그렇다고 말한다.
         /// </remarks>
         public static bool CapturePersistent(Scene scene)
         {
@@ -132,8 +125,7 @@ namespace Artel.Affordances.Scan
             {
                 var root = roots[rootIndex];
 
-                // The walk's own carrier lives here too. Reporting it would be reporting the
-                // instrument rather than the game.
+                // 순회 자신의 carrier 도 여기 산다. 그것을 보고하는 것은 게임이 아니라 계기를 보고하는 일이다.
                 if (root == null || root.hideFlags != HideFlags.None)
                 {
                     continue;
@@ -149,7 +141,7 @@ namespace Artel.Affordances.Scan
             return true;
         }
 
-        /// <summary>Writes one object, and says whether it was worth writing.</summary>
+        /// <summary>객체 하나를 쓰고, 쓸 값이 있었는지 말한다.</summary>
         private static bool Describe(
             StringBuilder text,
             GameObject subject,
@@ -185,8 +177,8 @@ namespace Artel.Affordances.Scan
 
                 if (component == null)
                 {
-                    // A script whose type no longer exists. Reported because a missing component is
-                    // a broken object, and a scan that skips it silently makes the scene look sound.
+                    // 타입이 더는 존재하지 않는 스크립트. 빠진 컴포넌트는 망가진 객체이고, 그것을 조용히 건너뛰는 스캔은 씬을 멀쩡해
+                    // 보이게 만들기 때문에 보고한다.
                     gaps.Add("missing-script:" + subject.name);
                     continue;
                 }
@@ -215,8 +207,7 @@ namespace Artel.Affordances.Scan
             Json.Property(text, "path", path);
             text.Append(',');
 
-            // Five enemies of one kind share a path. Which of the five is a question the path cannot
-            // answer and this can.
+            // 한 종류의 적 다섯은 경로를 공유한다. 다섯 중 어느 것인지는 경로가 답할 수 없고 이것이 답할 수 있는 물음이다.
             Json.Property(text, "selector", ScenePath.SelectorOf(subject.transform, rootIndex));
             text.Append(',');
             Json.Property(text, "scene", scene);
@@ -283,42 +274,37 @@ namespace Artel.Affordances.Scan
             return true;
         }
 
-        /// <summary>Words on something a player can press.</summary>
+        /// <summary>플레이어가 누를 수 있는 것 위의 단어들.</summary>
         private const string Caption = "control-caption";
 
-        /// <summary>Words that are there to be read, not to name the thing showing them.</summary>
+        /// <summary>그것을 보여 주는 것의 이름이 아니라, 읽으라고 거기 있는 단어들.</summary>
         private const string Observed = "observed-text";
 
-        /// <summary>The picture drawn on something.</summary>
+        /// <summary>무언가 위에 그려진 그림.</summary>
         private const string Picture = "sprite";
 
         /// <summary>
-        /// What an object shows — the words on it, and failing that the picture drawn on it.
+        /// 객체가 무엇을 보여 주는가 — 그 위의 단어들, 그것이 없으면 그 위에 그려진 그림.
         /// </summary>
         /// <remarks>
-        /// An object's name is what a developer called it, and a test step written from it tells a
-        /// tester to press something that is not written anywhere on the screen. In the sample game
-        /// one button is called <c>Button (Legacy)</c>, which is Unity's own placeholder and says
-        /// nothing, and another is called <c>MapSceneButton</c> while it opens the story — a name
-        /// that is worse than none because it reads as an answer.
+        /// 객체의 이름은 개발자가 그것을 부른 이름이고, 거기서 쓴 테스트 단계는 테스터에게 화면 어디에도 적혀 있지 않은 것을
+        /// 누르라고 시킨다. 샘플 게임에서 버튼 하나는 <c>Button (Legacy)</c> 라 불리는데 그것은 Unity 자신의 자리표시자이고
+        /// 아무 말도 하지 않으며, 다른 하나는 이야기를 여는데도 <c>MapSceneButton</c> 이라 불린다 — 답처럼 읽히기 때문에 없는
+        /// 것보다 나쁜 이름이다.
         ///
-        /// The words are the point, and in that game none of the buttons has any: every one of them
-        /// is a picture. So the sprite's name is taken when there is no text, kept in a field of its
-        /// own because an asset's filename is not what the screen says — it is the nearest thing to
-        /// it that exists, and it was enough to settle what <c>MapSceneButton</c> is
-        /// (<c>Sprite_Start_Button</c>).
+        /// 요점은 단어인데, 그 게임에서는 어떤 버튼에도 단어가 없다: 하나같이 그림이다. 그래서 텍스트가 없을 때 스프라이트의
+        /// 이름을 취하고, 애셋의 파일 이름은 화면이 말하는 바가 아니므로 제 필드에 따로 둔다 — 그것이 존재하는 것 중 그에 가장
+        /// 가까운 것이고, <c>MapSceneButton</c> 이 무엇인지 결판내기에는 충분했다 (<c>Sprite_Start_Button</c>).
         ///
-        /// Neither is written as a component. Text and images are not things a test acts on, and
-        /// putting them in the report would bury the handful that are under the scenery they are
-        /// painted with.
+        /// 둘 다 컴포넌트로 쓰지 않는다. 텍스트와 이미지는 테스트가 작용하는 것이 아니고, 그것들을 리포트에 넣으면 정작 작용
+        /// 대상인 몇 개가 그것들이 칠해진 배경 아래 파묻힌다.
         ///
-        /// Several different words under one object and none is taken. Which of them is the label is
-        /// a question this cannot answer — a button may carry a caption, a shadow and a count — and
-        /// guessing is how a name that reads as an answer gets made in the first place. The same
-        /// word twice is one word, so a caption and its drop shadow are not a disagreement.
+        /// 한 객체 아래 서로 다른 단어가 여럿이면 아무것도 취하지 않는다. 그중 무엇이 라벨인지는 이것이 답할 수 없는 물음이고 —
+        /// 버튼은 캡션과 그림자와 개수를 함께 나를 수 있다 — 추측이야말로 답처럼 읽히는 이름이 애초에 만들어지는 방식이다. 같은
+        /// 단어 둘은 한 단어이므로, 캡션과 그 그림자는 불일치가 아니다.
         ///
-        /// All of it is an observation and not a rule: it is what the screen showed while the scan
-        /// ran, and a label the game writes at runtime was something else a moment earlier.
+        /// 이 전부는 관측이지 규칙이 아니다: 스캔이 도는 동안 화면이 보여 준 것이고, 게임이 런타임에 쓰는 라벨은 한순간 전에는
+        /// 다른 것이었다.
         /// </remarks>
         private sealed class Visual
         {
@@ -327,7 +313,7 @@ namespace Artel.Affordances.Scan
             internal string From;
             internal string Type;
 
-            /// <summary>Drawn on something a player can press, so it may name the control.</summary>
+            /// <summary>플레이어가 누를 수 있는 것 위에 그려져 있어, 그 컨트롤의 이름일 수 있는 것.</summary>
             internal bool OnControl;
         }
 
@@ -344,8 +330,7 @@ namespace Artel.Affordances.Scan
 
                 foreach (var seen in All)
                 {
-                    // The same word twice is one word — a caption and its drop shadow are not two
-                    // things showing.
+                    // 같은 단어 둘은 한 단어다 — 캡션과 그 그림자는 보여 주는 것 둘이 아니다.
                     if (seen.Role == role && seen.Value == value)
                     {
                         return;
@@ -358,7 +343,7 @@ namespace Artel.Affordances.Scan
                 });
             }
 
-            /// <summary>How many of a role are drawn on the control, which is what may name it.</summary>
+            /// <summary>그 컨트롤 위에 그려진 어떤 역할의 것이 몇 개인지. 그것이 컨트롤의 이름일 수 있는 것이다.</summary>
             internal int Count(string role)
             {
                 var found = 0;
@@ -412,8 +397,7 @@ namespace Artel.Affordances.Scan
 
             var path = ScenePath.Of(at);
 
-            // Once something on the way down can be pressed, everything drawn under it is drawn on
-            // the thing that is pressed.
+            // 내려가는 길에 누를 수 있는 것이 한 번 나오면, 그 아래에 그려진 모든 것은 눌리는 그것 위에 그려진 것이다.
             pressable = pressable || Pressable(components);
 
             foreach (var component in components)
@@ -441,23 +425,20 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Whether a player can press this, which is what tells a caption from a readout.
+        /// 플레이어가 이것을 누를 수 있는지. 그것이 캡션과 표시값을 가른다.
         /// </summary>
         /// <remarks>
-        /// The question the report kept answering wrongly was which of an object's words is its
-        /// name. An enemy showing <c>20</c> is not an enemy called twenty, and a chat window showing
-        /// the speaker's name is not a control called that — but both arrived in the same field as
-        /// the combine button's <c>Combine</c>, and nothing downstream could tell them apart. In the
-        /// development build sixteen of twenty-two were numbers.
+        /// 리포트가 계속 틀리게 답하던 물음은 객체의 단어들 중 무엇이 그 이름인가였다. <c>20</c> 을 보여 주는 적은 스물이라고
+        /// 불리는 적이 아니고, 화자의 이름을 보여 주는 채팅 창은 그렇게 불리는 컨트롤이 아니다 — 그런데 둘 다 합치기 버튼의
+        /// <c>Combine</c> 과 같은 필드에 도착했고, 그 아래의 무엇도 그것들을 가릴 수 없었다. 개발 빌드에서 스물둘 중 열여섯이
+        /// 숫자였다.
         ///
-        /// Answered by what the object is rather than by what the words look like. Text under
-        /// something a player can press is written on the thing being pressed, and that is a caption
-        /// whatever it says; text anywhere else is something the game is showing at that moment.
-        /// Guessing from the shape of the string — "a number is not a name" — would be right here
-        /// and wrong on the first button labelled with a number.
+        /// 단어가 어떻게 생겼는지가 아니라 객체가 무엇인지로 답한다. 플레이어가 누를 수 있는 것 아래의 텍스트는 눌리는 그것 위에
+        /// 쓰인 것이고, 무엇이라 적혀 있든 그것은 캡션이다. 그 밖의 자리에 있는 텍스트는 게임이 그 순간 보여 주고 있는 것이다.
+        /// 문자열의 모양으로 추측하는 것은 — "숫자는 이름이 아니다" — 여기서는 맞고 숫자로 라벨을 단 첫 버튼에서 틀린다.
         ///
-        /// Matched on type names for the same reason the rest of this file does: this assembly is
-        /// not built against uGUI, and a project without it must still compile.
+        /// 이 파일의 나머지와 같은 이유로 타입 이름으로 맞춘다: 이 어셈블리는 uGUI 에 대고 빌드되지 않고, 그것이 없는
+        /// 프로젝트도 여전히 컴파일돼야 한다.
         /// </remarks>
         private static bool Pressable(Component[] components)
         {
@@ -481,14 +462,13 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// The string a text component is showing, read without being built against it.
+        /// 텍스트 컴포넌트가 보여 주고 있는 문자열. 그것에 대고 빌드하지 않은 채로 읽는다.
         /// </summary>
         /// <remarks>
-        /// uGUI and TextMeshPro are packages a project may not have, and this assembly references
-        /// neither — the same reason the report already names a component by
-        /// <c>GetType().FullName</c> rather than by a type it was compiled against. Matching on the
-        /// base type covers <c>TextMeshProUGUI</c> and <c>TextMeshPro</c> without naming either, and
-        /// both are engine-side types that obfuscation leaves alone.
+        /// uGUI 와 TextMeshPro 는 프로젝트에 없을 수 있는 패키지이고 이 어셈블리는 둘 다 참조하지 않는다 — 리포트가 이미
+        /// 컴파일 대상 타입이 아니라 <c>GetType().FullName</c> 으로 컴포넌트의 이름을 대는 것과 같은 이유다. 기반 타입으로
+        /// 맞추면 둘 중 어느 이름도 대지 않고 <c>TextMeshProUGUI</c> 와 <c>TextMeshPro</c> 를 덮고, 둘 다 난독화가 건드리지
+        /// 않는 엔진 쪽 타입이다.
         /// </remarks>
         internal static string TextOf(Component component)
         {
@@ -513,7 +493,7 @@ namespace Artel.Affordances.Scan
             }
             catch (Exception)
             {
-                // A property that throws is one component, not a reason to lose the object.
+                // 던지는 프로퍼티는 컴포넌트 하나이지, 객체를 잃을 이유가 아니다.
                 return null;
             }
         }
@@ -524,13 +504,12 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// The name of the picture drawn on a component, when it is not one Unity supplied.
+        /// 컴포넌트 위에 그려진 그림의 이름. 그것이 Unity 가 준 것이 아닐 때.
         /// </summary>
         /// <remarks>
-        /// Unity ships a handful of sprites for anyone who has not drawn their own, and a button
-        /// left with one of them is a button nobody has named — the same thing <c>Button (Legacy)</c>
-        /// says about its object. Reporting <c>UISprite</c> would put a word in a test step that is
-        /// not on the screen and not in the game.
+        /// Unity 는 제 것을 그리지 않은 사람을 위해 스프라이트 몇 개를 함께 보내고, 그중 하나를 그대로 둔 버튼은 아무도 이름을
+        /// 붙이지 않은 버튼이다 — <c>Button (Legacy)</c> 가 제 객체에 대해 말하는 것과 같다. <c>UISprite</c> 를 보고하면
+        /// 화면에도 없고 게임에도 없는 단어를 테스트 단계에 넣게 된다.
         /// </remarks>
         internal static string SpriteOf(Component component)
         {
@@ -579,7 +558,7 @@ namespace Artel.Affordances.Scan
             return false;
         }
 
-        /// <summary>Writes one component, and says whether it had anything to say.</summary>
+        /// <summary>컴포넌트 하나를 쓰고, 할 말이 있었는지 말한다.</summary>
         private static bool Describe(StringBuilder text, Component component, bool needsComma)
         {
             var evidence = AffordanceCatalog.For(component.GetType());
@@ -594,8 +573,7 @@ namespace Artel.Affordances.Scan
                 calls.Clear();
             }
 
-            // Most components are scenery. Writing every transform and sprite would bury the few
-            // that a test can act on.
+            // 컴포넌트 대부분은 배경이다. 모든 transform 과 스프라이트를 쓰면 테스트가 작용할 수 있는 몇 개가 파묻힌다.
             if (string.IsNullOrEmpty(evidence) && calls.Count == 0)
             {
                 return false;
@@ -603,8 +581,8 @@ namespace Artel.Affordances.Scan
 
             var refs = new List<Reference>();
 
-            // Only for components worth writing at all. Reading every reference of every sprite and
-            // collider in a scene would cost the whole scene to say nothing.
+            // 애초에 쓸 값이 있는 컴포넌트에 대해서만. 씬의 모든 스프라이트와 콜라이더의 모든 참조를 읽는 것은 아무 말도 하지 않기
+            // 위해 씬 전체만큼의 값을 치르는 일이다.
             try
             {
                 SerializedReferences.Read(component, refs);
@@ -621,8 +599,8 @@ namespace Artel.Affordances.Scan
 
             var type = component.GetType().FullName;
 
-            // The evidence goes in the table under this name, not here. Fifteen slimes of one kind
-            // are fifteen places to act on and one thing to know about them.
+            // 근거는 여기가 아니라 이 이름 아래의 표에 들어간다. 한 종류의 슬라임 열다섯은 작용할 자리 열다섯이고 그것들에 대해
+            // 알아야 할 것은 하나다.
             Remember(type, evidence);
 
             text.Append('{');
@@ -640,8 +618,7 @@ namespace Artel.Affordances.Scan
 
                 var call = calls[index];
 
-                // Noted even when this component's own type has evidence. What the wiring points at
-                // is a different type from the one that holds the wiring.
+                // 이 컴포넌트 자신의 타입에 근거가 있을 때도 적어 둔다. 배선이 가리키는 것은 그 배선을 쥔 타입과 다른 타입이다.
                 AffordanceReport.Wired(call.TargetType);
 
                 text.Append('{');
@@ -677,8 +654,8 @@ namespace Artel.Affordances.Scan
                 Json.Property(text, "path", reference.Path);
                 text.Append(',');
 
-                // A prefab and a scene root used to be written the same way. Said outright now,
-                // because only one of the two is somewhere a test can be told to go.
+                // 프리팹과 씬 루트는 예전에 같은 방식으로 쓰였다. 이제는 대놓고 말한다. 둘 중 하나만이 테스트에게 가라고 시킬 수 있는
+                // 자리이기 때문이다.
                 Json.Property(text, "asset", reference.Asset);
                 text.Append(",\"carries\":[");
 
@@ -697,10 +674,9 @@ namespace Artel.Affordances.Scan
 
                 text.Append("]}");
 
-                // Told while the owner is in hand, and followed a step or two further because a
-                // prefab is often held through a ScriptableObject. The report needs this the other
-                // way round — from a type nobody met back to the field that would make one — and it
-                // cannot ask that question once the scene is behind it.
+                // 소유자를 손에 쥐고 있는 동안 알아내고, 프리팹은 ScriptableObject 를 거쳐 쥐고 있는 일이 많으므로 한두 걸음 더
+                // 따라간다. 리포트는 이것을 반대 방향으로 필요로 하는데 — 아무도 만나지 못한 타입에서 그것을 만들어낼 필드로 —
+                // 씬을 뒤로하고 나면 그 물음을 물을 수 없다.
                 if (reference.Asset)
                 {
                     try
@@ -709,7 +685,7 @@ namespace Artel.Affordances.Scan
                     }
                     catch (Exception)
                     {
-                        // One unwalkable asset is not a reason to stop describing the scene.
+                        // 걸을 수 없는 애셋 하나가 씬 서술을 멈출 이유는 아니다.
                     }
                 }
             }
@@ -718,11 +694,10 @@ namespace Artel.Affordances.Scan
             return true;
         }
 
-        /// <summary>Puts a type's evidence in the table, the first time that type is met.</summary>
+        /// <summary>어떤 타입을 처음 만났을 때 그 타입의 근거를 표에 넣는다.</summary>
         /// <remarks>
-        /// The document arrives already assembled — one array per type, written that way by the
-        /// analyser and carried whole. Copied through as it is; quoting it as a string would make
-        /// whoever reads this unwrap it again.
+        /// 문서는 이미 조립된 채로 도착한다 — 타입마다 배열 하나이고, 분석기가 그렇게 써서 통째로 날라 온다. 있는 그대로
+        /// 통과시킨다. 문자열로 따옴표를 씌우면 이것을 읽는 쪽이 그것을 다시 벗겨야 한다.
         /// </remarks>
         private static void Remember(string type, string evidence)
         {
