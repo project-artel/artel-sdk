@@ -5,94 +5,78 @@ using UnityEngine;
 namespace Artel.Affordances.Scan
 {
     /// <summary>
-    /// Everything seen so far, across every scene that has been visited.
+    /// 방문한 모든 씬을 통틀어, 여태 본 모든 것.
     /// </summary>
     /// <remarks>
-    /// A game is only ever showing one screen, so a scan is only ever a report about one. Writing
-    /// each scan over the last left a file describing whichever scene happened to load most
-    /// recently — true, and useless for a specification that has to cover the game.
+    /// 게임은 언제나 화면 하나만 보여 주고 있으므로 스캔 하나는 언제나 화면 하나에 대한 리포트다. 스캔마다 앞의 것 위에
+    /// 덮어쓰면 마침 가장 최근에 로드된 씬을 서술하는 파일이 남았다 — 참이면서, 게임을 덮어야 하는 명세에는 쓸모없다.
     ///
-    /// Keyed by scene so that visiting a screen twice corrects the entry rather than duplicating
-    /// it. A scene reached later in the game, with different state behind it, should describe the
-    /// screen as it was found the last time it was actually there.
+    /// 씬으로 키를 잡아 한 화면을 두 번 방문하면 항목이 중복되는 대신 고쳐지도록 한다. 게임 뒤쪽에서 다른 상태를 뒤에 두고
+    /// 닿은 씬은, 실제로 거기 있었던 마지막 때에 발견된 대로 그 화면을 서술해야 한다.
     /// </remarks>
     public static class AffordanceReport
     {
         /// <summary>
-        /// Six: <c>label</c> stopped meaning what it meant.
+        /// 여섯: <c>label</c> 이 뜻하던 것을 그만두었다.
         /// </summary>
         /// <remarks>
-        /// Every version before this one grew. Six is the first that narrowed: <c>label</c> was the
-        /// one thing an object showed and is now what is written on something a player can press,
-        /// so a reader that knew the old meaning and is handed a new document reads an enemy's
-        /// remaining health as a control's name. Sixteen of the sample game's twenty-two were
-        /// exactly that.
+        /// 이전의 모든 버전은 늘어났다. 여섯은 좁아진 첫 번째다: <c>label</c> 은 객체가 보여 주는 그 한 가지였고 이제는 플레이어가
+        /// 누를 수 있는 것 위에 쓰인 것이다. 그래서 옛 뜻을 알던 독자가 새 문서를 받으면 적의 남은 체력을 컨트롤의 이름으로 읽는다.
+        /// 샘플 게임의 스물둘 중 열여섯이 정확히 그것이었다.
         ///
-        /// A number that a reader refuses when it does not recognise it is the right place to say
-        /// so. Refusing loudly is what should happen here — the alternative was leaving it at five
-        /// and letting readers that cannot tell the difference carry on quietly getting it wrong.
+        /// 독자가 알아보지 못할 때 거절하는 숫자가 그렇다고 말할 옳은 자리다. 여기서는 요란하게 거절하는 편이 옳다 — 대안은 다섯에
+        /// 그대로 두고, 차이를 가리지 못하는 독자들이 조용히 계속 틀리게 두는 것이었다.
         ///
-        /// <c>capabilities</c> is beside it and does a different job: the number says which
-        /// generation a document belongs to, and the list says which promises it makes, so a later
-        /// addition that changes nothing's meaning can be announced without shutting the door on
-        /// anyone. Six also brings <c>build</c>, <c>selector</c>, <c>visuals</c> and
-        /// <c>persistentObjects</c>, all of which only add.
+        /// <c>capabilities</c> 가 그 옆에서 다른 일을 한다: 숫자는 문서가 어느 세대에 속하는지를 말하고 목록은 그것이 어떤 약속을
+        /// 하는지를 말하므로, 아무 뜻도 바꾸지 않는 나중의 추가는 누구에게도 문을 닫지 않고 알릴 수 있다. 여섯은 <c>build</c>,
+        /// <c>selector</c>, <c>visuals</c>, <c>persistentObjects</c> 도 함께 들여오는데 전부 더하기만 한다.
         ///
-        /// Two moved evidence out of the components into a table of its own; three added what each
-        /// component's inspector fields point at.
+        /// 둘은 근거를 컴포넌트 밖으로 빼 제 표로 옮겼고, 셋은 각 컴포넌트의 인스펙터 필드가 가리키는 것을 더했다.
         ///
-        /// Four adds <c>unplaced</c> beside <c>types</c>. Everything a reader knew stays where it
-        /// was and means what it meant — <c>types</c> is still only what was met on a GameObject —
-        /// which is the point of a second table rather than a flag inside the first. A reader that
-        /// does not know about <c>unplaced</c> cannot be misled by it, and one that does gets the
-        /// rules of types the run never reached along with what would have to happen for them to
-        /// exist.
+        /// 넷은 <c>types</c> 옆에 <c>unplaced</c> 를 더한다. 독자가 알던 모든 것은 있던 자리에 뜻하던 대로 남는다 —
+        /// <c>types</c> 는 여전히 GameObject 위에서 만난 것뿐이다 — 그것이 첫 표 안의 플래그가 아니라 두 번째 표인 이유다.
+        /// <c>unplaced</c> 를 모르는 독자는 그것에 속을 수 없고, 아는 독자는 실행이 결코 닿지 못한 타입의 규칙과 함께 그것들이
+        /// 존재하려면 무엇이 일어나야 하는지를 얻는다.
         ///
-        /// Five adds <c>calledBy</c> next to <c>createdBy</c>, and <c>unread</c> on a condition
-        /// nobody could read. Both are additive and a reader that ignores them reads what it read
-        /// before — the version moves anyway, because a reader that keys off the number should be
-        /// told the shape grew rather than discover it.
+        /// 다섯은 <c>createdBy</c> 옆에 <c>calledBy</c> 를, 그리고 아무도 읽을 수 없던 조건에 <c>unread</c> 를 더한다. 둘 다
+        /// 더하기만 하고 그것들을 무시하는 독자는 전에 읽던 것을 읽는다 — 그래도 버전은 움직인다. 숫자를 기준으로 삼는 독자는
+        /// 모양이 늘었다는 것을 발견하는 것이 아니라 들어야 하기 때문이다.
         /// </remarks>
         public const int SchemaVersion = 6;
 
-        /// <summary>How many scenes are held before older ones stop being replaced.</summary>
+        /// <summary>더 오래된 것이 갈아치워지기를 그만두기 전까지 몇 개의 씬을 쥐고 있는지.</summary>
         private const int MaxScenes = 256;
 
         /// <summary>
-        /// How many bytes of never-placed evidence the report will carry.
+        /// 한 번도 놓이지 않은 근거를 리포트가 몇 바이트까지 나를 것인지.
         /// </summary>
         /// <remarks>
-        /// A budget rather than a count, because what costs is the evidence and not the number of
-        /// types. Measured on the sample project, two components belonging to an unrelated package
-        /// were two megabytes on their own while the whole of the game's own unplaced evidence was a
-        /// tenth of that — the analyser bakes every assembly it is given and cannot know which of
-        /// them is the game.
+        /// 개수가 아니라 예산인 것은, 값을 치르게 하는 것이 타입의 수가 아니라 근거이기 때문이다. 샘플 프로젝트에서 실측하니
+        /// 무관한 패키지에 속한 컴포넌트 둘만으로 2 메가바이트였고 게임 자신의 놓이지 않은 근거 전체는 그 10분의 1이었다 —
+        /// 분석기는 주어진 모든 어셈블리를 굽고 그중 무엇이 게임인지 알 수 없다.
         ///
-        /// Spent on the entries that are worth the most first: the ones something in a scene is known
-        /// to make, then the small ones, so the budget buys as many types as it can. What did not fit
-        /// is counted in the gaps.
+        /// 가장 값진 항목부터 쓴다: 씬 안의 무언가가 그것을 만든다고 알려진 것들, 그다음 작은 것들. 그래야 예산으로 살 수 있는
+        /// 타입이 가장 많아진다. 들어가지 못한 것은 공백에 센다.
         /// </remarks>
         private const int UnplacedBudget = 512 * 1024;
 
         private const int MaxMakers = 8;
 
-        /// <summary>What the analyser writes a call's target as: assembly, type, method, signature.</summary>
+        /// <summary>분석기가 호출 대상을 적는 방식: 어셈블리, 타입, 메서드, 시그니처.</summary>
         private const string TargetMarker = "\"targetId\":\"";
 
         private static readonly Dictionary<string, List<string>> Makers =
             new Dictionary<string, List<string>>(System.StringComparer.Ordinal);
 
         /// <summary>
-        /// Types an assembly carries evidence for that no scene was found holding.
+        /// 어셈블리가 근거를 나르지만 어느 씬도 쥐고 있는 것으로 발견되지 않은 타입들.
         /// </summary>
         /// <remarks>
-        /// Asked at the end for the same reason the dangling wiring is: which types were met is only
-        /// settled once the walk is over.
+        /// 매달린 배선과 같은 이유로 끝에 묻는다: 어떤 타입을 만났는지는 순회가 끝나야 비로소 결정된다.
         ///
-        /// Decided by comparing documents, not names. The catalogue's keys are the names the types
-        /// had when they were compiled, and what the scan met may have been renamed since — a build
-        /// that is obfuscated would otherwise report every type it met as never placed. Two entries
-        /// for one type carry the same document, whatever it is called by then.
+        /// 이름이 아니라 문서를 비교해 정한다. 카탈로그의 키는 타입이 컴파일될 때 가지고 있던 이름이고 스캔이 만난 것은 그 뒤에
+        /// 이름이 바뀌었을 수 있다 — 그러지 않으면 난독화된 빌드는 만난 모든 타입을 한 번도 놓이지 않은 것으로 보고하게 된다.
+        /// 한 타입에 대한 두 항목은 그때 무엇이라 불리든 같은 문서를 나른다.
         /// </remarks>
         private static List<KeyValuePair<string, string>> Unplaced()
         {
@@ -107,8 +91,8 @@ namespace Artel.Affordances.Scan
                 }
             }
 
-            // Ordered by what the budget should buy first — something in a scene is known to make
-            // it, then whichever is smallest — and by name last so two runs agree byte for byte.
+            // 예산이 무엇을 먼저 사야 하는지로 정렬한다 — 씬 안의 무언가가 그것을 만든다고 알려진 것, 그다음 가장 작은 것 —
+            // 그리고 마지막으로 이름으로 정렬해 두 실행이 바이트까지 일치하게 한다.
             missing.Sort((left, right) =>
             {
                 var madeLeft = Makers.ContainsKey(left.Key) ? 0 : 1;
@@ -128,25 +112,21 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Which types call into each type, read off the evidence the analyser already baked.
+        /// 어떤 타입들이 각 타입을 호출하는가. 분석기가 이미 구워 둔 근거에서 읽어낸다.
         /// </summary>
         /// <remarks>
-        /// A type that no scene holds, that nothing makes, and that nothing calls is dead code. The
-        /// first two were already known and were not enough: the sample game carries a whole
-        /// superseded namespace whose types read exactly like types the run simply had not got to,
-        /// and their rules were being written down as the game's rules.
+        /// 어느 씬도 쥐고 있지 않고, 아무것도 만들지 않으며, 아무것도 부르지 않는 타입은 죽은 코드다. 앞의 둘은 이미 알려져
+        /// 있었고 충분하지 않았다: 샘플 게임은 대체된 네임스페이스 하나를 통째로 나르는데, 그 타입들은 실행이 아직 이르지 못한
+        /// 타입과 똑같이 읽혔고 그 규칙들이 게임의 규칙으로 적히고 있었다.
         ///
-        /// Read out of the document text rather than by parsing it. The call targets are the only
-        /// thing being looked for, the documents are held as strings anyway, and a parser here would
-        /// be a second reader of a format that already has one.
+        /// 파싱하지 않고 문서 텍스트에서 읽어낸다. 찾는 것이 호출 대상뿐이고, 문서는 어차피 문자열로 쥐고 있으며, 여기에 파서를
+        /// 두는 것은 이미 독자가 있는 형식의 두 번째 독자를 두는 일이다.
         ///
-        /// Names, not documents — unlike <see cref="Unplaced"/>, which compares documents because a
-        /// renamed type must still be recognised. Both sides here come out of the same baked
-        /// evidence, so both carry whatever names the compiler saw and they match each other.
+        /// 문서가 아니라 이름이다 — 이름이 바뀐 타입도 알아봐야 해서 문서를 비교하는 <see cref="Unplaced"/> 와는 다르다.
+        /// 여기서는 양쪽이 같은 구워진 근거에서 나오므로, 둘 다 컴파일러가 본 이름을 나르고 서로 일치한다.
         ///
-        /// Being called does not make a type alive: its caller may be dead too. That is why the
-        /// callers are listed rather than reduced to a flag — the reader can see whether they are
-        /// themselves in this same table.
+        /// 불린다고 해서 타입이 살아 있는 것은 아니다: 그 호출자도 죽었을 수 있다. 플래그로 줄이지 않고 호출자를 나열하는 이유가
+        /// 그것이다 — 독자는 그것들이 이 같은 표 안에 있는지를 스스로 볼 수 있다.
         /// </remarks>
         private static Dictionary<string, List<string>> Callers()
         {
@@ -196,13 +176,12 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Notes that a prefab held by something in a scene carries this type.
+        /// 씬 안의 무언가가 쥔 프리팹이 이 타입을 나른다고 적어 둔다.
         /// </summary>
         /// <remarks>
-        /// The one fact that separates a type nobody ever makes from a type the run has not got to
-        /// yet. Without it the report has a list of types it never saw and no way to tell which of
-        /// them are dead code — and publishing a dead type's rules as the game's rules is the one
-        /// way this table could produce a specification that is simply false.
+        /// 아무도 만들지 않는 타입과 실행이 아직 이르지 못한 타입을 가르는 유일한 사실이다. 그것이 없으면 리포트에는 한 번도 보지
+        /// 못한 타입 목록만 있고 그중 무엇이 죽은 코드인지 가릴 방법이 없다 — 그리고 죽은 타입의 규칙을 게임의 규칙으로 발행하는
+        /// 것이, 이 표가 그냥 거짓인 명세를 만들어낼 수 있는 유일한 길이다.
         /// </remarks>
         internal static void Creates(string carriedType, string ownerType, string field)
         {
@@ -230,7 +209,7 @@ namespace Artel.Affordances.Scan
         private static readonly Dictionary<string, List<string>> Gaps = new Dictionary<string, List<string>>();
         private static readonly Dictionary<string, string> Types = new Dictionary<string, string>();
 
-        /// <summary>Scenes the report has something to say about.</summary>
+        /// <summary>리포트가 무언가 할 말이 있는 씬들.</summary>
         public static int SceneCount => Order.Count;
 
         internal static void Merge(string scene, string objects, List<string> gaps)
@@ -251,7 +230,7 @@ namespace Artel.Affordances.Scan
             Gaps[name] = gaps;
         }
 
-        /// <summary>What the game kept across scene loads, read once for the whole report.</summary>
+        /// <summary>게임이 씬 로드를 건너 쥐고 있던 것. 리포트 전체에 대해 한 번 읽는다.</summary>
         internal static void Persistent(string objects, List<string> gaps)
         {
             _persistent = objects ?? string.Empty;
@@ -275,7 +254,7 @@ namespace Artel.Affordances.Scan
         private static bool _persistentRead;
         private static readonly List<string> _persistentGaps = new List<string>();
 
-        /// <summary>Adds one more thing to say about a scene already read.</summary>
+        /// <summary>이미 읽은 씬에 대해 할 말을 하나 더한다.</summary>
         internal static void Note(string scene, string gap)
         {
             var name = string.IsNullOrEmpty(scene) ? "(unnamed)" : scene;
@@ -287,11 +266,11 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Records what a type's evidence says, once, however many of it a scene holds.
+        /// 한 씬이 그것을 몇 개나 쥐고 있든, 타입의 근거가 말하는 바를 한 번 기록한다.
         /// </summary>
         /// <remarks>
-        /// Told the first time the type is met and not asked again. The evidence is baked onto the
-        /// type at compile time and cannot differ between two instances of it.
+        /// 그 타입을 처음 만났을 때 듣고 다시 묻지 않는다. 근거는 컴파일 시점에 타입 위에 구워지고 그 두 인스턴스 사이에서 다를 수
+        /// 없다.
         /// </remarks>
         internal static bool Knows(string type)
         {
@@ -307,12 +286,11 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Notes a type that a scene's wiring calls into.
+        /// 씬의 배선이 호출해 들어가는 타입을 적어 둔다.
         /// </summary>
         /// <remarks>
-        /// Whether it has any evidence cannot be answered here — the type may not have been met yet,
-        /// and a later scene may be where it lives. Asked at the end instead, when every scene that
-        /// is going to be visited has been.
+        /// 그것에 근거가 있는지는 여기서 답할 수 없다 — 그 타입을 아직 만나지 못했을 수 있고, 그것이 사는 자리가 뒤의 씬일 수
+        /// 있다. 대신 방문할 씬을 전부 방문한 끝에 묻는다.
         /// </remarks>
         internal static void Wired(string type)
         {
@@ -326,7 +304,7 @@ namespace Artel.Affordances.Scan
 
         private static int _unplacedOmitted;
 
-        /// <summary>Starts again, so a walk does not carry answers from a previous one.</summary>
+        /// <summary>다시 시작한다. 순회가 이전 순회의 답을 들고 오지 않도록.</summary>
         public static void Forget()
         {
             Order.Clear();
@@ -343,19 +321,16 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Whether anything had run by the time the scene was read.
+        /// 씬이 읽힐 무렵 무엇이든 돌아 있었는지.
         /// </summary>
         /// <remarks>
-        /// Most of a report is about code and holds whenever it is read. What an object was showing
-        /// does not: an editor walk opens a scene and reads it as it was saved, while a player has
-        /// been through <c>Awake</c>, <c>Start</c> and however much play came before the walk. The
-        /// same field means "what the scene says" in one and "what it said at that moment" in the
-        /// other — an enemy's label is its authored <c>20</c> in one and its remaining health in the
-        /// other.
+        /// 리포트의 대부분은 코드에 대한 것이고 언제 읽히든 성립한다. 객체가 무엇을 보여 주고 있었는지는 그렇지 않다: 에디터
+        /// 순회는 씬을 열어 저장된 대로 읽고, 플레이어는 <c>Awake</c> 와 <c>Start</c> 와 순회 전의 플레이를 거쳐 왔다. 같은
+        /// 필드가 한쪽에서는 "씬이 말하는 것" 을 뜻하고 다른 쪽에서는 "그 순간 그것이 말한 것" 을 뜻한다 — 적의 라벨은 한쪽에서
+        /// 작성된 <c>20</c> 이고 다른 쪽에서 남은 체력이다.
         ///
-        /// Said in the document rather than left to whoever named the file, because a reader holding
-        /// one report has no other way to know, and reading a moment as a rule is how a test gets
-        /// written against a number that will not be there next time.
+        /// 파일 이름을 지은 쪽에 맡기지 않고 문서 안에 적는다. 리포트 하나를 쥔 독자는 다른 방법으로는 알 수 없고, 한순간을
+        /// 규칙으로 읽는 것이 다음번에는 거기 없을 숫자에 대고 테스트가 쓰이는 방식이기 때문이다.
         /// </remarks>
         private static string Capture()
         {
@@ -368,46 +343,38 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// What made this document, said so that two of them can be told apart.
+        /// 무엇이 이 문서를 만들었는가. 둘을 가릴 수 있도록 말한다.
         /// </summary>
         /// <remarks>
-        /// A report that does not say where it came from cannot be argued with. Two files disagree
-        /// and nobody can tell whether the game changed, the analyser changed, or one of them was
-        /// taken from a different build — which is the position a reader was in until now, and the
-        /// reason a review of these documents had to say it could not establish their provenance.
+        /// 어디서 왔는지 말하지 않는 리포트는 따질 수가 없다. 두 파일이 어긋나는데 게임이 바뀐 것인지, 분석기가 바뀐 것인지,
+        /// 둘 중 하나가 다른 빌드에서 나온 것인지 아무도 가릴 수 없다 — 지금까지 독자가 놓여 있던 자리가 그것이고, 이 문서들에
+        /// 대한 리뷰가 그 출처를 확인할 수 없다고 말해야 했던 이유다.
         ///
-        /// No clock and no session number, on purpose. A time does not answer the question — "when"
-        /// does not say what was analysed — and it would put a difference into every pair of files
-        /// that a reader then has to look past. <c>evidence</c> answers it instead: a fingerprint of
-        /// the baked documents themselves, so the same game read by the same analyser gives the same
-        /// value and a change to either gives another. That is the number two files should be
-        /// compared by.
+        /// 시계도 세션 번호도 일부러 두지 않는다. 시각은 그 물음에 답하지 않고 — "언제" 는 무엇이 분석됐는지를 말하지 않는다 —
+        /// 그것은 독자가 그다음 넘겨봐야 할 차이를 모든 파일 쌍에 넣게 된다. 대신 <c>evidence</c> 가 답한다: 구워진 문서들
+        /// 자체의 지문이라, 같은 게임을 같은 분석기가 읽으면 같은 값이 나오고 어느 한쪽이 바뀌면 다른 값이 나온다. 두 파일을
+        /// 비교해야 할 숫자가 그것이다.
         ///
-        /// It is worth saying what this does not make stable. Two scans of one unchanged game still
-        /// differ, because a scene reference is written with the instance id Unity gave it and those
-        /// are handed out afresh each session. The evidence — everything read out of the code — is
-        /// the same bytes both times, which is how the Mono and IL2CPP builds were shown to agree;
-        /// what the scene half writes about the same object can differ in that one field.
+        /// 이것이 무엇을 안정되게 만들지 않는지도 말할 값이 있다. 바뀌지 않은 게임을 두 번 스캔해도 여전히 다르다. 씬 참조는
+        /// Unity 가 준 인스턴스 id 로 쓰이고 그것은 세션마다 새로 나눠 주기 때문이다. 근거는 — 코드에서 읽어낸 모든 것 —
+        /// 양쪽 다 같은 바이트이고, 그것이 Mono 빌드와 IL2CPP 빌드가 일치한다고 보인 방법이다. 같은 객체에 대해 씬 쪽 절반이
+        /// 쓰는 것은 그 한 필드에서 다를 수 있다.
         /// </remarks>
         /// <summary>
-        /// What the fields in this document are promised to mean.
+        /// 이 문서의 필드들이 무엇을 뜻하기로 약속돼 있는가.
         /// </summary>
         /// <remarks>
-        /// The version number could not carry this. A reader refuses a number it does not know, so
-        /// raising it to say one field's meaning had narrowed would have shut the door on every
-        /// reader at once — and leaving it alone said the shape had only grown, which was not true
-        /// of <c>label</c>. It went from "the one thing this object showed" to "what is written on
-        /// something a player can press", and a document written before that change looks exactly
-        /// like one written after.
+        /// 버전 번호는 이것을 나를 수 없었다. 독자는 모르는 숫자를 거절하므로, 한 필드의 뜻이 좁아졌다고 말하려고 번호를 올리면
+        /// 모든 독자에게 한꺼번에 문을 닫게 된다 — 그렇다고 그대로 두면 모양이 늘어나기만 했다고 말하는 셈인데, <c>label</c> 에
+        /// 대해서는 그것이 참이 아니었다. 그것은 "이 객체가 보여 준 그 한 가지" 에서 "플레이어가 누를 수 있는 것 위에 쓰인 것" 으로
+        /// 옮겨 갔고, 그 변경 전에 쓰인 문서는 그 뒤에 쓰인 것과 똑같아 보인다.
         ///
-        /// Nor can one field stand in for another. <c>build</c> arrived a commit before the roles
-        /// did, so a report carrying it may still mean the old <c>label</c>; a reader inferring the
-        /// contract from what is present would get that pair wrong.
+        /// 한 필드가 다른 필드를 대신할 수도 없다. <c>build</c> 는 역할들보다 한 커밋 먼저 도착했으므로, 그것을 나르는 리포트도
+        /// 여전히 옛 <c>label</c> 을 뜻할 수 있다. 있는 것으로부터 계약을 유추하는 독자는 그 짝을 틀리게 본다.
         ///
-        /// So each promise is named and a reader asks for the one it needs. What a run happened to
-        /// find is not one of these: a player scan that kept nothing across a load still says
-        /// <c>persistent-objects-v1</c>, because the claim is about what the field would have meant
-        /// had there been any.
+        /// 그래서 약속마다 이름을 붙이고 독자는 제게 필요한 것을 청한다. 어떤 실행이 마침 무엇을 찾았는지는 여기 들지 않는다:
+        /// 로드를 건너 아무것도 쥐지 못한 플레이어 스캔도 여전히 <c>persistent-objects-v1</c> 이라고 말한다. 그 주장은 무엇이
+        /// 있었다면 그 필드가 무엇을 뜻했을지에 대한 것이기 때문이다.
         /// </remarks>
         private static void Promises(StringBuilder text)
         {
@@ -428,18 +395,18 @@ namespace Artel.Affordances.Scan
 
         private static readonly string[] Promised =
         {
-            // `build` is present and says what made this document.
+            // `build` 가 있고 무엇이 이 문서를 만들었는지 말한다.
             "build-info-v1",
 
-            // Every object carries `selector`, unique within its scene for this reading.
+            // 모든 객체가 `selector` 를 나르고, 이번 판독에 한해 제 씬 안에서 유일하다.
             "selector-v1",
 
-            // `visuals[]` gives every text and picture a role, and `label` and `sprite` name a
-            // control or are absent — they are no longer whatever the object happened to show.
+            // `visuals[]` 가 모든 텍스트와 그림에 역할을 주고, `label` 과 `sprite` 는 컨트롤의 이름을 대거나 아예 없다 — 더는
+            // 객체가 마침 보여 준 무엇이 아니다.
             "visual-roles-v1",
 
-            // `persistentObjects` holds what the game kept across scene loads, and the gap that
-            // said nobody looked is only written when nobody could.
+            // `persistentObjects` 가 게임이 씬 로드를 건너 쥐고 있던 것을 담고, 아무도 보지 않았다고 말하던 공백은 아무도 볼 수
+            // 없었을 때만 쓰인다.
             "persistent-objects-v1"
         };
 
@@ -460,7 +427,7 @@ namespace Artel.Affordances.Scan
             text.Append('}');
         }
 
-        /// <summary>Kept in step with `package.json` by hand; there is nowhere else to read it from.</summary>
+        /// <summary>`package.json` 과 손으로 맞춘다. 읽어 올 다른 자리가 없다.</summary>
         private const string PackageVersion = "0.1.0";
 
         private static string Backend()
@@ -475,12 +442,11 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// One number standing for every document that was baked onto this game.
+        /// 이 게임 위에 구워진 모든 문서를 대표하는 숫자 하나.
         /// </summary>
         /// <remarks>
-        /// Sorted before it is read, so the order the assemblies happen to load in does not change
-        /// the answer. Not a security digest and not claimed as one — it is here to tell two
-        /// analyses apart, and a cheap mixing function does that.
+        /// 읽기 전에 정렬하므로 어셈블리가 마침 로드되는 순서가 답을 바꾸지 않는다. 보안 다이제스트가 아니고 그렇다고 주장하지도
+        /// 않는다 — 분석 둘을 가리려고 여기 있고, 값싼 섞기 함수로 그 일은 된다.
         /// </remarks>
         private static string Fingerprint()
         {
@@ -511,7 +477,7 @@ namespace Artel.Affordances.Scan
 
         public static string Compose()
         {
-            // Worked out once: the table below writes it and the gap list counts it.
+            // 한 번 알아낸다: 아래 표가 그것을 쓰고 공백 목록이 그것을 센다.
             var missing = Unplaced();
             var callers = Callers();
 
@@ -536,8 +502,8 @@ namespace Artel.Affordances.Scan
 
             text.Append("],\"types\":{");
 
-            // Sorted so that two runs over the same game produce the same bytes. Scene order
-            // follows where the game was walked; this has no such order to follow.
+            // 같은 게임을 두 번 돌면 같은 바이트가 나오도록 정렬한다. 씬 순서는 게임이 걸어간 자리를 따르지만, 이것은 따를 그런
+            // 순서가 없다.
             var named = new List<string>(Types.Keys);
             named.Sort(System.StringComparer.Ordinal);
 
@@ -552,9 +518,8 @@ namespace Artel.Affordances.Scan
                 text.Append(':').Append(Types[named[index]]);
             }
 
-            // Everything the assemblies know about that no scene was found holding. Its own table
-            // rather than a flag inside the one above, so that nothing which reads `types` as "what
-            // is on screen" is quietly made wrong by it.
+            // 어셈블리가 아는 것 중 어느 씬도 쥐고 있는 것으로 발견되지 않은 전부. 위 표 안의 플래그가 아니라 제 표인 것은,
+            // `types` 를 "화면에 있는 것" 으로 읽는 무엇도 그것 때문에 조용히 틀리지 않도록 하기 위해서다.
             text.Append("},\"unplaced\":{");
 
             var spent = 0;
@@ -580,8 +545,8 @@ namespace Artel.Affordances.Scan
                 Json.String(text, entry.Key);
                 text.Append(":{\"evidence\":").Append(entry.Value);
 
-                // Who would have to make one. A prefab held by something that *is* in a scene is a
-                // way in; nothing at all is the shape of dead code, and the two must not read alike.
+                // 누가 그것을 만들어야 하는가. 씬 *안에 있는* 무언가가 쥔 프리팹은 하나의 입구다. 아무것도 없다는 것은 죽은 코드의
+                // 모양이고, 그 둘이 똑같이 읽혀서는 안 된다.
                 text.Append(",\"createdBy\":[");
 
                 if (Makers.TryGetValue(entry.Key, out var makers))
@@ -648,8 +613,8 @@ namespace Artel.Affordances.Scan
             {
                 foreach (var gap in Gaps[scene])
                 {
-                    // Scoped by scene. A gap that applies to one screen and not another is a
-                    // different fact from one that applies everywhere, and merging them loses which.
+                    // 씬 단위로 묶는다. 한 화면에는 해당되고 다른 화면에는 해당되지 않는 공백은 어디에나 해당되는 공백과 다른 사실이고,
+                    // 둘을 합치면 어느 쪽인지를 잃는다.
                     var scoped = scene + ":" + gap;
 
                     if (!said.Add(scoped))
@@ -667,9 +632,8 @@ namespace Artel.Affordances.Scan
                 }
             }
 
-            // Said once about the report rather than once per screen. Objects kept across scene
-            // loads are in no screen and in all of them, and a walk that never ran cannot have
-            // reached them.
+            // 화면마다가 아니라 리포트에 대해 한 번 말한다. 씬 로드를 건너 쥐고 있는 객체는 어느 화면에도 없으면서 모든 화면에
+            // 있고, 한 번도 돌지 않은 순회는 그것들에 닿았을 수 없다.
             if (!_persistentRead)
             {
                 if (!first)
@@ -692,8 +656,7 @@ namespace Artel.Affordances.Scan
                 first = false;
             }
 
-            // The count stays in the gaps because it is a fact about the report as a whole. The
-            // rules themselves went into a table of their own, above.
+            // 개수는 리포트 전체에 대한 사실이므로 공백에 남는다. 규칙 자체는 위의 제 표로 갔다.
             if (missing.Count > 0)
             {
                 if (!first)
@@ -711,10 +674,9 @@ namespace Artel.Affordances.Scan
                 Json.String(text, "unplaced-evidence-omitted:" + _unplacedOmitted);
             }
 
-            // A button wired to a method on a type that has no evidence is a dead end that looks
-            // like a live one: the call is in the report, the thing it calls is not. Said here
-            // rather than per scene because whether a type is known is only settled once the walk
-            // is over — the object carrying it may be in a scene visited later, or in none of them.
+            // 근거가 없는 타입의 메서드에 연결된 버튼은 살아 있는 것처럼 보이는 막다른 길이다: 호출은 리포트에 있고 그것이 부르는
+            // 것은 없다. 씬마다가 아니라 여기서 말하는 것은, 타입이 알려졌는지가 순회가 끝나야 결정되기 때문이다 — 그것을 나르는
+            // 객체가 나중에 방문할 씬에 있을 수도, 어느 씬에도 없을 수도 있다.
             var dangling = new List<string>();
 
             foreach (var type in WiredTo)
