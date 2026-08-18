@@ -14,27 +14,23 @@ namespace Artel.Affordances.CodeGen
     /// </summary>
     /// <remarks>
     /// Unity 컴파일 파이프라인 안에서 돈다. 곧 게임 팀에게 패키지 설치 말고는 아무것도 요구하지 않는다는 뜻이다 —
-    /// attribute 도, 수정도, 그들 자신의 빌드 단계도 없다. IL2CPP 가 무엇을 변환하기 전에 돌기도 하므로 최종
-    /// 빌드 형식이 무엇이든 결과는 거기 있다.
+    /// attribute 도, 수정도, 그들 자신의 빌드 단계도 없다. IL2CPP 가 무엇을 변환하기 전에 돌기도 하므로 최종 빌드 형식이
+    /// 무엇이든 결과는 거기 있다.
     ///
-    /// This used to sit behind a scripting define a project had to set. Three separate times, while
-    /// this analysis was being written, it wedged an editor that then could not be opened to
-    /// investigate why — and a switch that turned it off without uninstalling was worth more than
-    /// anything it could find.
+    /// 이것은 예전에 프로젝트가 설정해야 하는 스크립팅 define 뒤에 앉아 있었다. 이 분석이 쓰이는 동안 세 번에 걸쳐 그것이
+    /// 에디터를 먹통으로 만들었고 그때마다 왜 그런지 알아보려고 그것을 열 수조차 없었다 — 그리고 제거하지 않고 끄는 스위치는
+    /// 그것이 찾아낼 수 있는 무엇보다 값졌다.
     ///
-    /// What replaced the switch is three layers that were not there then: every loop here is
-    /// bounded, an assembly gets ten seconds before whatever was reached is reported and the rest
-    /// left undone, and any throw at all lands in <see cref="Process"/> and hands back the
-    /// compiler's own assembly. The last of those was proven by injecting a failure and watching a
-    /// build survive it.
+    /// 그 스위치를 대신한 것은 그때는 없던 세 겹이다: 여기의 모든 루프가 유계이고, 어셈블리 하나에 10초가 주어진 뒤에는 닿은
+    /// 만큼을 보고하고 나머지를 남기며, 어떤 throw 든 <see cref="Process"/> 에 떨어져 컴파일러 자신의 어셈블리를 되돌려준다.
+    /// 마지막 것은 실패를 주입하고 빌드가 그것을 견디는 것을 지켜봐 확인했다.
     ///
-    /// The define had stopped earning that. A project had to be opted in for the tooling to exist,
-    /// so something had to opt it in on their behalf, and then the state it protected against —
-    /// installed but switched off — was one nobody arrived at except by hand. Meanwhile everything
-    /// downstream had to ask whether the analysis existed at all before it could rely on it.
+    /// define 은 그 값을 하기를 그만두었다. 도구가 존재하려면 프로젝트가 옵트인돼 있어야 하므로 무언가가 그들을 대신해 옵트인해
+    /// 주어야 했고, 그러면 그것이 막아 주던 상태 — 설치됐는데 꺼짐 — 는 손으로만 도달하는 곳이 됐다. 그러는 동안 아래쪽
+    /// 전부가 무언가에 기대기 전에 분석이 존재하기는 하는지를 먼저 물어야 했다.
     ///
-    /// What is written into a game assembly is an attribute and two compressed resources. No method
-    /// body is touched, nothing is renamed, and a game runs exactly as it did.
+    /// 게임 어셈블리에 쓰이는 것은 attribute 하나와 압축된 리소스 둘이다. 메서드 본문은 건드리지 않고, 아무것도 이름을 바꾸지
+    /// 않으며, 게임은 전과 똑같이 돈다.
     /// </remarks>
     public sealed class AffordanceILPostProcessor : ILPostProcessor
     {
@@ -76,12 +72,10 @@ namespace Artel.Affordances.CodeGen
         public override ILPostProcessor GetInstance() => this;
 
         /// <remarks>
-        /// What kind of build this is gets asked in <see cref="Process"/> rather than here, even
-        /// though it is a reason not to touch the assembly and this is where those live. Answering
-        /// no here means <see cref="Process"/> is never called, and <see cref="Process"/> is what
-        /// holds the diagnostics — so a refusal decided here is a refusal nobody is told about.
-        /// The one answered here is the one a person already knows the answer to: they know what
-        /// they named their assemblies.
+        /// 이 빌드가 어떤 종류인지는 어셈블리를 건드리지 않을 이유이고 그런 것들이 사는 자리가 여기인데도, 여기가 아니라
+        /// <see cref="Process"/> 에서 묻는다. 여기서 아니오라고 답하면 <see cref="Process"/> 가 한 번도 불리지 않는데, 진단을
+        /// 쥐고 있는 것이 <see cref="Process"/> 다 — 그래서 여기서 결정된 거절은 아무에게도 알려지지 않는 거절이다. 여기서
+        /// 답하는 하나는 사람이 이미 답을 아는 것이다: 그들은 자기 어셈블리를 무엇이라 이름 지었는지 안다.
         /// </remarks>
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
