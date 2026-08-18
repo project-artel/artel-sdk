@@ -5,36 +5,35 @@ namespace Artel.Affordances.CodeGen
 {
     internal enum ConditionKind
     {
-        /// <summary>Nothing had to be true.</summary>
+        /// <summary>참이어야 했던 것이 없다.</summary>
         Always,
 
-        /// <summary>A comparison the code made.</summary>
+        /// <summary>코드가 한 비교.</summary>
         Test,
 
-        /// <summary>An input the player gave.</summary>
+        /// <summary>플레이어가 준 입력.</summary>
         Gesture,
 
-        /// <summary>Something on the way here that could not be read.</summary>
+        /// <summary>여기 오는 길에 있었으나 읽을 수 없었던 것.</summary>
         Unknown,
 
-        /// <summary>All of these.</summary>
+        /// <summary>이것들 전부.</summary>
         Every,
 
-        /// <summary>Any one of these.</summary>
+        /// <summary>이것들 중 아무거나 하나.</summary>
         Either
     }
 
     /// <summary>
-    /// What had to be true to arrive somewhere.
+    /// 어딘가에 닿기 위해 참이어야 했던 것.
     /// </summary>
     /// <remarks>
-    /// A tree rather than a list, because a list can only mean "and". Code reaching one place two
-    /// ways — <c>position == 4 || position == 5</c> — flattens into a list that says the field held
-    /// both values at once, which no state satisfies. A specification built from that describes an
-    /// action nobody can perform.
+    /// 목록이 아니라 트리다. 목록은 "그리고" 밖에 뜻하지 못하기 때문이다. 한 자리에 두 갈래로 닿는 코드는 —
+    /// <c>position == 4 || position == 5</c> — 그 필드가 두 값을 동시에 쥐고 있었다고 말하는 목록으로
+    /// 납작해지는데, 그것을 만족하는 상태는 없다. 거기서 만든 명세는 아무도 수행할 수 없는 동작을 서술한다.
     ///
-    /// Kept nested rather than expanded into a sum of products. The branches share their ancestors,
-    /// so the tree stays about the size of the method while expanding it would not.
+    /// 곱의 합으로 펼치지 않고 중첩된 채로 둔다. 가지들이 조상을 공유하므로 트리는 메서드만 한 크기로 남지만,
+    /// 펼치면 그렇지 않다.
     /// </remarks>
     internal sealed class Condition
     {
@@ -45,17 +44,16 @@ namespace Artel.Affordances.CodeGen
         internal InputRead Gesture { get; private set; }
         internal string Reason { get; private set; }
 
-        /// <summary>The shape of the thing that defeated the read, for counting.</summary>
+        /// <summary>읽기를 좌절시킨 것의 모양. 세기 위한 것.</summary>
         /// <remarks>
-        /// A count of unread conditions says how much is missing; it does not say what to build
-        /// next. Whether the eighty-nine here are locals the walk refuses to follow, operators it
-        /// has no word for, or calls it cannot see into decides three different pieces of work, and
-        /// until this field existed the answer was a guess. Diagnostic only — nothing composes on
-        /// it, and a reader that ignores it reads exactly what it read before.
+        /// 읽지 못한 조건의 개수는 얼마나 빠졌는지를 말하지, 다음에 무엇을 만들지는 말하지 않는다. 여기 여든아홉이
+        /// 걷기가 따라가기를 거부하는 지역 변수인지, 부를 말이 없는 연산자인지, 안을 들여다볼 수 없는 호출인지에
+        /// 따라 서로 다른 일 세 가지가 결정되는데, 이 필드가 생기기 전까지 그 답은 추측이었다. 진단용일 뿐이다 —
+        /// 아무것도 이것 위에서 합성하지 않고, 이것을 무시하는 독자는 전에 읽던 것을 그대로 읽는다.
         /// </remarks>
         internal string Unread { get; private set; }
 
-        /// <summary>Where going round again starts, or -1.</summary>
+        /// <summary>다시 한 바퀴 도는 일이 시작되는 자리, 또는 -1.</summary>
         internal int LoopsBackTo { get; private set; } = -1;
         internal List<Condition> Parts { get; private set; }
 
@@ -77,13 +75,12 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// A condition that could not be read because getting here means going round again.
+        /// 여기 닿으려면 다시 한 바퀴 돌아야 해서 읽을 수 없었던 조건.
         /// </summary>
         /// <remarks>
-        /// The offset is where round again starts. Saying only "loop" left a reader who wanted to
-        /// join two things that happen on different turns of it with nothing but arithmetic on
-        /// offsets — which is a cause the report never established. The edge is one the graph
-        /// already found; it was being thrown away at the moment of giving up.
+        /// 오프셋은 다시 도는 일이 시작되는 자리다. "루프" 라고만 말하면, 그 서로 다른 바퀴에서 일어나는 두 가지를
+        /// 잇고 싶은 독자에게 남는 것은 오프셋에 대한 산술뿐이었다 — 리포트가 세운 적 없는 근거다. 이 엣지는
+        /// 그래프가 이미 찾아 둔 것이고, 포기하는 순간에 버려지고 있었다.
         /// </remarks>
         internal static Condition Looping(int backTo)
         {
@@ -136,7 +133,7 @@ namespace Artel.Affordances.CodeGen
                     continue;
                 }
 
-                // One way in that needed nothing makes the whole choice unconditional.
+                // 아무것도 필요로 하지 않는 갈래 하나가 선택 전체를 조건 없는 것으로 만든다.
                 if (part.Kind == ConditionKind.Always)
                 {
                     return Always;
@@ -158,18 +155,17 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// One way into a choice, with the marks left by short-circuit evaluation taken off.
+        /// 선택으로 들어가는 한 갈래. 단락 평가가 남긴 자국을 걷어낸 것.
         /// </summary>
         /// <remarks>
-        /// <c>GetKey(Left) || GetKey(Right)</c> only tests the right key when the left one was not
-        /// pressed, so the way in through the right key carries <c>no Left</c> with it. That is
-        /// true, and it is a fact about how C# evaluates <c>||</c> rather than about the game — read
-        /// as a specification it says to press Right while carefully not pressing Left.
+        /// <c>GetKey(Left) || GetKey(Right)</c> 는 왼쪽이 눌리지 않았을 때만 오른쪽 키를 검사하므로, 오른쪽 키로
+        /// 들어가는 갈래는 <c>no Left</c> 를 함께 나른다. 그것은 참이고, 게임에 대한 사실이 아니라 C# 이
+        /// <c>||</c> 를 평가하는 방식에 대한 사실이다 — 명세로 읽으면 왼쪽을 조심스럽게 누르지 않은 채 오른쪽을
+        /// 누르라는 말이 된다.
         ///
-        /// Only under a choice. An absent input at the top of an <c>and</c> is a real rule —
-        /// <c>if (!Input.GetKey(Shift))</c> is something the game means — and is left alone. And
-        /// dropping a requirement only ever makes a way in easier, so the choice this belongs to
-        /// still holds wherever it held before.
+        /// 선택 아래에서만 그렇게 한다. <c>and</c> 맨 위의 부재하는 입력은 진짜 규칙이고 —
+        /// <c>if (!Input.GetKey(Shift))</c> 는 게임이 뜻하는 바다 — 건드리지 않는다. 그리고 요구를 하나 떨어뜨리는
+        /// 일은 갈래를 쉽게 만들 뿐이므로, 이것이 속한 선택은 전에 성립하던 자리에서 여전히 성립한다.
         /// </remarks>
         private static Condition WithoutShortCircuit(Condition way)
         {
@@ -211,33 +207,30 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Whether every comparison in here is about the caller's own object, or about nothing.
+        /// 여기 있는 모든 비교가 호출자 자신의 객체에 대한 것인지, 아니면 아무것에 대한 것도 아닌지.
         /// </summary>
         /// <remarks>
-        /// An input is not a comparison and has no subject, so it never stands in the way. A
-        /// comparison whose subject could not be worked out does — not knowing whose <c>count</c>
-        /// this is means not knowing whether it may be read beside somebody else's.
+        /// 입력은 비교가 아니고 주어가 없으므로 결코 걸림돌이 되지 않는다. 주어를 알아낼 수 없는 비교는 걸림돌이
+        /// 된다 — 이 <c>count</c> 가 누구의 것인지 모른다는 것은 그것을 다른 누군가의 것 옆에서 읽어도 되는지를
+        /// 모른다는 뜻이다.
         /// </remarks>
         /// <summary>
-        /// The same condition said where the caller stands, or null when it cannot be.
+        /// 같은 조건을 호출자가 선 자리에서 말한 것, 또는 그럴 수 없을 때 null.
         /// </summary>
         /// <remarks>
-        /// A callee's condition is about the callee's object and says something else beside the
-        /// caller's terms — which is why it is refused rather than composed. Refusing is right only
-        /// while the two cannot be brought into one set of words. When the caller called it on a
-        /// thing it can name, they can: <c>CombineZone.spellCards.Count</c> read where the card is
-        /// dragged is <c>DraggableCard.combineZone.spellCards.Count</c>, and that sentence is about
-        /// the caller's own object, which is what the composing rule wants.
+        /// 피호출자의 조건은 피호출자의 객체에 대한 것이고 호출자의 용어 옆에서는 다른 말을 한다 — 그래서 합성하지
+        /// 않고 거절한다. 거절이 옳은 것은 둘을 한 벌의 말로 데려올 수 없는 동안뿐이다. 호출자가 이름 붙일 수 있는
+        /// 것에 대고 그것을 불렀다면 데려올 수 있다: 카드가 드래그되는 자리에서 읽은
+        /// <c>CombineZone.spellCards.Count</c> 는 <c>DraggableCard.combineZone.spellCards.Count</c> 이고, 그
+        /// 문장은 호출자 자신의 객체에 대한 것이며, 그것이 합성 규칙이 원하는 바다.
         ///
-        /// The swap is on the head of the name, and only when the head is the callee's own type.
-        /// Every name here is written from what it was read out of, so a term of the callee's
-        /// <c>this</c> begins with that type; one that does not begin with it is about something
-        /// else and is left where it is — which makes the whole condition unsayable here, so
-        /// nothing is returned.
+        /// 갈아 끼우기는 이름의 머리에서 일어나고, 그 머리가 피호출자 자신의 타입일 때만 일어난다. 여기의 모든
+        /// 이름은 그것이 읽힌 출처로부터 쓰이므로 피호출자의 <c>this</c> 에 대한 항은 그 타입으로 시작한다. 그것으로
+        /// 시작하지 않는 항은 다른 무언가에 대한 것이라 있던 자리에 둔다 — 그러면 조건 전체를 여기서 말할 수 없게
+        /// 되므로 아무것도 돌려주지 않는다.
         ///
-        /// Nothing is dropped and nothing is guessed. Either the whole condition can be said in the
-        /// caller's words or none of it is offered, because a half-translated sentence reads as one
-        /// object's account while being two.
+        /// 아무것도 떨어뜨리지 않고 아무것도 추측하지 않는다. 조건 전체를 호출자의 말로 말할 수 있거나, 아니면
+        /// 하나도 내놓지 않는다. 반만 번역된 문장은 실제로는 둘인 것을 한 객체의 진술처럼 읽히게 하기 때문이다.
         /// </remarks>
         internal Condition ReadFrom(Binding binding)
         {
@@ -267,7 +260,7 @@ namespace Artel.Affordances.CodeGen
                     }
                     else if (Test.Context != null && Test.Context.StartsWith("arg:", System.StringComparison.Ordinal))
                     {
-                        // A term about a parameter is about whatever the caller put in it.
+                        // 매개변수에 대한 항은 호출자가 거기 넣은 무엇에 대한 것이다.
                         head = HeadOf(Test.Left);
 
                         if (head == null || binding.Passed == null ||
@@ -283,7 +276,7 @@ namespace Artel.Affordances.CodeGen
                     }
                     else
                     {
-                        // Static or subjectless terms mean the same wherever they are read.
+                        // static 이거나 주어 없는 항은 어디서 읽어도 같은 뜻이다.
                         return Test.Context == "static" || Test.Context == null ? this : null;
                     }
 
@@ -327,12 +320,12 @@ namespace Artel.Affordances.CodeGen
                 }
 
                 default:
-                    // Always, a gesture, or something unread. None of them names an object.
+                    // Always 이거나, 제스처이거나, 읽지 못한 것이다. 그중 어느 것도 객체의 이름을 대지 않는다.
                     return this;
             }
         }
 
-        /// <summary>One term said from where the caller stands, or null when it cannot be.</summary>
+        /// <summary>항 하나를 호출자가 선 자리에서 말한 것, 또는 그럴 수 없을 때 null.</summary>
         internal static string Swapped(string term, string owner, string receiver)
         {
             if (term == null || owner == null || receiver == null)
@@ -345,7 +338,7 @@ namespace Artel.Affordances.CodeGen
                 return receiver;
             }
 
-            // A number, a string, `null` — nothing that names an object of the callee's.
+            // 숫자, 문자열, `null` — 피호출자의 객체 이름을 대는 것은 하나도 없다.
             if (!term.StartsWith(owner + ".", System.StringComparison.Ordinal))
             {
                 return term.IndexOf('.') < 0 ? term : null;
@@ -354,7 +347,7 @@ namespace Artel.Affordances.CodeGen
             return receiver + term.Substring(owner.Length);
         }
 
-        /// <summary>The first name in a term, which is the thing the rest hangs off.</summary>
+        /// <summary>항의 첫 이름. 나머지가 거기 매달린다.</summary>
         private static string HeadOf(string term)
         {
             if (string.IsNullOrEmpty(term))
@@ -386,28 +379,26 @@ namespace Artel.Affordances.CodeGen
                     return true;
 
                 default:
-                    // Always, a gesture, or something unread. None of them names an object.
+                    // Always 이거나, 제스처이거나, 읽지 못한 것이다. 그중 어느 것도 객체의 이름을 대지 않는다.
                     return true;
             }
         }
 
         /// <summary>
-        /// The same condition with everything but the inputs dropped.
+        /// 같은 조건에서 입력만 남기고 전부 떨어뜨린 것.
         /// </summary>
         /// <remarks>
-        /// What comes out is implied by what went in, which is the only property that matters: it
-        /// may say less than the truth but never something the truth does not.
+        /// 나오는 것은 들어간 것이 함의하는 것이고, 중요한 성질은 그것 하나뿐이다: 진실보다 적게 말할지언정 진실이
+        /// 말하지 않는 것을 말하지는 않는다.
         ///
-        /// That is why the two ways of joining are not treated alike. Every part of an <c>and</c>
-        /// had to hold, so keeping the inputs out of any of them is still true. An <c>or</c> only
-        /// promises that *one* way was taken, so its inputs can only be kept when **every** way has
-        /// one — otherwise the way with no input is a way in that this would deny.
+        /// 그래서 잇는 두 방식을 똑같이 다루지 않는다. <c>and</c> 의 모든 부분은 성립해야 했으므로, 그중 어느
+        /// 것에서든 입력만 남겨도 여전히 참이다. <c>or</c> 은 *한* 갈래를 탔다는 것만 약속하므로, 그 입력은 **모든**
+        /// 갈래에 입력이 있을 때만 남길 수 있다 — 그러지 않으면 입력 없는 갈래는 이것이 부정하게 될 갈래가 된다.
         ///
-        /// This exists because an input is the one thing in a condition that does not belong to an
-        /// object. A caller's <c>count &gt; 0</c> is about the caller's <c>count</c> and means
-        /// something else beside the callee's terms; a caller's <c>Space was pressed</c> is about
-        /// the keyboard and means the same thing everywhere. So it is the one part that can be sent
-        /// down a call edge before the edges are able to carry receivers.
+        /// 이것이 존재하는 이유는, 입력이 조건 안에서 객체에 속하지 않는 유일한 것이기 때문이다. 호출자의
+        /// <c>count &gt; 0</c> 은 호출자의 <c>count</c> 에 대한 것이고 피호출자의 용어 옆에서는 다른 뜻이 된다.
+        /// 호출자의 <c>Space 가 눌렸다</c> 는 키보드에 대한 것이고 어디서나 같은 뜻이다. 그래서 엣지가 수신자를
+        /// 나를 수 있게 되기 전에 호출 엣지를 따라 내려보낼 수 있는 유일한 부분이다.
         /// </remarks>
         internal Condition InputsOnly()
         {
@@ -453,7 +444,7 @@ namespace Artel.Affordances.CodeGen
                 }
 
                 default:
-                    // A test, an unknown, or nothing at all. None of them is an input.
+                    // 검사이거나, 알 수 없는 것이거나, 아예 아무것도 아니다. 그중 어느 것도 입력이 아니다.
                     return Always;
             }
         }
@@ -480,12 +471,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Removes what the rest already says.
+        /// 나머지가 이미 말하는 것을 걷어낸다.
         /// </summary>
         /// <remarks>
-        /// An <c>else if</c> chain leaves every earlier test behind as its negation, so reaching the
-        /// fourth arm carries three <c>!=</c> clauses that <c>== 3</c> already implies. They are true,
-        /// and they bury the one clause that matters.
+        /// <c>else if</c> 사슬은 앞선 모든 검사를 그 부정으로 뒤에 남기므로, 네 번째 팔에 닿는 일은 <c>== 3</c> 이
+        /// 이미 함의하는 <c>!=</c> 절 셋을 나른다. 그것들은 참이고, 중요한 절 하나를 파묻는다.
         /// </remarks>
         private static void DropImplied(List<Condition> parts)
         {
@@ -515,19 +505,17 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// A canonical form, so two conditions saying the same thing compare equal.
+        /// 같은 말을 하는 두 조건이 같다고 비교되도록 하는 정규형.
         /// </summary>
         /// <remarks>
-        /// A test is told apart by where it was read as well as by what it says. Two reads that come
-        /// out with the same words are not the same fact — <c>spellCards.Count == 1</c> and
-        /// <c>magicTypeCards.Count == 1</c> arrived as one sentence while the name of a call was
-        /// written against its declaring type, and one of them was dropped as a repeat. What went
-        /// out was a precondition with half of itself missing and nothing saying so, which is worse
-        /// than an unread one: a specification built on it asks for one card where the game wants
-        /// two.
+        /// 검사는 무엇을 말하는가뿐 아니라 어디서 읽혔는가로도 가려진다. 같은 말로 나온 두 읽기가 같은 사실인 것은
+        /// 아니다 — 호출의 이름이 그 선언 타입에 대고 쓰이던 시절 <c>spellCards.Count == 1</c> 과
+        /// <c>magicTypeCards.Count == 1</c> 이 한 문장으로 도착했고, 그중 하나는 반복으로 떨어져 나갔다. 그렇게
+        /// 나간 것은 제 절반이 사라진 채 그렇다고 말하는 것도 없는 선행 조건이었고, 그것은 읽지 못한 것보다 나쁘다:
+        /// 거기서 만든 명세는 게임이 카드 둘을 원하는 자리에서 하나를 청한다.
         ///
-        /// The offset stays out of the sentence a person reads. It is here, where sameness is
-        /// decided, and the writing-out is left alone.
+        /// 오프셋은 사람이 읽는 문장에 넣지 않는다. 그것은 같음이 결정되는 여기에 있고, 써 나가는 쪽은 건드리지
+        /// 않는다.
         /// </remarks>
         internal string Key
         {
@@ -578,8 +566,8 @@ namespace Artel.Affordances.CodeGen
 
             if (Kind == ConditionKind.Gesture)
             {
-                // An input that had to be absent is a precondition, not a way to trigger this.
-                // Listing it as one would offer a key that does the opposite of what it says.
+                // 부재해야 했던 입력은 선행 조건이지 이것을 일으키는 방법이 아니다. 그것을 방법으로 나열하면 제 말과
+                // 반대로 동작하는 키를 내놓게 된다.
                 if (Gesture.Absent)
                 {
                     return;
@@ -637,12 +625,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Writes the condition out, stopping if it runs long.
+        /// 조건을 써 나가되, 길어지면 멈춘다.
         /// </summary>
         /// <remarks>
-        /// The tree shares its branches; writing it out does not. A budget keeps a shape that is
-        /// compact in memory from becoming a page of text, and the marker says where it stopped so
-        /// the result is short rather than quietly partial.
+        /// 트리는 가지를 공유하지만 써 나가는 것은 그렇지 않다. 예산이 메모리에서 촘촘한 모양이 텍스트 한 쪽이 되는
+        /// 것을 막고, 표시가 어디서 멈췄는지를 말하므로 결과는 조용히 일부인 것이 아니라 짧은 것이 된다.
         /// </remarks>
         internal void Write(StringBuilder text, ref int budget)
         {
