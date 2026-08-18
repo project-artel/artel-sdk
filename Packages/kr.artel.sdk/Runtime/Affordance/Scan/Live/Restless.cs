@@ -3,50 +3,44 @@ using System.Collections.Generic;
 namespace Artel.Affordances.Live
 {
     /// <summary>
-    /// Keeps a continuous value still until it has actually gone somewhere.
+    /// 연속적인 값이 실제로 어디론가 가기 전까지는 가만히 있게 한다.
     /// </summary>
     /// <remarks>
-    /// The change gate compares whole readings, so any value that never repeats opens it every beat
-    /// and the gate stops meaning anything — a reader given every reading has to work out for itself
-    /// which of them were news, which is the job the gate exists to do.
+    /// 변화 게이트는 판독 전체를 비교하므로, 결코 반복되지 않는 값은 매 박자마다 그것을 열어젖히고 게이트는 아무 뜻도
+    /// 없어진다 — 모든 판독을 받은 독자는 그중 무엇이 소식이었는지를 스스로 알아내야 하는데, 그것이 게이트가 하라고
+    /// 존재하는 일이다.
     ///
-    /// Positions are the values that behave that way. A field holding a number the game recomputes,
-    /// or an object a physics solver keeps nudging, differs in its last decimal place forever while
-    /// sitting exactly where it was.
+    /// 그렇게 구는 값이 위치다. 게임이 다시 계산하는 숫자를 쥔 필드나 물리 솔버가 계속 밀어 대는 객체는, 있던 자리에 정확히
+    /// 그대로 앉아 있으면서 마지막 소수 자리가 영원히 달라진다.
     ///
-    /// This is rounding whose grid is anchored where the value last stopped, rather than at zero. A
-    /// value that has not travelled far enough to be worth a word reads back as the number already
-    /// sent, so the reading matches and the gate stays shut; once it has, the new number is taken
-    /// and becomes the next anchor. Nothing accumulates: a slow drift crosses the bound eventually
-    /// and is reported, because a thing that has moved a long way slowly has still moved.
+    /// 이것은 반올림인데, 그 격자가 0 이 아니라 값이 마지막으로 멈춘 자리에 고정돼 있다. 한 마디 할 값만큼 가지 못한 값은
+    /// 이미 보낸 숫자로 되읽히므로 판독이 일치하고 게이트는 닫힌 채로 있다. 일단 가고 나면 새 숫자를 취해 그것이 다음
+    /// 고정점이 된다. 누적되는 것은 없다: 느린 표류도 결국 경계를 넘고 보고된다. 느리게 멀리 간 것도 간 것이기 때문이다.
     ///
-    /// It does not — and must not — hold still a value that is genuinely travelling. A map cursor
-    /// sliding to the next stage opens the gate on every beat it is moving, and that is the news.
-    /// What bounds the traffic there is the beat itself, which is the difference from an SDK that
-    /// hashes a whole scene every frame.
+    /// 진짜로 이동 중인 값을 붙잡아 두지 않고, 붙잡아서도 안 된다. 다음 스테이지로 미끄러지는 맵 커서는 움직이는 매 박자마다
+    /// 게이트를 열고, 그것이 소식이다. 거기서 트래픽을 가두는 것은 박자 자체이고, 그것이 매 프레임 씬 전체를 해싱하는
+    /// SDK 와의 차이다.
     /// </remarks>
     internal sealed class Restless
     {
         /// <summary>
-        /// How far a coordinate must travel before it is worth saying.
+        /// 좌표가 말할 값이 있으려면 얼마나 가야 하는지.
         /// </summary>
         /// <remarks>
-        /// A guess, and said to be one. It is in the game's own world units, which no package can
-        /// know the scale of — a millimetre in one project is a screen's width in another. Chosen
-        /// small enough that nothing a specification compares could hide under it, since what the
-        /// evidence does with positions is ask whether one object has arrived where another is, and
-        /// two objects assigned from each other are exactly equal rather than nearly.
+        /// 추측이고, 추측이라고 말한다. 그것은 게임 자신의 월드 단위인데 어느 패키지도 그 축척을 알 수 없다 — 한 프로젝트의
+        /// 1 밀리미터가 다른 프로젝트에서는 화면 너비다. 명세가 비교하는 무엇도 그 아래 숨지 못할 만큼 작게 골랐다. 근거가
+        /// 위치로 하는 일은 한 객체가 다른 객체가 있는 자리에 도착했는지를 묻는 것이고, 서로에게서 대입된 두 객체는 거의가
+        /// 아니라 정확히 같기 때문이다.
         ///
-        /// Whether it is right is measurable rather than arguable: a run whose readings almost all
-        /// go out has a value moving for reasons no condition mentions, and the reading says which
-        /// one it was.
+        /// 그것이 맞는지는 논쟁이 아니라 측정의 문제다: 판독이 거의 다 나가는 실행은 어떤 조건도 언급하지 않는 이유로 움직이는
+        /// 값을 가진 것이고, 판독이 그것이 무엇이었는지 말해 준다.
         /// </remarks>
         private const float Bound = 0.001f;
 
         private readonly Dictionary<string, float> _standing = new Dictionary<string, float>();
 
         /// <summary>
-        /// The number to write: the one already sent when nothing has happened, else the new one.
+        /// 쓸 숫자: 아무 일도 없었으면 이미 보낸 것, 아니면 새 것.
         /// </summary>
         internal float Settle(string key, float now)
         {

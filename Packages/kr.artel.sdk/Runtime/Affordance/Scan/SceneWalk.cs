@@ -6,30 +6,27 @@ using UnityEngine.SceneManagement;
 namespace Artel.Affordances.Scan
 {
     /// <summary>
-    /// Visits every scene in the build so the report covers the game rather than the screen.
+    /// 리포트가 화면이 아니라 게임을 덮도록 빌드의 모든 씬을 방문한다.
     /// </summary>
     /// <remarks>
-    /// Playing through to reach a screen is the honest way to describe it, and it is not something
-    /// that can be asked for every scene of every game. This drives the loading itself: each scene
-    /// in the build settings is brought up in turn, given a moment for <c>Awake</c> and
-    /// <c>Start</c> to run, read, and left behind.
+    /// 화면에 닿기까지 플레이해 가는 것이 그것을 서술하는 정직한 방법이지만, 모든 게임의 모든 씬에 대해 청할 수 있는 일은
+    /// 아니다. 이것은 로딩 자체를 몰고 간다: 빌드 설정의 각 씬을 차례로 띄우고, <c>Awake</c> 와 <c>Start</c> 가 돌 짬을
+    /// 주고, 읽고, 뒤에 남긴다.
     ///
-    /// Only ever started deliberately. It replaces whatever is on screen and discards the run in
-    /// progress, so it is a thing to ask for, not a thing to have happen. Loaded singly rather than
-    /// added alongside: a walk that stalls part way through leaves nothing mounted on top of the
-    /// game, which is how the previous version of this failed.
+    /// 언제나 일부러만 시작한다. 화면에 있는 것을 갈아치우고 진행 중이던 실행을 버리므로, 일어나는 일이 아니라 청하는
+    /// 일이다. 곁에 더하지 않고 홀로 로드한다: 도중에 멎은 순회가 게임 위에 아무것도 얹어 두지 않도록 — 이전 판이 실패한
+    /// 방식이 그것이다.
     /// </remarks>
     internal sealed class SceneWalk : MonoBehaviour
     {
-        /// <summary>Frames given to a scene before it is read.</summary>
+        /// <summary>씬을 읽기 전에 주는 프레임 수.</summary>
         /// <remarks>
-        /// One for the load to complete and one for the first <c>Update</c>, by which point
-        /// <c>Awake</c> and <c>Start</c> have run and a label shows the text the game put in it
-        /// rather than the placeholder that was saved with the scene.
+        /// 로드가 끝나는 데 하나, 첫 <c>Update</c> 에 하나. 그 지점이면 <c>Awake</c> 와 <c>Start</c> 가 돌았고 라벨은 씬과
+        /// 함께 저장된 자리표시자가 아니라 게임이 넣은 텍스트를 보여 준다.
         /// </remarks>
         private const int SettleFrames = 2;
 
-        /// <summary>Seconds one scene may take to come up before the walk moves on.</summary>
+        /// <summary>순회가 넘어가기 전까지 씬 하나가 올라오는 데 걸릴 수 있는 초.</summary>
         private const float PatiencePerScene = 30f;
 
         private static SceneWalk _walking;
@@ -58,8 +55,8 @@ namespace Artel.Affordances.Scan
 
             if (count == 0 && addressed.Count == 0)
             {
-                // Two different facts that used to read the same. A project with an empty Build
-                // Settings and no way to enumerate its addresses is not a project without scenes.
+                // 예전에는 똑같이 읽히던 서로 다른 두 사실. Build Settings 가 비어 있고 제 주소를 나열할 방법도 없는 프로젝트가
+                // 씬이 없는 프로젝트인 것은 아니다.
                 Debug.LogWarning(ExtraScenes.Available
                     ? "[Artel] No scenes in Build Settings and none reachable by address."
                     : "[Artel] No scenes in Build Settings. If this game loads its scenes by " +
@@ -74,8 +71,7 @@ namespace Artel.Affordances.Scan
                 yield break;
             }
 
-            // Where to put the game back. Taken by build index because a scene can share its name
-            // with another in a different folder.
+            // 게임을 되돌려 놓을 자리. 씬은 다른 폴더의 다른 씬과 이름을 나눠 가질 수 있으므로 빌드 인덱스로 잡는다.
             var origin = SceneManager.GetActiveScene().buildIndex;
 
             for (var index = 0; index < count; index++)
@@ -95,9 +91,8 @@ namespace Artel.Affordances.Scan
                 yield return Load(origin);
             }
 
-            // Read last, and once. What the game kept across scene loads is whatever it had
-            // accumulated by the end of the walk, and this carrier lives in that same scene — which
-            // is the only handle on it a package that installs itself has.
+            // 마지막에, 한 번 읽는다. 게임이 씬 로드를 건너 쥐고 있던 것은 순회가 끝날 무렵까지 쌓인 무엇이고, 이 carrier 가
+            // 바로 그 같은 씬에 산다 — 스스로 설치되는 패키지가 그 씬에 대해 가진 유일한 손잡이다.
             SceneEvidenceScan.CapturePersistent(gameObject.scene);
 
             Debug.Log("[Artel] Walk finished. " + AffordanceReport.SceneCount + " scenes in the report: " +
@@ -106,7 +101,7 @@ namespace Artel.Affordances.Scan
             Finish();
         }
 
-        /// <summary>The addresses of scenes that are not in the build settings, or none.</summary>
+        /// <summary>빌드 설정에 없는 씬들의 주소, 또는 없음.</summary>
         private static List<string> Addressed()
         {
             if (!ExtraScenes.Available)
@@ -126,14 +121,12 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Brings up one addressed scene alone and reads it.
+        /// 주소로 된 씬 하나를 홀로 띄우고 읽는다.
         /// </summary>
         /// <remarks>
-        /// Alone is not how the game plays it. Scenes loaded by address are usually meant to be
-        /// added on top of a manager scene that is already up, and one raised by itself may come up
-        /// half-built or empty. So the reading is kept and marked rather than thrown away — a screen
-        /// described from an incomplete load is still the only account of that screen there is, as
-        /// long as nobody reads it as the whole one.
+        /// 홀로는 게임이 그것을 플레이하는 방식이 아니다. 주소로 로드되는 씬은 대개 이미 올라와 있는 매니저 씬 위에 더해지도록
+        /// 만들어졌고, 혼자 올라온 것은 반쯤 지어진 채로 오거나 비어 있을 수 있다. 그래서 판독은 버리지 않고 쥐되 표시해 둔다 —
+        /// 불완전한 로드에서 서술된 화면도, 아무도 그것을 전체인 양 읽지만 않는다면 그 화면에 대한 유일한 진술이다.
         /// </remarks>
         private IEnumerator Read(string address)
         {
@@ -171,9 +164,8 @@ namespace Artel.Affordances.Scan
 
             if (scene.buildIndex != buildIndex)
             {
-                // The game refused to stay where it was put — a title screen that sends itself
-                // onward, or a scene that failed to come up. Said rather than recorded under the
-                // name of whatever it landed on.
+                // 게임이 놓인 자리에 머물기를 거부했다 — 스스로 다음으로 넘어가는 타이틀 화면이거나, 올라오지 못한 씬이다. 그것이
+                // 착지한 무엇의 이름으로 기록하는 대신 그렇다고 말한다.
                 AffordanceReport.Merge("build:" + buildIndex, string.Empty,
                     new System.Collections.Generic.List<string> { "scene-would-not-stay" });
                 yield break;
@@ -209,8 +201,7 @@ namespace Artel.Affordances.Scan
 
                 if (waited > PatiencePerScene)
                 {
-                    // Bounded because a scene that never finishes would otherwise hold the walk for
-                    // as long as the editor is open, and the game is already unusable by then.
+                    // 가둔다. 그러지 않으면 끝나지 않는 씬이 에디터가 열려 있는 내내 순회를 붙잡고, 그때쯤이면 게임은 이미 쓸 수 없다.
                     Debug.LogWarning("[Artel] Scene " + buildIndex + " did not finish loading in " +
                                      PatiencePerScene + "s. Moving on.");
                     yield break;
