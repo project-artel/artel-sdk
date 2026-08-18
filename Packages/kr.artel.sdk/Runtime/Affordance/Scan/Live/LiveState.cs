@@ -9,42 +9,36 @@ using UnityEngine.SceneManagement;
 namespace Artel.Affordances.Live
 {
     /// <summary>
-    /// What the watched members hold right now, written the way the report names them.
+    /// 감시 대상 멤버가 지금 쥐고 있는 것을, 리포트가 그것들을 부르는 방식으로 쓴다.
     /// </summary>
     /// <remarks>
-    /// The report says <c>MapMove.position == 0</c> and until now nothing could see what
-    /// <c>position</c> held, so every row of a specification was a rule with no way to check its own
-    /// premise. This is the other side of that sentence.
+    /// 리포트는 <c>MapMove.position == 0</c> 이라고 말하는데 지금까지 아무것도 <c>position</c> 이 무엇을 쥐고 있는지 볼 수
+    /// 없었으므로, 명세의 모든 줄이 제 전제를 확인할 방법이 없는 규칙이었다. 이것이 그 문장의 반대쪽이다.
     ///
-    /// Two things are kept apart on purpose. A static field has one value and no owner, and an
-    /// instance field has one value per object that carries it — five spawned enemies are five
-    /// answers to <c>hp</c>, and folding them into one would be the same mistake as writing a
-    /// condition about two objects in one sentence. Statics are written as a list of their own;
-    /// instance values are written under the path of the object holding them, and never averaged,
-    /// summed or picked from.
+    /// 둘을 일부러 갈라 둔다. static 필드는 값이 하나이고 소유자가 없으며, 인스턴스 필드는 그것을 나르는 객체마다 값이 하나다 —
+    /// 만들어진 적 다섯은 <c>hp</c> 에 대한 답 다섯이고, 그것들을 하나로 접는 것은 두 객체에 대한 조건을 한 문장에 쓰는 것과
+    /// 같은 실수다. static 은 제 목록으로 쓰고, 인스턴스 값은 그것을 쥔 객체의 경로 아래에 쓰며, 평균 내거나 합하거나 골라
+    /// 내지 않는다.
     ///
-    /// Nothing here interprets. A value is written as the field gave it and typed as the analysis
-    /// declared it, and what <c>flag == 1</c> means is a question for whoever reads this.
+    /// 여기서는 아무것도 해석하지 않는다. 값은 필드가 준 대로 쓰고 분석이 선언한 대로 타입을 붙이며, <c>flag == 1</c> 이
+    /// 무엇을 뜻하는지는 이것을 읽는 쪽의 물음이다.
     /// </remarks>
     internal static class LiveState
     {
-        /// <summary>How many objects one watched member may be found on before the rest are dropped.</summary>
+        /// <summary>감시 대상 멤버 하나를 몇 개의 객체에서까지 찾고 나머지를 버리는지.</summary>
         /// <remarks>
-        /// A pooled projectile can exist in the hundreds, and a payload that grows with the pool is
-        /// one the change gate cannot use — it would differ every poll for reasons no condition
-        /// mentions. What is dropped is said on the member rather than left to be inferred from a
-        /// count that looks complete.
+        /// 풀에서 꺼내 쓰는 발사체는 수백 개가 존재할 수 있고, 풀과 함께 커지는 페이로드는 변화 게이트가 쓸 수 없는 것이다 —
+        /// 어떤 조건도 언급하지 않는 이유로 폴링마다 달라지기 때문이다. 무엇이 버려졌는지는 완전해 보이는 개수에서 유추하게 두지
+        /// 않고 그 멤버에 적는다.
         /// </remarks>
         private const int MaxHolders = 16;
 
         /// <summary>
-        /// Reads every watched member and writes one document.
+        /// 감시 대상 멤버를 전부 읽고 문서 하나를 쓴다.
         /// </summary>
         /// <remarks>
-        /// The scene is walked once and every component is offered to every watched type, rather
-        /// than each type being searched for on its own. A game with a hundred watched members
-        /// would otherwise walk the hierarchy a hundred times per poll, and the walk is the
-        /// expensive half.
+        /// 타입마다 따로 찾아다니는 대신, 씬을 한 번 걷고 모든 컴포넌트를 모든 감시 대상 타입에 내놓는다. 감시 대상 멤버가 백 개인
+        /// 게임은 그러지 않으면 폴링마다 계층을 백 번 걷게 되고, 걷기가 비싼 절반이다.
         /// </remarks>
         internal static string Compose(
             long reading, Scene persistent, Restless restless, Dictionary<string, string> since,
@@ -78,24 +72,21 @@ namespace Artel.Affordances.Live
 
             text.Append("{\"schema\":").Append(Pulse.SchemaVersion);
 
-            // Said so a reading can be put beside the frame it describes. A specification is checked
-            // against the screen and against this at once, and without a place in time the two are
-            // two accounts of a game with no way to tell which moment either belongs to. The frame
-            // is the one the game itself counts, so anything else reading the same frame agrees.
+            // 판독을 그것이 서술하는 프레임 옆에 놓을 수 있도록 말해 둔다. 명세는 화면과 이것을 동시에 대고 확인되는데, 시간 위의
+            // 자리가 없으면 그 둘은 어느 순간에 속하는지 가릴 방법이 없는 두 진술이다. 프레임은 게임 자신이 세는 것이므로 같은
+            // 프레임을 읽는 다른 무엇도 일치한다.
             text.Append(",\"reading\":").Append(reading);
             text.Append(",\"frame\":").Append(Time.frameCount);
 
             text.Append(",\"scene\":");
             Json.String(text, active.IsValid() ? active.name : null);
 
-            // The first reading has nothing to be a difference from, and a change of screen replaces
-            // everything on it anyway — so the full state costs almost nothing extra there and gives
-            // a reader a point it can be sure of. Every other reading carries only what moved.
+            // 첫 판독은 차이를 잴 대상이 없고, 화면이 바뀌면 어차피 그 위의 모든 것이 갈아치워진다 — 그래서 전량 상태를 보내는 값이
+            // 거기서는 거의 들지 않으면서 독자에게 확신할 수 있는 지점을 준다. 그 밖의 모든 판독은 움직인 것만 나른다.
             //
-            // And after a reading that could not be delivered. A reader that missed a difference is
-            // wrong about that value until something happens to move it again, which a full reading
-            // repairs and another difference cannot. Sending the lost document again would be the
-            // flood the sink is already unhappy about; sending the whole state once is not.
+            // 그리고 전달되지 못한 판독 뒤에도 그렇다. 차이를 놓친 독자는 무언가 다시 그 값을 움직이기 전까지 그것에 대해 틀린 채로
+            // 있고, 그것은 전량 판독이 고치지 또 다른 차이가 고치지 못한다. 잃어버린 문서를 다시 보내는 것은 sink 가 이미 언짢아하는
+            // 홍수가 되지만, 전체 상태를 한 번 보내는 것은 그렇지 않다.
             since.TryGetValue("scene", out var was);
 
             var everything = repair || since.Count == 0 ||
@@ -106,8 +97,8 @@ namespace Artel.Affordances.Live
                 Restless = restless, Since = since, Now = now, Moved = moved, Everything = everything
             };
 
-            // The screen the tester is on is part of what a reading claims, so a change of screen is
-            // news even when every value on it happens to read the same.
+            // 테스터가 있는 화면은 판독이 주장하는 것의 일부이므로, 화면이 바뀌는 것은 그 위의 모든 값이 마침 같게 읽히더라도
+            // 소식이다.
             ledger.Say("scene", active.IsValid() ? active.name : null);
 
             text.Append(",\"statics\":[");
@@ -121,9 +112,8 @@ namespace Artel.Affordances.Live
             showing.WriteTo(text, "active");
             hidden.WriteTo(text, "deactive");
 
-            // Said so a reader knows which kind of reading it is holding. Without it, a delta and a
-            // full reading look alike, and a reader that mistook one for the other would either
-            // discard state it still needs or keep state that is gone.
+            // 독자가 어떤 종류의 판독을 쥐고 있는지 알도록 말해 둔다. 그것이 없으면 델타와 전량 판독이 똑같아 보이고, 하나를 다른
+            // 하나로 오인한 독자는 아직 필요한 상태를 버리거나 사라진 상태를 계속 쥐게 된다.
             text.Append(",\"whole\":").Append(everything ? "true" : "false");
 
             text.Append(",\"watching\":").Append(watched.Count);
@@ -135,19 +125,14 @@ namespace Artel.Affordances.Live
                 text.Append(",\"gaps\":[\"holder-limit:").Append(truncated).Append("\"]");
             }
 
-            // What is different from the reading before this one. Written even when it is empty,
-            // because an empty list and a missing field are different claims — the first says the
-            // values were compared and none had moved, which is what the first reading of a run
-            // cannot say.
+            // 직전 판독과 무엇이 다른가. 비어 있을 때도 쓴다. 빈 목록과 없는 필드는 다른 주장이기 때문이다 — 앞의 것은 값들이
+            // 비교됐고 아무것도 움직이지 않았다는 말인데, 그것은 한 실행의 첫 판독이 할 수 없는 말이다.
             //
-            // This is the half that makes a restless value findable. A run whose readings nearly all
-            // go out is a run with something moving that no condition mentions, and without this a
-            // reader can see that it is happening and never which member is doing it. Said on every
-            // reading rather than counted at the end, so it is noticed on the first one.
-            // Gone is a change. A key the reading before this one had and this one does not is an
-            // object that was destroyed or a screen that was left, and comparing only what is here
-            // now would report the busiest moment in a game — everything being torn down — as
-            // nothing having happened.
+            // 들썩이는 값을 찾을 수 있게 만드는 절반이 이것이다. 판독이 거의 다 나가는 실행은 어떤 조건도 언급하지 않는 무언가가
+            // 움직이고 있는 실행이고, 이것이 없으면 독자는 그런 일이 일어난다는 것만 볼 뿐 어느 멤버가 그러는지는 영영 못 본다.
+            // 끝에 세지 않고 판독마다 말하므로 첫 판독에서 눈에 띈다.
+            // 사라진 것도 변화다. 직전 판독에 있었고 이번에 없는 키는 파괴된 객체이거나 떠나온 화면이고, 지금 여기 있는 것만 비교하면
+            // 게임에서 가장 분주한 순간 — 모든 것이 헐리는 순간 — 을 아무 일도 없었다고 보고하게 된다.
             foreach (var pair in since)
             {
                 if (!now.ContainsKey(pair.Key))
@@ -183,16 +168,14 @@ namespace Artel.Affordances.Live
             return text.ToString();
         }
 
-        /// <summary>What this reading said, what the one before it said, and the difference.</summary>
+        /// <summary>이번 판독이 한 말, 직전 판독이 한 말, 그리고 그 차이.</summary>
         /// <summary>
-        /// One of the two lists a reading's objects are sorted into.
+        /// 판독의 객체들이 나뉘어 들어가는 두 목록 중 하나.
         /// </summary>
         /// <remarks>
-        /// Switched-on and switched-off are told apart by which list an object arrives in rather
-        /// than by a field on it. A row of the sample game's specification is <em>the continue
-        /// button is shown disabled</em>, so the switched-off ones have to be carried; carrying them
-        /// mixed in with the rest makes a reader filter a list to answer the question the channel
-        /// was asked. Sorting is the same work done once, here.
+        /// 켜짐과 꺼짐은 객체 위의 필드가 아니라 그것이 어느 목록으로 도착하는지로 가린다. 샘플 게임 명세의 한 줄이 <em>계속 버튼이
+        /// 비활성으로 보인다</em> 이므로 꺼진 것들도 날라야 하는데, 그것들을 나머지와 섞어 나르면 독자가 채널에 물은 바로 그 물음에
+        /// 답하려고 목록을 필터링하게 된다. 정렬은 같은 일을 여기서 한 번 하는 것이다.
         /// </remarks>
         private sealed class Bin
         {
@@ -224,13 +207,11 @@ namespace Artel.Affordances.Live
             internal List<string> Moved;
 
             /// <summary>
-            /// Records one value under its own name and notes whether it is new.
+            /// 값 하나를 제 이름 아래에 기록하고 그것이 새것인지 적어 둔다.
             /// </summary>
             /// <remarks>
-            /// Keyed by where the value lives rather than by what it is called, so the same field on
-            /// two objects is two entries. A member that appears on five spawned enemies moving
-            /// independently is five things that can each be seen to have moved, which is the only
-            /// form in which that fact is any use.
+            /// 값이 무엇이라 불리는지가 아니라 어디에 사는지로 키를 잡으므로, 두 객체 위의 같은 필드는 두 항목이다. 각자 독립적으로
+            /// 움직이는 다섯 적에게 나타나는 멤버는 각각 움직였음을 볼 수 있는 다섯 가지이고, 그 사실이 쓸모 있는 형태는 그것뿐이다.
             /// </remarks>
             internal bool Say(string key, string value)
             {
@@ -246,24 +227,20 @@ namespace Artel.Affordances.Live
             }
 
             /// <summary>
-            /// Whether this reading carries everything rather than only what moved.
+            /// 이 판독이 움직인 것만이 아니라 전부를 나르는지.
             /// </summary>
             /// <remarks>
-            /// A reading that carries only differences is the whole point — the watch list now holds
-            /// everything readable rather than everything the evidence asked for, and sending a
-            /// game's entire state ten times a second to say that none of it moved is the cost that
-            /// widening would otherwise have bought.
+            /// 차이만 나르는 판독이 요점 전부다 — watch list 는 이제 근거가 청한 전부가 아니라 읽을 수 있는 전부를 쥐고 있고, 그중
+            /// 아무것도 움직이지 않았다고 말하려고 게임의 상태 전체를 초당 열 번 보내는 것이 그렇게 넓힌 값이 될 뻔했다.
             ///
-            /// But a reader that has only ever seen differences has never been told what the values
-            /// are, and one that missed a reading is wrong about them until something happens to
-            /// move each one. So the whole state goes out at points a reader can be counted on to
-            /// have: the first reading, and every change of screen. A scene change is the natural
-            /// one — everything on the screen is replaced anyway, so the full reading costs almost
-            /// nothing extra there, and it is the boundary a specification is written against.
+            /// 하지만 차이만 본 독자는 값이 무엇인지 한 번도 들은 적이 없고, 판독 하나를 놓친 독자는 무언가 각각을 움직이기 전까지 그
+            /// 값들에 대해 틀린 채로 있다. 그래서 독자가 반드시 가지고 있으리라 셈할 수 있는 지점에서 전체 상태가 나간다: 첫 판독과,
+            /// 화면이 바뀔 때마다. 씬 전환이 자연스러운 지점이다 — 화면 위의 모든 것이 어차피 갈아치워지므로 거기서 전량 판독은 거의
+            /// 값이 들지 않고, 명세가 대고 쓰이는 경계이기도 하다.
             /// </remarks>
             internal bool Everything;
 
-            /// <summary>Says the value, and answers whether it belongs in this reading.</summary>
+            /// <summary>값을 말하고, 그것이 이번 판독에 들어가는지 답한다.</summary>
             internal bool Keep(string key, string value)
             {
                 return Say(key, value) | Everything;
@@ -304,31 +281,27 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// Every object a test could act on, under the path it sits at.
+        /// 테스트가 작용할 수 있는 모든 객체를, 그것이 앉은 경로 아래에.
         /// </summary>
         /// <remarks>
-        /// The same objects the report has, decided the same way. That is not a convenience: the
-        /// specification was written from the report's own walk of this game, so an object the walk
-        /// wrote down is one some row may name — and a reading narrower than that walk reports the
-        /// premise of a row as missing when the package had it all along.
+        /// 리포트가 가진 것과 같은 객체들이고 같은 방식으로 정한다. 그것은 편의가 아니다: 명세는 이 게임에 대한 리포트 자신의
+        /// 순회에서 쓰였으므로, 순회가 적어 둔 객체는 어떤 줄이 이름 댈 수 있는 객체다 — 그리고 그 순회보다 좁은 판독은 패키지가
+        /// 내내 가지고 있던 줄의 전제를 없는 것으로 보고한다.
         ///
-        /// It was narrower. This used to visit only the objects carrying a member the evidence
-        /// names, which left <c>Canvas/ExitButton</c> and three more buttons out of every reading
-        /// while the report listed them with their paths and their switched-on state. Six rows were
-        /// unanswerable for no reason but that.
+        /// 실제로 좁았다. 이것은 예전에 근거가 이름 댄 멤버를 나르는 객체만 방문했고, 그래서 <c>Canvas/ExitButton</c> 과 버튼
+        /// 셋이 모든 판독에서 빠졌다. 정작 리포트는 그것들을 경로와 켜짐 상태와 함께 나열하고 있었다. 오직 그 이유로 여섯 줄이
+        /// 답할 수 없는 것이었다.
         ///
-        /// So the watch list decides what to *read*, never what to *visit*. Its whole job is the
-        /// values a walk cannot see — a private field, a static that hangs off no object — and
-        /// deciding the walk with it was two jobs given to one thing.
+        /// 그래서 watch list 는 무엇을 *읽을지* 를 정하지 무엇을 *방문할지* 를 결코 정하지 않는다. 그것의 일 전부는 순회가 볼 수
+        /// 없는 값이고 — private 필드, 아무 객체에도 매달리지 않은 static — 그것으로 순회를 정하는 일은 한 가지에 두 가지 일을
+        /// 맡긴 것이었다.
         ///
-        /// Every loaded scene and the persistent one. A game that puts its interface on top of a
-        /// manager scene is playing both, and what a game keeps across scene loads is filed
-        /// somewhere Unity does not count among the loaded scenes at all.
+        /// 로드된 모든 씬과 영속 씬. 인터페이스를 매니저 씬 위에 얹는 게임은 둘 다 플레이하고 있는 것이고, 게임이 씬 로드를 건너
+        /// 쥐고 있는 것은 Unity 가 로드된 씬으로 아예 세지 않는 자리에 정리돼 있다.
         ///
-        /// Scenes that are not loaded are not read: there is nothing to read, and a tester is not in
-        /// them. Inactive objects inside a loaded scene are read, because whether the continue button
-        /// is switched on is the whole of what one row checks — and it is the one thing a recording
-        /// of that screen cannot answer, since an absent button and a switched-off one look the same.
+        /// 로드되지 않은 씬은 읽지 않는다: 읽을 것이 없고 테스터도 거기 없다. 로드된 씬 안의 비활성 객체는 읽는다. 계속 버튼이
+        /// 켜져 있는지가 한 줄이 확인하는 것의 전부이기 때문이다 — 그리고 없는 버튼과 꺼진 버튼이 똑같아 보이므로, 그 화면의
+        /// 녹화가 답할 수 없는 유일한 것이 그것이다.
         /// </remarks>
         private static int Objects(
             Scene persistent, Dictionary<Type, List<Watched>> byOwner, Ledger ledger,
@@ -349,13 +322,12 @@ namespace Artel.Affordances.Live
                 dropped += In(scene, byOwner, seen, ledger, showing, hidden);
             }
 
-            // What the game kept across scene loads. Unity does not count it among the loaded
-            // scenes, so a walk of those alone misses it — and this is where a game puts the things
-            // that outlive a screen. The sample game keeps its stage number there, which
-            // twenty-six specification rows test.
+            // 게임이 씬 로드를 건너 쥐고 있던 것. Unity 는 그것을 로드된 씬으로 세지 않으므로 그것들만 걷는 순회는 이것을 놓치고 —
+            // 게임이 화면보다 오래 사는 것들을 두는 자리가 여기다. 샘플 게임은 스테이지 번호를 거기 두는데, 명세 스물여섯 줄이 그것을
+            // 검사한다.
             //
-            // It is not another screen's data. These objects are in this play session, alive right
-            // now, and the only reason they need saying twice is that Unity files them apart.
+            // 다른 화면의 데이터가 아니다. 이 객체들은 이 플레이 세션 안에 지금 살아 있고, 두 번 말해야 하는 유일한 이유는 Unity 가
+            // 그것들을 따로 정리해 두기 때문이다.
             if (persistent.IsValid() && persistent.isLoaded)
             {
                 dropped += In(persistent, byOwner, seen, ledger, showing, hidden);
@@ -379,8 +351,7 @@ namespace Artel.Affordances.Live
             {
                 if (roots[index] == null || roots[index].hideFlags != HideFlags.None)
                 {
-                    // The pulse's own carrier lives in a scene like anything else. Reporting it
-                    // would be reporting the instrument rather than the game.
+                    // pulse 자신의 carrier 도 다른 것과 마찬가지로 씬 안에 산다. 그것을 보고하는 것은 게임이 아니라 계기를 보고하는 일이다.
                     continue;
                 }
 
@@ -413,11 +384,9 @@ namespace Artel.Affordances.Live
                         continue;
                     }
 
-                    // Which bin it goes in is the statement, so the object does not also carry a
-                    // flag saying the same thing. A reader holding a difference knows the object is
-                    // switched off because of where it arrived, and an object that says nothing this
-                    // reading stays wherever it was last put — which is right, because a change of
-                    // that is itself a difference and would have brought it here.
+                    // 어느 통에 들어가는가가 곧 그 진술이므로, 객체가 같은 말을 하는 플래그를 따로 나르지 않는다. 차이를 쥔 독자는 그 객체가
+                    // 어디로 도착했는지로 꺼져 있음을 알고, 이번 판독에 아무 말도 하지 않는 객체는 마지막으로 놓인 자리에 그대로 있다 —
+                    // 그것이 옳다. 그것이 바뀌는 일 자체가 차이이고 그러면 그 객체를 여기로 데려왔을 것이기 때문이다.
                     (transform.gameObject.activeInHierarchy ? showing : hidden).Add(said);
                 }
             }
@@ -425,13 +394,12 @@ namespace Artel.Affordances.Live
             return dropped;
         }
 
-        /// <summary>Writes one object: where it is, whether it is showing, and what it holds.</summary>
+        /// <summary>객체 하나를 쓴다: 어디 있는지, 보이고 있는지, 무엇을 쥐고 있는지.</summary>
         /// <remarks>
-        /// One record per object rather than per component, which is the shape the report already
-        /// uses. An object is what a row names and what a tester acts on; that two of its components
-        /// each hold a watched field is an arrangement inside it.
+        /// 컴포넌트마다가 아니라 객체마다 기록 하나이고, 그것이 리포트가 이미 쓰는 모양이다. 줄이 이름 대는 것과 테스터가 작용하는
+        /// 것이 객체다. 그 컴포넌트 둘이 각각 감시 대상 필드를 쥐고 있다는 것은 그 안의 배치다.
         /// </remarks>
-        /// <returns>True when anything about this object belongs in the reading.</returns>
+        /// <returns>이 객체에 대해 무엇이든 판독에 들어갈 것이 있으면 참.</returns>
         private static bool Object(
             StringBuilder into,
             Transform transform,
@@ -442,19 +410,17 @@ namespace Artel.Affordances.Live
         {
             var selector = ScenePath.SelectorOf(transform, rootIndex);
 
-            // Keyed by the selector rather than the path. Five spawned enemies share one path —
-            // `TurnBattleScene/RangedCat(Clone)` five times over — so a path-keyed ledger has them
-            // overwriting each other and reports a change every reading for objects that never
-            // moved. Measured: that alone was most of what opened the gate on a run.
+            // 경로가 아니라 selector 로 키를 잡는다. 만들어진 적 다섯은 경로 하나를 공유하므로 —
+            // `TurnBattleScene/RangedCat(Clone)` 이 다섯 번 — 경로로 키를 잡은 장부는 그것들이 서로를 덮어쓰게 하고, 한 번도 움직이지
+            // 않은 객체에 대해 판독마다 변화를 보고한다. 실측: 그것 하나가 한 실행에서 게이트를 연 것의 대부분이었다.
             var identity = scene.name + "/" + selector;
 
-            // Built aside because whether the object is written at all is only known once its
-            // members have been read. An object none of whose values moved is one the reading has
-            // nothing to say about, and the whole of what it holds is the wrong price for saying so.
+            // 객체를 아예 쓸지가 그 멤버들을 읽고 나서야 알려지므로 옆에 만들어 둔다. 어떤 값도 움직이지 않은 객체는 판독이 그것에
+            // 대해 할 말이 없는 객체이고, 그렇다고 말하기 위해 그것이 쥔 전부를 치르는 것은 틀린 값이다.
             var text = new StringBuilder(256);
 
-            // Where it is, always. A reader that has never been told the path of a selector cannot
-            // act on a delta about it, and these three cost nothing beside the members.
+            // 어디 있는지는 언제나 쓴다. selector 의 경로를 한 번도 듣지 못한 독자는 그것에 대한 델타로 아무것도 할 수 없고, 이 셋은
+            // 멤버들 옆에서 아무 값도 들지 않는다.
             text.Append('{');
             Json.Property(text, "scene", scene.name);
             text.Append(',');
@@ -462,9 +428,8 @@ namespace Artel.Affordances.Live
             text.Append(',');
             Json.Property(text, "selector", selector);
 
-            // Told to the ledger, not written into the object. Which list it lands in already
-            // says it, and saying it twice is two places for one fact to disagree. The ledger still
-            // needs it so that switching off is a difference and brings the object to a reader.
+            // 객체에 써넣지 않고 장부에 말해 둔다. 어느 목록에 들어가는지가 이미 그것을 말하고, 두 번 말하는 것은 한 사실이 어긋날
+            // 자리를 둘 두는 일이다. 장부는 여전히 그것이 필요하다. 꺼지는 일이 차이가 되어 그 객체를 독자에게 데려오도록.
             var moved = ledger.Keep(
                 identity + "|active",
                 transform.gameObject.activeInHierarchy ? "true" : "false");
@@ -477,15 +442,13 @@ namespace Artel.Affordances.Live
 
             var written = 0;
 
-            // How many of each type have been passed on this object. Nothing stops a GameObject
-            // carrying two of one behaviour, and the sample game does — `CombineZone/Zone1` has two
-            // `DropZone`s. Without this the two share one entry in the ledger: the second overwrites
-            // the first, so the first's value is never what the next reading compares against, and
-            // it either moves without being reported or is reported as moving when it did not.
+            // 이 객체에서 각 타입이 몇 개나 지나갔는지. GameObject 가 한 behaviour 를 둘 나르는 것을 막는 것은 없고, 샘플 게임이
+            // 그렇게 한다 — `CombineZone/Zone1` 에 `DropZone` 이 둘 있다. 이것이 없으면 그 둘이 장부에서 항목 하나를 나눠 갖는다:
+            // 둘째가 첫째를 덮어쓰므로 첫째의 값은 다음 판독이 대고 비교할 것이 되지 못하고, 보고되지 않은 채 움직이거나 움직이지
+            // 않았는데 움직였다고 보고된다.
             //
-            // The same fault the selector already fixed one level up, where five spawned enemies
-            // shared one path and every reading called them all changed. The object was made
-            // countable and the components on it were not.
+            // 한 단계 위에서 selector 가 이미 고친 것과 같은 결함이다. 거기서는 만들어진 적 다섯이 경로 하나를 나눠 갖고 판독마다
+            // 그것들이 전부 바뀌었다고 했다. 객체는 셀 수 있게 만들어졌는데 그 위의 컴포넌트는 아니었다.
             var counted = new Dictionary<Type, int>();
 
             foreach (var component in transform.GetComponents<Component>())
@@ -500,15 +463,14 @@ namespace Artel.Affordances.Live
                 counted.TryGetValue(type, out var ordinal);
                 counted[type] = ordinal + 1;
 
-                // Only the second and later are marked, so an object carrying one of a type — which
-                // is nearly all of them — keys and reads exactly as it did before.
+                // 둘째 이후만 표시하므로, 한 타입을 하나만 나르는 객체는 — 거의 전부가 그렇다 — 전과 정확히 같은 방식으로 키를 잡고
+                // 읽힌다.
                 var among = ordinal == 0 ? string.Empty : ordinal.ToString(Invariant) + "#";
 
                 byOwner.TryGetValue(type, out var named);
 
-                // What the evidence asked for, and what else can be read off the same component.
-                // A member nobody asked for is still a member somebody will ask for once a person
-                // writes the row the analysis missed.
+                // 근거가 청한 것과, 같은 컴포넌트에서 읽을 수 있는 그 밖의 것. 아무도 청하지 않은 멤버도, 분석이 놓친 줄을 누군가 쓰는
+                // 순간 누군가 청할 멤버다.
                 var members = Readable.On(type, named);
 
                 if (members == null)
@@ -527,9 +489,8 @@ namespace Artel.Affordances.Live
                     said.Append(',');
                     Json.Property(said, "type", member.Type);
 
-                    // Said in the document as well as kept in the ledger. A reader given two entries
-                    // that name the same type and the same member has no way to tell which of the
-                    // object's components each came from.
+                    // 장부에 두는 것뿐 아니라 문서에도 말한다. 같은 타입과 같은 멤버의 이름을 댄 두 항목을 받은 독자는 각각이 그 객체의 어느
+                    // 컴포넌트에서 왔는지 가릴 방법이 없다.
                     if (ordinal > 0)
                     {
                         said.Append(",\"among\":").Append(ordinal.ToString(Invariant));
@@ -571,34 +532,29 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// The value, or the reason there is not one.
+        /// 값, 또는 값이 없는 이유.
         /// </summary>
         /// <remarks>
-        /// A field that throws when it is read is not a value of zero. Reflection on a property-like
-        /// field of a destroyed object does throw, and reporting the exception as a number would put
-        /// a false premise into a specification — which is the one failure this whole package is
-        /// arranged to avoid.
+        /// 읽을 때 던지는 필드는 0 이라는 값이 아니다. 파괴된 객체의 프로퍼티형 필드에 리플렉션을 걸면 실제로 던지고, 그 예외를
+        /// 숫자로 보고하면 명세에 거짓 전제를 넣게 되는데 — 이 패키지 전체가 피하려고 짜인 유일한 실패가 그것이다.
         ///
-        /// A reference is written as whether it is there, not as what it is. What a
-        /// <c>SaveLoadController</c> holds is the game's own data; that a condition compares it with
-        /// <c>null</c> is answered entirely by present or absent, and going further would turn a
-        /// state channel into a dump of the save file.
+        /// 참조는 그것이 무엇인지가 아니라 거기 있는지로 쓴다. <c>SaveLoadController</c> 가 쥔 것은 게임 자신의 데이터다. 어떤
+        /// 조건이 그것을 <c>null</c> 과 비교한다는 것은 있음/없음으로 온전히 답해지고, 그 이상 가면 상태 채널이 세이브 파일의
+        /// 덤프가 된다.
         /// </remarks>
-        /// <returns>True when the value belongs in this reading — it moved, or everything is going.</returns>
+        /// <returns>값이 이번 판독에 들어갈 때 참 — 움직였거나, 전부가 나가는 중이거나.</returns>
         private static bool Value(
             StringBuilder text, Watched member, Component on, Ledger ledger, string key)
         {
-            // Written aside first so the ledger can hold exactly what went out. Comparing the
-            // fragment rather than the value it came from means the two can never disagree — a
-            // coordinate held still by the deadband reads as unchanged because it *is* the same
-            // text, not because a second rule said it should be.
+            // 장부가 실제로 나간 것을 정확히 쥘 수 있도록 먼저 옆에 써 둔다. 값이 아니라 조각을 비교한다는 것은 그 둘이 결코 어긋날 수
+            // 없다는 뜻이다 — 데드밴드가 붙잡아 둔 좌표는 두 번째 규칙이 그래야 한다고 말해서가 아니라 그것이 *같은 텍스트이기
+            // 때문에* 바뀌지 않은 것으로 읽힌다.
             var said = new StringBuilder(64);
 
             Read(said, member, on, ledger, key);
 
-            // Said to the ledger whether or not it is written. What the reading carries and what the
-            // reading knows are different things: a value left out because it held still still has
-            // to be recorded, or the next reading finds it missing and calls that a change.
+            // 쓰이든 쓰이지 않든 장부에는 말한다. 판독이 나르는 것과 판독이 아는 것은 다른 것이다: 가만히 있어서 빠진 값도 여전히
+            // 기록돼야 하고, 그러지 않으면 다음 판독이 그것이 없다고 보고 그것을 변화라고 부른다.
             if (!ledger.Keep(key, said.ToString()))
             {
                 return false;
@@ -609,17 +565,15 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// What the reading calls a member: the thing asked for, not the field it was found through.
+        /// 판독이 멤버를 부르는 이름: 그것을 통해 찾아낸 필드가 아니라 청해진 그것.
         /// </summary>
         /// <remarks>
-        /// The evidence asks for <c>IsStreaming</c> and the place to look is
-        /// <c>chatWindowController</c>. Naming the reading after the field leaves a reader holding
-        /// <c>chatWindowController = true</c>, which is not a sentence anybody wrote a row against —
-        /// and worse, a list read for its size and a list read for itself would both be called by
-        /// the list's name with different values under it.
+        /// 근거는 <c>IsStreaming</c> 을 청하고 찾아볼 자리는 <c>chatWindowController</c> 다. 판독을 필드의 이름으로 부르면 독자는
+        /// <c>chatWindowController = true</c> 를 쥐게 되는데, 그것은 아무도 그것에 대고 줄을 쓴 적 없는 문장이다 — 게다가 크기를
+        /// 보려고 읽은 목록과 그 자체로 읽은 목록이 둘 다 목록의 이름으로 불리면서 그 아래 값이 다르게 된다.
         ///
-        /// So the name is the path that was walked. The field stays in front of it, because two
-        /// objects can offer the same property and a row names the one it means.
+        /// 그래서 이름은 걸어간 경로다. 필드는 그 앞에 남는다. 두 객체가 같은 프로퍼티를 내놓을 수 있고 줄은 자기가 뜻하는 쪽의
+        /// 이름을 대기 때문이다.
         /// </remarks>
         private static string Named(Watched member)
         {
@@ -629,16 +583,14 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// Walks from a field's value to the thing the evidence actually named.
+        /// 필드의 값에서 출발해 근거가 실제로 이름 댄 것까지 걷는다.
         /// </summary>
         /// <remarks>
-        /// One step per name, each a field or an argument-less property, exactly as the analysis
-        /// wrote them down. Nothing is chosen here: the path was settled when the code was read, and
-        /// following it is arithmetic.
+        /// 이름마다 한 걸음이고 각각은 필드이거나 인자 없는 프로퍼티다. 분석이 적어 둔 그대로다. 여기서 고르는 것은 없다: 경로는
+        /// 코드가 읽힐 때 결정됐고, 그것을 따라가는 일은 산수다.
         ///
-        /// A step that is not there is reported by name rather than as a missing value. Obfuscation
-        /// renames members, and a reading that answered null would be putting words in the game's
-        /// mouth — the same reason an unreadable field says <c>unread</c> instead of zero.
+        /// 거기 없는 걸음은 없는 값이 아니라 이름으로 보고한다. 난독화는 멤버의 이름을 바꾸고, null 로 답하는 판독은 게임의 입에
+        /// 말을 넣는 일이 된다 — 읽을 수 없는 필드가 0 대신 <c>unread</c> 라고 말하는 것과 같은 이유다.
         /// </remarks>
         private static object Along(object from, string path)
         {
@@ -684,10 +636,8 @@ namespace Artel.Affordances.Live
             {
                 held = member.Field.GetValue(on);
 
-                // The evidence did not ask for the field, it asked for something reached from it —
-                // a list's count, or what a method that only walks fields would have returned. The
-                // path is followed here rather than the method being called, which is the whole
-                // difference between watching the game and playing it.
+                // 근거는 그 필드를 청한 것이 아니라 거기서 닿는 무언가를 청했다 — 목록의 개수이거나, 필드만 걷는 메서드였다면 돌려줬을
+                // 것. 메서드를 부르는 대신 여기서 경로를 따라가는데, 그것이 게임을 감시하는 것과 게임을 하는 것의 차이 전부다.
                 if (member.Via != null && held != null)
                 {
                     held = Along(held, member.Via);
@@ -738,8 +688,7 @@ namespace Artel.Affordances.Live
 
             if (held is UnityEngine.Object reference)
             {
-                // Unity overloads equality so a destroyed object is not the same as a missing one,
-                // and a condition comparing against null means the overloaded answer.
+                // Unity 는 동등성을 오버로드해 파괴된 객체가 없는 객체와 같지 않게 하고, null 과 비교하는 조건은 그 오버로드된 답을 뜻한다.
                 if (reference == null)
                 {
                     text.Append("\"value\":null");
@@ -752,48 +701,41 @@ namespace Artel.Affordances.Live
 
             if (held is System.Collections.ICollection collection)
             {
-                // The count and nothing else. Every condition in the sample game that reaches into a
-                // collection asks how many are in it, and the contents are the game's own data.
+                // 개수이고 그 밖에는 없다. 컬렉션에 손을 뻗는 샘플 게임의 모든 조건이 그 안에 몇 개가 있는지를 묻고, 내용물은 게임 자신의
+                // 데이터다.
                 text.Append("\"count\":").Append(collection.Count.ToString(Invariant));
                 return;
             }
 
-            // What it is, rather than that it is. A field holding a plain object used to read as
-            // "present", which says only that the reference is not null — and a reference that is
-            // never null says the same thing on every reading, so the channel carried the field and
-            // told nobody anything.
+            // 그것이 있다는 것이 아니라 그것이 무엇인지. 평범한 객체를 쥔 필드는 예전에 "있음" 으로 읽혔는데, 그것은 참조가 null 이
+            // 아니라는 말밖에 하지 않는다 — 그리고 결코 null 이 아닌 참조는 모든 판독에서 같은 말을 하므로, 채널은 그 필드를 나르면서
+            // 아무에게도 아무 말도 하지 않았다.
             //
-            // The concrete type is the thing a game keeps in such a field for. A tutorial's current
-            // step, a state machine's current state, a strategy, a handler: the class standing there
-            // *is* the state. The sample game holds its tutorial position in one — fifteen classes
-            // behind one interface — and asking which of them is there answers more than the
-            // <c>IsMeetCondition()</c> the evidence could not call, because a name says which step
-            // rather than whether one predicate happened to be true.
+            // 게임이 그런 필드에 무언가를 두는 목적이 그 구체 타입이다. 튜토리얼의 현재 단계, 상태 기계의 현재 상태, 전략, 핸들러:
+            // 거기 서 있는 클래스가 *곧* 상태다. 샘플 게임은 튜토리얼 위치를 그런 필드 하나에 두는데 — 인터페이스 하나 뒤에 클래스
+            // 열다섯 — 그중 무엇이 거기 있는지를 묻는 것이 근거가 부를 수 없었던 <c>IsMeetCondition()</c> 보다 많이 답한다. 이름은
+            // 술어 하나가 마침 참이었는지가 아니라 어느 단계인지를 말하기 때문이다.
             //
-            // Costs a reflection call that cannot fail and cannot be wrong. The declared type is
-            // already on the member; this is what turned up in it.
+            // 실패할 수 없고 틀릴 수 없는 리플렉션 호출 하나가 든다. 선언된 타입은 이미 멤버에 있고, 이것은 거기에 들어 있던 것이다.
             text.Append("\"value\":{");
             Json.Property(text, "is", held.GetType().FullName);
             text.Append('}');
         }
 
         /// <summary>
-        /// What a reference points at: which object, and where it is.
+        /// 참조가 무엇을 가리키는가: 어느 객체이고, 어디 있는지.
         /// </summary>
         /// <remarks>
-        /// This used to say <c>"present"</c>, which threw away the thing the channel exists for. The
-        /// evidence says the map cursor moves to <c>MapMove.battle2.transform.position</c>, and both
-        /// <c>character</c> and <c>battle2</c> are fields — so what is actually being asked is where
-        /// two named objects are, and whether one of them has arrived at the other.
+        /// 이것은 예전에 <c>"present"</c> 라고 말했는데, 그것은 채널이 존재하는 이유를 버리는 일이었다. 근거는 맵 커서가
+        /// <c>MapMove.battle2.transform.position</c> 으로 옮겨 간다고 말하고 <c>character</c> 와 <c>battle2</c> 둘 다 필드다 —
+        /// 그러니 실제로 묻고 있는 것은 이름 붙은 두 객체가 어디 있는지, 그리고 그중 하나가 다른 하나에 도착했는지다.
         ///
-        /// It is the half a screen recording cannot supply. A video shows a sprite finishing
-        /// somewhere; it does not know the sprite is called <c>wordHead</c>, does not know the place
-        /// is called <c>battle2</c>, and so cannot tell that what it just watched was the thing the
-        /// specification named. The path is that name, and the position is what lets the two
-        /// accounts be laid over each other.
+        /// 화면 녹화가 줄 수 없는 절반이 이것이다. 영상은 스프라이트가 어딘가에서 멈추는 것을 보여 준다. 그 스프라이트가
+        /// <c>wordHead</c> 라 불리는 것도, 그 자리가 <c>battle2</c> 라 불리는 것도 모르므로, 방금 본 것이 명세가 이름 댄 그것임을
+        /// 가릴 수 없다. 경로가 그 이름이고, 위치가 두 진술을 겹쳐 놓게 해 주는 것이다.
         ///
-        /// Both the path and the position, never one. The path alone cannot say it moved and the
-        /// position alone cannot say what moved.
+        /// 경로와 위치 둘 다이지 하나가 아니다. 경로만으로는 그것이 움직였다고 말할 수 없고 위치만으로는 무엇이 움직였는지 말할 수
+        /// 없다.
         /// </remarks>
         private static void Held(
             StringBuilder text, UnityEngine.Object reference, Restless restless, string key)
@@ -815,8 +757,8 @@ namespace Artel.Affordances.Live
 
             if (transform == null)
             {
-                // An asset — a sprite, a clip, a ScriptableObject. It is somewhere in the project
-                // rather than somewhere on screen, so its name is the whole of what can be said.
+                // 애셋이다 — 스프라이트, 클립, ScriptableObject. 화면 어딘가가 아니라 프로젝트 어딘가에 있으므로 그 이름이 할 수 있는
+                // 말의 전부다.
                 text.Append("\"value\":{");
                 Json.Property(text, "name", reference.name);
                 text.Append('}');
@@ -838,25 +780,21 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// Where the object is, in the game's own world.
+        /// 게임 자신의 월드에서 객체가 어디 있는가.
         /// </summary>
         /// <remarks>
-        /// Held back until now on the grounds that a specification asks whether one object has
-        /// arrived where another is, and both of those are named fields the watch list already
-        /// reads — so the position of an object nobody's evidence mentions answered no row.
+        /// 명세는 한 객체가 다른 객체가 있는 자리에 도착했는지를 묻고 그 둘 다 watch list 가 이미 읽는 이름 붙은 필드라는 이유로
+        /// 지금까지 미뤄 왔다 — 그러니 아무의 근거도 언급하지 않는 객체의 위치는 어떤 줄에도 답하지 않았다.
         ///
-        /// It is asked for anyway by anything that has to lay a reading over a picture of the
-        /// screen. A reader that can see the game cannot join what it sees to what it is told
-        /// without somewhere in common, and this is the cheapest one there is.
+        /// 그럼에도 판독을 화면 그림 위에 겹쳐 놓아야 하는 쪽은 그것을 청한다. 게임을 볼 수 있는 독자는 공통된 자리 없이는 자기가
+        /// 보는 것과 자기가 들은 것을 이을 수 없고, 이것이 그중 가장 싼 것이다.
         ///
-        /// Settled through the deadband like any other coordinate. A transform read straight would
-        /// differ in its last decimal place for objects sitting exactly where they were, and with a
-        /// position on every object rather than only on the watched few that is the whole reading
-        /// opening the gate every beat.
+        /// 다른 좌표와 마찬가지로 데드밴드를 거쳐 정착시킨다. 그대로 읽은 transform 은 있던 자리에 정확히 앉아 있는 객체에 대해서도
+        /// 마지막 소수 자리가 달라지고, 감시 대상 몇 개가 아니라 모든 객체에 위치가 붙으면 그것이 곧 판독 전체가 매 박자마다
+        /// 게이트를 여는 일이 된다.
         ///
-        /// Not on screen and not a rectangle. Where a thing is drawn needs the camera, the canvas it
-        /// hangs on and whatever is clipping it, and the reader that wants that is looking at a
-        /// capture of the screen already.
+        /// 화면 위가 아니고 사각형도 아니다. 무언가가 어디에 그려지는지는 카메라와 그것이 매달린 캔버스와 그것을 자르는 무엇이
+        /// 필요하고, 그것을 원하는 독자는 이미 화면 캡처를 보고 있다.
         /// </remarks>
         private static bool Where(
             StringBuilder text, Transform transform, Ledger ledger, string identity)
@@ -884,48 +822,41 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// What a tester can do to this object right now.
+        /// 테스터가 지금 이 객체에 무엇을 할 수 있는가.
         /// </summary>
         /// <remarks>
-        /// A reading that says only what the game holds leaves an agent with the whole state of a
-        /// screen and no idea which of the things on it will answer to anything. The specification
-        /// says press the continue button; the reading has to be where that button is found to be
-        /// present, switched on, and wired to something.
+        /// 게임이 무엇을 쥐고 있는지만 말하는 판독은 에이전트에게 화면의 상태 전체를 주면서 그 위의 무엇이 무엇에 답할지는 모르게
+        /// 둔다. 명세는 계속 버튼을 누르라고 말하고, 판독은 그 버튼이 있고 켜져 있고 무언가에 연결돼 있음이 확인되는 자리여야 한다.
         ///
-        /// Three kinds and three sources. A click is inspector wiring, read here and now because
-        /// the same button can be wired differently on two objects of one type. A key and a pointer
-        /// handler are in compiled code, so they were gathered against the type at bake time and are
-        /// offered only where that type is on something in the scene — which is what makes
-        /// "<c>RightArrow</c> does something" into "<c>RightArrow</c> does something *here*".
+        /// 세 종류와 세 출처. 클릭은 인스펙터 배선이고, 한 타입의 두 객체가 서로 다르게 연결될 수 있으므로 지금 여기서 읽는다. 키와
+        /// 포인터 핸들러는 컴파일된 코드 안에 있어 구울 때 타입에 대고 모아 두었고, 그 타입이 씬 안의 무엇에 붙어 있는 자리에서만
+        /// 내놓는다 — 그것이 "<c>RightArrow</c> 가 무언가를 한다" 를 "<c>RightArrow</c> 가 *여기서* 무언가를 한다" 로 만든다.
         ///
-        /// Written on the object rather than once per reading. What a tester needs is not the set of
-        /// keys the game reads anywhere, it is the thing they can press and what it is attached to.
+        /// 판독마다 한 번이 아니라 객체에 쓴다. 테스터에게 필요한 것은 게임이 어디선가 읽는 키의 집합이 아니라, 그들이 누를 수 있는
+        /// 것과 그것이 무엇에 붙어 있는지다.
         ///
-        /// Told to the ledger so that a button appearing, disappearing or being rewired is news. A
-        /// screen whose every value held still but whose only button just became unwired has
-        /// changed, and a reading that skipped it would be reporting that nothing happened.
+        /// 버튼이 나타나거나 사라지거나 다시 연결되는 일이 소식이 되도록 장부에 말해 둔다. 모든 값이 가만히 있었지만 유일한 버튼이
+        /// 방금 연결이 끊긴 화면은 바뀐 것이고, 그것을 건너뛴 판독은 아무 일도 없었다고 보고하는 셈이다.
         /// </remarks>
         /// <summary>
-        /// What each object was found to offer, so the reflection is paid for once.
+        /// 각 객체가 무엇을 내놓는 것으로 발견됐는지. 리플렉션 값을 한 번만 치르도록.
         /// </summary>
         /// <remarks>
-        /// Reading persistent calls is reflection, and the scan already decided it is the kind to
-        /// answer once per object and remember. None of what goes in here changes while the game
-        /// runs: inspector wiring is serialized data, and which types are on an object is settled
-        /// when it is built. Whether the object is <em>showing</em> does change, and that is said
-        /// separately.
+        /// persistent call 을 읽는 일은 리플렉션이고, 스캔은 그것이 객체마다 한 번 답하고 기억할 종류라고 이미 정했다. 여기 들어가는
+        /// 것 중 게임이 도는 동안 바뀌는 것은 없다: 인스펙터 배선은 직렬화된 데이터이고, 어떤 타입이 객체 위에 있는지는 그것이
+        /// 만들어질 때 정해진다. 객체가 <em>보이고 있는지</em> 는 바뀌는데, 그것은 따로 말한다.
         ///
-        /// Kept against the instance rather than the type, because two buttons of one type are
-        /// commonly wired to different methods and one of them may be wired to nothing.
+        /// 타입이 아니라 인스턴스에 대고 쥐고 있는다. 한 타입의 버튼 둘이 서로 다른 메서드에 연결돼 있는 일이 흔하고 그중 하나는
+        /// 아무것에도 연결돼 있지 않을 수 있기 때문이다.
         ///
-        /// Dropped whole at a bound, the same trade <see cref="Worth"/> makes: a game that spawns
-        /// for an hour would otherwise grow a row for every object it ever made.
+        /// 경계에서 통째로 버린다. <see cref="Worth"/> 가 하는 것과 같은 거래다: 한 시간 동안 만들어내는 게임은 그러지 않으면 여태
+        /// 만든 객체마다 줄 하나씩을 늘린다.
         /// </remarks>
         private const int MaxRemembered = 4096;
 
         private static readonly Dictionary<int, string> Offers = new Dictionary<int, string>();
 
-        /// <returns>True when what this object offers belongs in the reading.</returns>
+        /// <returns>이 객체가 내놓는 것이 판독에 들어갈 때 참.</returns>
         private static bool Offered(
             StringBuilder text, Transform transform, Ledger ledger, string identity)
         {
@@ -970,7 +901,7 @@ namespace Artel.Affordances.Live
                 }
                 catch (Exception)
                 {
-                    // One component's wiring, not a reason to lose what the others offer.
+                    // 컴포넌트 하나의 배선이지, 나머지가 내놓는 것을 잃을 이유가 아니다.
                 }
 
                 var offer = WatchList.OfferedBy(component.GetType().FullName);
@@ -986,9 +917,8 @@ namespace Artel.Affordances.Live
 
             if (calls.Count == 0 && keys.Count == 0 && pointers.Count == 0)
             {
-                // Remembered as offering nothing. An object with no wiring and no watched type is
-                // the common case, and asking it again every reading is the cost this cache exists
-                // to avoid.
+                // 아무것도 내놓지 않는 것으로 기억한다. 배선도 없고 감시 대상 타입도 없는 객체가 흔한 경우이고, 판독마다 그것을 다시 묻는
+                // 것이 이 캐시가 피하려고 존재하는 값이다.
                 Offers[id] = string.Empty;
                 return false;
             }
@@ -1078,26 +1008,21 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// What a label or a picture is showing, when the reference is one.
+        /// 참조가 라벨이나 그림일 때, 그것이 무엇을 보여 주고 있는가.
         /// </summary>
         /// <remarks>
-        /// A field of type <c>TMP_Text</c> was already being watched and already being answered —
-        /// with the path and world position of the object the label hangs on, which is the answer
-        /// <see cref="Held"/> was built to give. It is the right answer for
-        /// <c>MapMove.battle2</c> and the wrong one here: nobody asks where a caption is, they ask
-        /// what it says.
+        /// <c>TMP_Text</c> 타입의 필드는 이미 감시되고 있었고 이미 답해지고 있었다 — 그 라벨이 매달린 객체의 경로와 월드 위치로,
+        /// 그것이 <see cref="Held"/> 가 주려고 만들어진 답이다. <c>MapMove.battle2</c> 에는 옳은 답이고 여기서는 틀린 답이다:
+        /// 캡션이 어디 있는지 묻는 사람은 없고, 그것이 무엇이라 말하는지를 묻는다.
         ///
-        /// So the reference is asked for its content instead. The path and whether it is showing
-        /// stay, because a caption holding the right words while switched off is not the same claim
-        /// as one on screen. The world position goes: a caption's coordinates answer no
-        /// specification row and are one more value drifting in the last decimal, which is a gate
-        /// held open for nothing.
+        /// 그래서 대신 참조에 그 내용을 청한다. 경로와 보이고 있는지는 남는다. 옳은 말을 쥐고 있으면서 꺼져 있는 캡션은 화면 위에
+        /// 있는 캡션과 같은 주장이 아니기 때문이다. 월드 위치는 뺀다: 캡션의 좌표는 어떤 명세 줄에도 답하지 않고 마지막 소수 자리에서
+        /// 떠도는 값 하나를 더할 뿐인데, 그것은 아무것도 아닌 것을 위해 열어 둔 게이트다.
         ///
-        /// Matched by type name through <see cref="SceneEvidenceScan"/> rather than compiled
-        /// against, for the reason written there — uGUI and TextMeshPro are packages a project may
-        /// not have, and this assembly references neither.
+        /// 거기 적힌 이유로, 컴파일 대상으로 삼는 대신 <see cref="SceneEvidenceScan"/> 을 거쳐 타입 이름으로 맞춘다 — uGUI 와
+        /// TextMeshPro 는 프로젝트에 없을 수 있는 패키지이고 이 어셈블리는 둘 다 참조하지 않는다.
         /// </remarks>
-        /// <returns>True when the reference was a label or a picture and has been written.</returns>
+        /// <returns>참조가 라벨이나 그림이었고 그것이 쓰였을 때 참.</returns>
         private static bool Showing(StringBuilder text, Component component)
         {
             if (component == null)
@@ -1130,26 +1055,22 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// What an animator is doing: the state it is in, named when it can be.
+        /// animator 가 무엇을 하고 있는가: 그것이 있는 상태를, 가능할 때 이름과 함께.
         /// </summary>
         /// <remarks>
-        /// The specification says a trigger fires and the screen shows something move; neither on
-        /// its own says the moving thing entered the state the row is about. This is what joins
-        /// them.
+        /// 명세는 트리거가 발동하고 화면이 무언가 움직이는 것을 보인다고 말한다. 어느 쪽도 홀로 그 움직이는 것이 그 줄이 말하는
+        /// 상태로 들어갔다고 말하지 않는다. 그 둘을 잇는 것이 이것이다.
         ///
-        /// Unity hands back a hash for the current state and nothing that turns it into words, so
-        /// the name is arrived at from the other end — the analysis wrote down every name the code
-        /// passes an animator, and <c>IsName</c> answers whether the state is called one of them.
-        /// The hash goes out either way, because a state whose name the code never mentions is
-        /// still a state that changed and a reader can watch the number move.
+        /// Unity 는 현재 상태에 대해 해시를 돌려주고 그것을 말로 바꿔 주는 것은 없으므로, 이름은 반대쪽 끝에서 도달한다 — 분석이
+        /// 코드가 animator 에 건네는 모든 이름을 적어 두었고, <c>IsName</c> 이 그 상태가 그중 하나로 불리는지에 답한다. 해시는
+        /// 어느 쪽이든 나간다. 코드가 이름을 한 번도 언급하지 않은 상태도 여전히 바뀐 상태이고 독자는 그 숫자가 움직이는 것을 볼 수
+        /// 있기 때문이다.
         ///
-        /// A trigger's name and a state's name are not the same thing. Games commonly use one for
-        /// the other and nothing makes them; the name is written only where Unity confirmed it, so
-        /// a game that names them differently gets a hash rather than a wrong word.
+        /// 트리거의 이름과 상태의 이름은 같은 것이 아니다. 게임들은 흔히 하나를 다른 것으로 쓰지만 무엇도 그것을 강제하지 않는다.
+        /// 이름은 Unity 가 확인해 준 자리에서만 쓰므로, 그것들을 다르게 이름 짓는 게임은 틀린 말 대신 해시를 받는다.
         ///
-        /// The parameters are not read. A trigger is consumed by the state machine within a frame of
-        /// being set, so a reading ten times a second would report it as false almost always — a
-        /// value that is usually wrong is worse than one that is absent.
+        /// 매개변수는 읽지 않는다. 트리거는 설정된 뒤 한 프레임 안에 상태 기계가 소비하므로 초당 열 번의 판독은 거의 언제나 그것을
+        /// 거짓으로 보고하게 된다 — 대개 틀린 값은 없는 값보다 나쁘다.
         /// </remarks>
         private static void Playing(StringBuilder text, Animator animator)
         {
@@ -1164,8 +1085,8 @@ namespace Artel.Affordances.Live
             }
             catch (Exception exception)
             {
-                // An animator with no controller, or no layer zero. It exists and is doing nothing,
-                // which is a different fact from it being absent.
+                // 컨트롤러가 없거나 레이어 0 이 없는 animator. 그것은 존재하면서 아무것도 하지 않고 있고, 그것은 그것이 없는 것과 다른
+                // 사실이다.
                 text.Append(',');
                 Json.Property(text, "unread", exception.GetType().Name);
                 text.Append('}');
@@ -1191,25 +1112,22 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// The names this animator will answer to.
+        /// 이 animator 가 답할 이름들.
         /// </summary>
         /// <remarks>
-        /// A row saying the <c>Attack</c> trigger fires is written from a <c>SetTrigger("Attack")</c>
-        /// in the code, and nothing until now checked that the animator on the object has a
-        /// parameter by that name. A misspelling, a controller swapped for another, a trigger
-        /// renamed — the code still compiles and the animation silently never plays, which is
-        /// exactly the kind of fault a specification exists to catch.
+        /// <c>Attack</c> 트리거가 발동한다고 말하는 줄은 코드의 <c>SetTrigger("Attack")</c> 에서 쓰였는데, 지금까지 그 객체 위의
+        /// animator 에 그 이름의 매개변수가 있는지는 아무것도 확인하지 않았다. 오타, 다른 것으로 바꾼 컨트롤러, 이름을 바꾼
+        /// 트리거 — 코드는 여전히 컴파일되고 애니메이션은 조용히 영영 재생되지 않는데, 그것이 정확히 명세가 잡으려고 존재하는
+        /// 종류의 결함이다.
         ///
-        /// All of them rather than only the ones the code mentions. Reporting just the matches made
-        /// an empty answer mean two different things — this animator has none of those names, or it
-        /// has no parameters at all because its controller was never bound — and a reading that
-        /// cannot tell those apart is the shape this package refuses everywhere else.
+        /// 코드가 언급한 것만이 아니라 전부를 본다. 일치하는 것만 보고하면 빈 답이 서로 다른 두 가지를 뜻하게 되고 — 이 animator 에
+        /// 그 이름들이 하나도 없거나, 컨트롤러가 아예 묶이지 않아 매개변수가 하나도 없거나 — 그 둘을 가리지 못하는 판독은 이
+        /// 패키지가 다른 모든 자리에서 거절하는 모양이다.
         ///
-        /// Names, not values. A trigger is consumed by the state machine within a frame of being
-        /// set, so reading one ten times a second reports false almost always, and a value that is
-        /// usually wrong is worse than one that is absent. A float parameter driven by movement
-        /// would also open the change gate on every beat for a reason no condition mentions. What
-        /// the parameters hold is the screen's to show; what they are called is only knowable here.
+        /// 값이 아니라 이름이다. 트리거는 설정된 뒤 한 프레임 안에 상태 기계가 소비하므로 초당 열 번 읽으면 거의 언제나 거짓으로
+        /// 보고되고, 대개 틀린 값은 없는 값보다 나쁘다. 움직임이 구동하는 float 매개변수도 어떤 조건도 언급하지 않는 이유로 매
+        /// 박자마다 변화 게이트를 열 것이다. 매개변수가 무엇을 쥐고 있는지는 화면이 보여 줄 몫이고, 그것이 무엇이라 불리는지는
+        /// 여기서만 알 수 있다.
         /// </remarks>
         private static void Parameters(StringBuilder text, Animator animator)
         {
@@ -1261,12 +1179,11 @@ namespace Artel.Affordances.Live
             System.Globalization.CultureInfo.InvariantCulture;
 
         /// <summary>
-        /// How many decimal places a float keeps.
+        /// float 이 소수점 아래 몇 자리를 지키는지.
         /// </summary>
         /// <remarks>
-        /// The change gate hashes this document, so a raw float turns a breathing idle animation
-        /// into a state change and the payload goes out every tick. Rounding is what makes the gate
-        /// usable, and four places is finer than any comparison the evidence makes.
+        /// 변화 게이트가 이 문서를 해싱하므로, 날것의 float 은 숨 쉬는 idle 애니메이션을 상태 변화로 만들고 페이로드가 매 틱 나간다.
+        /// 반올림이 게이트를 쓸 수 있게 만드는 것이고, 네 자리는 근거가 하는 어떤 비교보다도 곱다.
         /// </remarks>
         private const int Decimals = 4;
 
@@ -1274,7 +1191,7 @@ namespace Artel.Affordances.Live
         {
             if (double.IsNaN(value) || double.IsInfinity(value))
             {
-                // Not a number and not writable as JSON. Said, rather than turned into zero.
+                // 숫자가 아니고 JSON 으로 쓸 수도 없다. 0 으로 바꾸지 않고 그렇다고 말한다.
                 Json.Property(text, "unread", "not-a-number");
                 return;
             }
