@@ -5,16 +5,15 @@ using Mono.Cecil.Cil;
 namespace Artel.Affordances.CodeGen
 {
     /// <summary>
-    /// Turns a graphed method into input, precondition and outcome.
+    /// 그래프로 만든 메서드를 입력·선행조건·결과로 바꾼다.
     /// </summary>
     /// <remarks>
-    /// Read from the outcome backwards. Every change the code makes sits in some block, and the
-    /// decisions that block is control dependent on — followed up through the decisions those
-    /// depend on in turn — are the complete account of how a player gets there. Among them, the
-    /// ones testing an input say which input; the rest say what else had to be true.
+    /// 결과에서 거슬러 읽는다. 코드가 만드는 모든 변화는 어떤 블록 안에 앉아 있고, 그 블록이 control dependent 한
+    /// 결정들은 — 그것들이 다시 의존하는 결정들까지 따라 올라가면 — 플레이어가 거기 닿는 경위의 완전한 진술이다.
+    /// 그중 입력을 검사하는 것들이 어떤 입력인지를 말하고, 나머지가 그 밖에 무엇이 참이어야 했는지를 말한다.
     ///
-    /// Read this way <c>A || B</c> needs no special case. Both tests govern the same outcome, so
-    /// both appear, which is what the code means.
+    /// 이렇게 읽으면 <c>A || B</c> 에 특별한 경우가 필요 없다. 두 검사가 같은 결과를 다스리므로 둘 다 나타나고,
+    /// 그것이 코드가 뜻하는 바다.
     /// </remarks>
     internal static class VariantBuilder
     {
@@ -37,8 +36,8 @@ namespace Artel.Affordances.CodeGen
             bool sameObject,
             Binding binding)
         {
-            // Held across the whole method. Every block's condition is worked out at most once, and
-            // blocks high in the method are on the way to most of the others.
+            // 메서드 전체에 걸쳐 쥐고 있는다. 각 블록의 조건은 많아야 한 번 알아내고, 메서드 위쪽의 블록은 나머지
+            // 대부분으로 가는 길목에 있다.
             var reached = new Condition[graph.Blocks.Count];
             var state = new byte[graph.Blocks.Count];
 
@@ -55,15 +54,14 @@ namespace Artel.Affordances.CodeGen
                 var handles = new List<Subscription>();
                 Subscriptions.ReadInto(block, method.Module, handles);
 
-                // An input read with nothing else in the block. A predicate handed to `WaitUntil`
-                // is exactly that shape — `() => Input.GetKeyDown(Space)` returns the answer
-                // instead of branching on it, so no gesture is ever made of it, and the block is
-                // dropped before anyone notices it mentioned a key. The sample game's whole story
-                // screen advanced on Space and the report said no key at all.
+                // 블록 안에 다른 것 없이 입력만 읽는 경우. `WaitUntil` 에 건넨 술어가 정확히 그 모양이다 —
+                // `() => Input.GetKeyDown(Space)` 는 그것으로 분기하는 대신 답을 돌려주므로 그것으로 제스처가 만들어지는
+                // 일이 없고, 그 블록이 키를 언급했다는 것을 아무도 알아채기 전에 떨어져 나간다. 샘플 게임의 이야기 화면
+                // 전체가 Space 로 넘어갔는데 리포트는 키가 하나도 없다고 말했다.
                 //
-                // A block that branches is left alone. Its read is already a gesture in the
-                // condition of everything it governs, and saying it a second time here would both
-                // double it and label it as unbranched, which is the one thing it is not.
+                // 분기하는 블록은 건드리지 않는다. 그 읽기는 그것이 다스리는 모든 것의 조건 안에 이미 제스처로 들어 있고,
+                // 여기서 한 번 더 말하면 그것을 두 배로 만들면서 분기하지 않은 것으로 표시하게 되는데, 그것이야말로
+                // 그 블록이 아닌 유일한 것이다.
                 var answered = outcomes.Count == 0 && calls.Count == 0 && handles.Count == 0 &&
                                block.Last?.OpCode.FlowControl != FlowControl.Cond_Branch
                     ? InputIn(block)
@@ -78,25 +76,21 @@ namespace Artel.Affordances.CodeGen
                 var own = Reach(graph, dependence, block.Index, reached, state);
                 var derived = !ReferenceEquals(method, entry);
 
-                // Two conditions written against two different receivers must not be run together
-                // into one sentence: the callee's `count > 0` is about the callee's object, and
-                // beside the caller's own terms it reads as the caller's `count`. That is the one
-                // case left alone.
+                // 서로 다른 두 수신자에 대고 쓰인 두 조건을 한 문장으로 이어 붙여서는 안 된다: 피호출자의 `count > 0` 은
+                // 피호출자의 객체에 대한 것이고, 호출자 자신의 용어 옆에서는 호출자의 `count` 로 읽힌다. 그 경우만 건드리지
+                // 않는다.
                 //
-                // Mixing is the whole risk, so anything that does not mix is safe. An unguarded
-                // call contributes nothing to compose, leaving the callee's own condition as the
-                // complete account of reaching it; a callee with no condition of its own leaves the
-                // caller's. Either way exactly one side speaks, and it speaks in its own terms.
-                // Two conditions may be run together when they are known to be about the same
-                // object. That is the case when every call along the way was made on the caller's
-                // own object — `this` is then the same thing at both ends — and both sides say only
-                // things about `this` or about nothing at all.
+                // 섞이는 것이 위험의 전부이므로, 섞이지 않는 것은 무엇이든 안전하다. 지켜지지 않은 호출은 합성할 것을
+                // 내놓지 않으므로 피호출자 자신의 조건이 거기 닿는 경위의 완전한 진술로 남는다. 제 조건이 없는 피호출자는
+                // 호출자의 것을 남긴다. 어느 쪽이든 정확히 한쪽만 말하고, 제 용어로 말한다.
+                // 두 조건이 같은 객체에 대한 것임이 알려져 있을 때는 이어 붙여도 된다. 가는 길의 모든 호출이 호출자 자신의
+                // 객체에 대고 이루어졌고 — 그러면 `this` 는 양 끝에서 같은 것이다 — 양쪽이 `this` 에 대한 것이나 아무것에
+                // 대한 것도 아닌 말만 할 때가 그 경우다.
                 //
-                // Kept as narrow as this on purpose. It was measured that the alternative, guessing,
-                // produces sentences that read perfectly and are about the wrong object.
-                // Said where the caller stands, when the caller called it on something it can
-                // name. The callee's terms then describe the caller's own object and the sentence
-                // has one subject, which is the whole of what the rule below asks for.
+                // 일부러 이만큼 좁게 둔다. 대안인 추측이 완벽하게 읽히면서 엉뚱한 객체에 대한 문장을 만들어낸다는 것이
+                // 실측됐다.
+                // 호출자가 이름 붙일 수 있는 것에 대고 그것을 불렀을 때, 호출자가 선 자리에서 말한 것. 그러면 피호출자의
+                // 용어가 호출자 자신의 객체를 서술하고 문장에 주어가 하나가 되는데, 그것이 아래 규칙이 청하는 전부다.
                 var said = binding == null || sameObject ? null : own.ReadFrom(binding);
 
                 if (said != null)
@@ -114,17 +108,15 @@ namespace Artel.Affordances.CodeGen
 
                 var composable = !mixes;
 
-                // Where they would mix, the caller's terms are dropped and only the inputs among
-                // them come down. An input is the one part of a condition that is not about an
-                // object: the caller's `count > 0` means something else next to the callee's terms,
-                // but the caller's `Space was pressed` means the same thing wherever it is written.
+                // 섞이게 될 자리에서는 호출자의 용어를 떨어뜨리고 그중 입력만 내려온다. 입력은 조건에서 객체에 대한 것이
+                // 아닌 유일한 부분이다: 호출자의 `count > 0` 은 피호출자의 용어 옆에서 다른 뜻이 되지만, 호출자의
+                // `Space 가 눌렸다` 는 어디에 쓰이든 같은 뜻이다.
                 //
-                // Without this a game that reads its keys in one method and does the work in
-                // another has no inputs anywhere in its evidence. Trash Dash is that game — every
-                // key it reads is one call away from every effect it has, and the report named none
-                // of them. The condition is still incomplete and still says so; what changes is
-                // that it is now incomplete about *what else* had to be true, rather than silent
-                // about what the player did.
+                // 이것이 없으면 키를 한 메서드에서 읽고 일을 다른 메서드에서 하는 게임은 근거 어디에도 입력이 없다.
+                // Trash Dash 가 그런 게임이다 — 그것이 읽는 모든 키가 그것이 가진 모든 효과에서 호출 하나만큼 떨어져
+                // 있고, 리포트는 그중 하나의 이름도 대지 않았다. 조건은 여전히 불완전하고 여전히 그렇다고 말한다.
+                // 달라지는 것은, 이제 플레이어가 무엇을 했는지에 대해 침묵하는 것이 아니라 *그 밖에* 무엇이 참이어야
+                // 했는지에 대해 불완전하다는 점이다.
                 var carried = mixes ? reachedBy.InputsOnly() : reachedBy;
 
                 var when = derived
@@ -155,8 +147,8 @@ namespace Artel.Affordances.CodeGen
                 if (derived && joinable && reachedBy.Kind != ConditionKind.Always &&
                     own.Kind != ConditionKind.Always)
                 {
-                    // Said because the sentence now has two authors. It is one account of one
-                    // object, and which part came from where is no longer visible in it.
+                    // 문장에 이제 저자가 둘이므로 말해 둔다. 그것은 한 객체에 대한 하나의 진술이고, 어느 부분이 어디서 왔는지는
+                    // 그 안에서 더는 보이지 않는다.
                     variant.AddGap("composed-on-same-object");
                 }
 
@@ -164,8 +156,8 @@ namespace Artel.Affordances.CodeGen
                 {
                     variant.AddGap("callee-condition-not-composed");
 
-                    // Said separately because it changes how the condition must be read: the input
-                    // in it was given somewhere up the call path, not here.
+                    // 조건을 어떻게 읽어야 하는지가 달라지므로 따로 말한다: 그 안의 입력은 여기가 아니라 호출 경로 위쪽
+                    // 어딘가에서 주어졌다.
                     if (carried.Kind != ConditionKind.Always)
                     {
                         variant.AddGap("caller-inputs-carried");
@@ -179,8 +171,8 @@ namespace Artel.Affordances.CodeGen
                     variant.AddGap("singleton-plumbing");
                 }
 
-                // Nothing to act on, or no complete account of how to get here. Kept because a call
-                // with no effects of its own is how the path to the effects is followed.
+                // 행동할 것이 없거나, 여기 오는 경위의 완전한 진술이 없다. 제 효과가 없는 호출이 곧 효과로 가는 경로를
+                // 따라가는 방법이므로 남겨 둔다.
                 variant.RecordKind = outcomes.Count > 0 && composable && !plumbing ? "candidate" : "flow";
 
                 variant.Outcomes.AddRange(outcomes);
@@ -189,8 +181,8 @@ namespace Artel.Affordances.CodeGen
                 variant.LoopsBackTo = GoesRoundAgain(block);
                 when.CollectGestures(variant.Inputs, new HashSet<Condition>());
 
-                // Not a condition: nothing here branches on it. The method's answer is the read,
-                // and saying so beside the path that handed it over is the whole of what is known.
+                // 조건이 아니다: 여기서는 아무것도 그것으로 분기하지 않는다. 메서드의 답이 곧 그 읽기이고, 그것을 건넨
+                // 경로 옆에 그렇다고 말하는 것이 알려진 것의 전부다.
                 if (answered != null)
                 {
                     variant.Inputs.Add(answered);
@@ -207,7 +199,7 @@ namespace Artel.Affordances.CodeGen
             }
         }
 
-        /// <summary>The condition under which a block runs, worked out once and kept.</summary>
+        /// <summary>블록이 도는 조건. 한 번 알아내고 쥐고 있는다.</summary>
         internal static Condition ReachOf(
             ControlFlowGraph graph,
             ControlDependence dependence,
@@ -219,12 +211,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The type a result gets baked onto.
+        /// 결과가 구워지는 타입.
         /// </summary>
         /// <remarks>
-        /// The compiler puts a coroutine body or a lambda in a nested type of its own, and that
-        /// type is not a component. What the scan finds on a GameObject is the behaviour those were
-        /// written inside, so that is where the result has to end up.
+        /// 컴파일러는 코루틴 본문이나 람다를 제 중첩 타입 안에 넣는데, 그 타입은 컴포넌트가 아니다. 스캔이
+        /// GameObject 위에서 찾는 것은 그것들이 그 안에 쓰인 behaviour 이므로, 결과가 도착해야 하는 자리가 거기다.
         /// </remarks>
         private static TypeDefinition Owning(TypeDefinition type)
         {
@@ -244,18 +235,16 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// What had to be true to reach a block.
+        /// 블록에 닿기 위해 참이어야 했던 것.
         /// </summary>
         /// <remarks>
-        /// Each way into a block is an alternative, and going one step further back is a further
-        /// requirement — so the answer is a choice among ways, each of them the test on that way
-        /// together with whatever it took to get to the test.
+        /// 블록으로 들어가는 각 갈래는 대안이고, 한 걸음 더 거슬러 가면 그것은 추가 요구다 — 그래서 답은 갈래들
+        /// 사이의 선택이고, 각 갈래는 그 갈래 위의 검사와 그 검사에 닿기까지 필요했던 것을 합한 것이다.
         ///
-        /// Loops make this graph circular: the test at the top of a loop is subject to itself. A
-        /// block already being worked out is marked as such, and meeting that mark again puts an
-        /// unknown in its place instead of following the circle. Every block moves from unvisited to
-        /// computing to settled exactly once, which is what makes this finish rather than what
-        /// bounds how long it takes to.
+        /// 루프는 이 그래프를 순환하게 만든다: 루프 꼭대기의 검사는 자기 자신에 매여 있다. 이미 계산 중인 블록은
+        /// 그렇게 표시되고, 그 표시를 다시 만나면 원을 따라가는 대신 그 자리에 unknown 을 놓는다. 모든 블록이
+        /// 미방문에서 계산중으로, 계산중에서 확정으로 정확히 한 번씩 옮겨 가는데, 이것을 끝나게 하는 것이 그것이지
+        /// 얼마나 걸릴지를 가두는 것이 아니다.
         /// </remarks>
         private static Condition Reach(
             ControlFlowGraph graph,
@@ -264,8 +253,8 @@ namespace Artel.Affordances.CodeGen
             Condition[] reached,
             byte[] state)
         {
-            // An explicit stack. Conditions nest as deeply as a method branches, and a recursive
-            // walk of a generated method is how a build turns into a dead editor.
+            // 명시적 스택. 조건은 메서드가 분기하는 만큼 깊이 중첩되고, 생성된 메서드를 재귀로 걷는 일이 빌드를 죽은
+            // 에디터로 바꾸는 방법이다.
             var pending = new Stack<int>();
             pending.Push(start);
 
@@ -318,7 +307,7 @@ namespace Artel.Affordances.CodeGen
 
             if (governors.Count == 0)
             {
-                // Nothing decides whether this runs.
+                // 이것이 도는지를 결정하는 것이 없다.
                 return Condition.Always;
             }
 
@@ -326,18 +315,15 @@ namespace Artel.Affordances.CodeGen
 
             foreach (var governor in governors)
             {
-                // A governor still being worked out is one this block is inside the loop of, and
-                // "you got here by going round again" is not a thing a tester arranges. The test
-                // that sends control round is already the `Literal` beside this, and whatever
-                // guarded the loop from outside governs this block on its own account — a block
-                // reached only when an `if` was taken is control dependent on that `if` whether the
-                // loop is in the way or not. So the way round adds nothing, and saying `unknown`
-                // for it took the whole condition down with it: twenty-six of the sample game's
-                // records read `i < cards.Count and <something nobody could read>`.
+                // 아직 계산 중인 지배자는 이 블록이 그 루프 안에 있다는 뜻이고, "다시 한 바퀴 돌아서 여기 왔다" 는 테스터가
+                // 마련하는 종류의 것이 아니다. 제어를 한 바퀴 돌려보내는 검사는 이미 이것 옆의 `Literal` 이고, 루프를 바깥에서
+                // 지키던 것이 무엇이든 그것은 제 몫으로 이 블록을 다스린다 — `if` 를 탔을 때만 닿는 블록은 루프가 사이에
+                // 있든 없든 그 `if` 에 control dependent 하다. 그래서 도는 갈래는 아무것도 더하지 않고, 그것에 대해
+                // `unknown` 이라고 말한 것이 조건 전체를 함께 끌어내렸다: 샘플 게임의 기록 스물여섯이
+                // `i < cards.Count and <아무도 읽을 수 없는 무언가>` 로 읽혔다.
                 //
-                // That the block is in a loop is not lost. It is a fact about the block, worked out
-                // from the graph rather than from a failure to write a condition, and the record
-                // carries it as `loopsBackTo`.
+                // 그 블록이 루프 안에 있다는 사실은 잃지 않는다. 그것은 블록에 대한 사실이고, 조건을 쓰지 못한 실패가 아니라
+                // 그래프에서 알아낸 것이며, 기록이 `loopsBackTo` 로 그것을 나른다.
                 var earlier = state[governor.Decision] == Settled
                     ? reached[governor.Decision]
                     : Condition.Always;
@@ -358,28 +344,25 @@ namespace Artel.Affordances.CodeGen
             return Condition.Either(ways);
         }
 
-        /// <summary>How many ways into a merge will be read before giving up.</summary>
+        /// <summary>합류 지점으로 들어오는 갈래를 포기하기 전까지 몇 개나 읽는지.</summary>
         private const int MaxMergeWays = 4;
 
         /// <summary>
-        /// The value a short-circuit left for the branch to test.
+        /// 단락 평가가 분기더러 검사하라고 남긴 값.
         /// </summary>
         /// <remarks>
-        /// A debug build does not leave `(A || B) &amp;&amp; C` on the stack. It computes the answer
-        /// in the blocks that made each test, stores it, and branches on the load — so the block
-        /// holding the branch begins with the store and there is nothing behind it to read. Six of
-        /// the sample game's arrow keys vanished this way in a development build and none of them
-        /// did in the editor, because an optimised compiler leaves the value where the walk can
-        /// still see it. The two builds were being read as if they said the same thing.
+        /// 디버그 빌드는 `(A || B) &amp;&amp; C` 를 스택에 남기지 않는다. 각 검사를 한 블록에서 답을 계산해 저장하고,
+        /// 그것을 적재한 것으로 분기한다 — 그래서 분기를 쥔 블록은 저장으로 시작하고 그 뒤에 읽을 것이 없다. 샘플
+        /// 게임의 화살표 키 여섯이 개발 빌드에서 이렇게 사라졌고 에디터에서는 하나도 사라지지 않았다. 최적화하는
+        /// 컴파일러는 걷기가 여전히 볼 수 있는 자리에 값을 남기기 때문이다. 두 빌드가 같은 말을 하는 것처럼 읽히고
+        /// 있었다.
         ///
-        /// Read forwards from the ways in rather than backwards past the block. Each way either
-        /// pushed a literal — the branch it lost — or pushed the comparison it made, and reaching
-        /// that way is a condition already worked out. Nothing here crosses a block boundary to
-        /// guess at a value: it asks each block what it left, in that block's own terms.
+        /// 블록을 지나 거슬러 읽는 대신 들어오는 갈래들에서 앞으로 읽는다. 각 갈래는 리터럴을 밀어 넣었거나 — 잃은
+        /// 쪽 분기 — 제가 한 비교를 밀어 넣었고, 그 갈래에 닿는 일은 이미 알아낸 조건이다. 여기서는 값을 추측하려고
+        /// 블록 경계를 넘는 것이 없다: 각 블록에게 그 블록 자신의 용어로 무엇을 남겼는지 물을 뿐이다.
         ///
-        /// Gives up whole rather than in part. A way that cannot be read makes the others a
-        /// half-account of when this runs, and a half-account of a condition is the shape of a
-        /// precondition that is simply wrong.
+        /// 일부가 아니라 통째로 포기한다. 읽을 수 없는 갈래 하나는 나머지를 이것이 언제 도는지에 대한 반쪽 진술로
+        /// 만들고, 조건의 반쪽 진술은 그냥 틀린 선행 조건의 모양이다.
         /// </remarks>
         private static Condition Incoming(
             BasicBlock decision,
@@ -398,8 +381,8 @@ namespace Artel.Affordances.CodeGen
                 return null;
             }
 
-            // Only when the block genuinely has nothing of its own: the store the branch reads is
-            // the first thing in it, so the value was made elsewhere.
+            // 블록에 정말로 제 것이 하나도 없을 때만: 분기가 읽는 저장이 그 안의 첫 번째 것이므로 값은 다른 데서
+            // 만들어졌다.
             var value = Preceding(branch, decision);
 
             if (!IsLoadLocal(value, out var slot))
@@ -437,7 +420,7 @@ namespace Artel.Affordances.CodeGen
 
                 if (IlReading.TryConstant(pushed, out var literal))
                 {
-                    // The way that already lost. It cannot be how control got here.
+                    // 이미 진 쪽 갈래다. 제어가 여기 온 경로일 수 없다.
                     if (literal != 0 == wantTrue)
                     {
                         ways.Add(arriving);
@@ -446,9 +429,9 @@ namespace Artel.Affordances.CodeGen
                     continue;
                 }
 
-                // The way in made the test itself rather than comparing something: `A || B` with
-                // nothing after it leaves the second read on the stack. Read as a comparison it
-                // would be "GetKeyDown != 0", which is not a thing a tester can be told to do.
+                // 들어온 갈래가 무언가를 비교한 것이 아니라 검사 자체를 했다: 뒤에 아무것도 없는 `A || B` 는 둘째 읽기를
+                // 스택에 남긴다. 그것을 비교로 읽으면 "GetKeyDown != 0" 이 되는데, 그것은 테스터에게 하라고 시킬 수 있는
+                // 것이 아니다.
                 var read = ReadInput(pushed);
 
                 if (read != null)
@@ -492,14 +475,13 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Where control comes back to if this block is part of going round again, or -1.
+        /// 이 블록이 다시 한 바퀴 도는 일의 일부일 때 제어가 되돌아오는 자리, 또는 -1.
         /// </summary>
         /// <remarks>
-        /// An edge that arrives from later in the method, or leaves for earlier in it, is the
-        /// whole test. Reducible is what a C# compiler emits and offsets follow the code, so this
-        /// asks about the two blocks at the ends of the edge and nothing else — no dominators, no
-        /// loop body worked out. A block merely inside the loop is not claimed, because claiming it
-        /// would need the question this deliberately does not ask.
+        /// 메서드의 뒤쪽에서 도착하거나 앞쪽으로 떠나는 엣지가 검사의 전부다. C# 컴파일러가 뱉는 것은 축약 가능한
+        /// 흐름이고 오프셋은 코드를 따르므로, 이것은 엣지 양 끝의 두 블록만 묻고 그 밖에는 아무것도 묻지 않는다 —
+        /// 지배자도, 알아낸 루프 본문도 없다. 그저 루프 안에 있기만 한 블록은 주장하지 않는다. 주장하려면 이것이
+        /// 일부러 묻지 않는 물음이 필요하기 때문이다.
         /// </remarks>
         private static int GoesRoundAgain(BasicBlock block)
         {
@@ -510,7 +492,7 @@ namespace Artel.Affordances.CodeGen
                 return -1;
             }
 
-            // Control returns here: something later jumps back to this block.
+            // 제어가 여기로 돌아온다: 뒤의 무언가가 이 블록으로 되뛴다.
             foreach (var from in block.Predecessors)
             {
                 if ((from.First?.Offset ?? -1) > here)
@@ -519,7 +501,7 @@ namespace Artel.Affordances.CodeGen
                 }
             }
 
-            // This block is what jumps back.
+            // 되뛰는 쪽이 이 블록이다.
             var earliest = -1;
 
             foreach (var to in block.Successors)
@@ -535,30 +517,27 @@ namespace Artel.Affordances.CodeGen
             return earliest;
         }
 
-        /// <summary>What a block left on the stack for whatever runs next.</summary>
+        /// <summary>블록이 다음에 도는 무엇을 위해 스택에 남긴 것.</summary>
         private static string Shape(Instruction instruction)
         {
             return instruction == null ? "none" : instruction.OpCode.Name;
         }
 
         /// <summary>
-        /// The value a block was handed, when only one of the ways in actually worked it out.
+        /// 블록이 건네받은 값. 들어오는 갈래 중 하나만 실제로 그것을 계산했을 때.
         /// </summary>
         /// <remarks>
-        /// A short-circuited <c>&amp;&amp;</c> stores its answer at the top of a block reached two
-        /// ways: one way has just compared something, the other jumped straight here with a literal
-        /// because the left side already settled it. Reading backwards from the store lands on the
-        /// boundary and gives up, which left fifty-five of the development build's conditions
-        /// unread — every one of them a block of two ways in beginning with a <c>stloc</c>.
+        /// 단락된 <c>&amp;&amp;</c> 는 두 갈래로 닿는 블록의 맨 위에 제 답을 저장한다: 한 갈래는 방금 무언가를
+        /// 비교했고, 다른 갈래는 왼쪽이 이미 결판냈기 때문에 리터럴을 들고 곧장 여기로 뛰었다. 저장에서 거슬러 읽으면
+        /// 경계에 닿아 포기하게 되는데, 그 때문에 개발 빌드의 조건 쉰다섯이 읽히지 않았다 — 하나같이 <c>stloc</c> 으로
+        /// 시작하는, 들어오는 갈래가 둘인 블록이었다.
         ///
-        /// The literal is not a second answer. It is the shape of the jump the compiler made, and
-        /// the test it stands for is already in this block's condition on its own account: the
-        /// block is control dependent on the decision that did the short-circuiting. So when one
-        /// way in carries a constant and the other carries something that can be read, the one that
-        /// can be read is what was tested here.
+        /// 리터럴은 두 번째 답이 아니다. 그것은 컴파일러가 만든 점프의 모양이고, 그것이 대표하는 검사는 이미 이 블록의
+        /// 조건 안에 제 몫으로 들어 있다: 그 블록은 단락을 일으킨 그 결정에 control dependent 하다. 그래서 한 갈래가
+        /// 상수를 나르고 다른 갈래가 읽을 수 있는 것을 나르면, 읽을 수 있는 쪽이 여기서 검사된 것이다.
         ///
-        /// Both readable and it is a choice of two values rather than a short circuit — a ternary —
-        /// and neither is the answer. Both constant and there was nothing to read either way.
+        /// 둘 다 읽히면 그것은 단락이 아니라 두 값 중 하나를 고르는 것 — 삼항 — 이고 어느 쪽도 답이 아니다. 둘 다
+        /// 상수이면 어느 쪽에도 읽을 것이 없었던 것이다.
         /// </remarks>
         private static Instruction JoinedAbove(BasicBlock decision)
         {
@@ -568,8 +547,7 @@ namespace Artel.Affordances.CodeGen
                 return null;
             }
 
-            // The branch has to be testing the very thing that was stored, or this is some other
-            // block that happens to start with a store.
+            // 분기가 저장된 바로 그것을 검사하고 있어야 한다. 아니면 이것은 우연히 저장으로 시작하는 다른 블록이다.
             var value = Preceding(decision.Last, decision);
 
             if (!IsLoadLocal(value, out var read) || read != slot)
@@ -595,8 +573,7 @@ namespace Artel.Affordances.CodeGen
 
                 if (worked != null)
                 {
-                    // Two ways in that both worked something out. Which one this read saw is the
-                    // question that is not asked here.
+                    // 둘 다 무언가를 계산한 두 갈래. 이 읽기가 그중 어느 쪽을 보았는지는 여기서 묻지 않는 물음이다.
                     return null;
                 }
 
@@ -615,8 +592,7 @@ namespace Artel.Affordances.CodeGen
                 return null;
             }
 
-            // An unconditional jump carries the value made before it; a conditional one decided
-            // rather than produced, and there is nothing of its own to take.
+            // 무조건 점프는 그 앞에서 만든 값을 나르고, 조건 점프는 만든 것이 아니라 결정한 것이라 가져갈 제 것이 없다.
             if (last.OpCode.FlowControl == FlowControl.Branch)
             {
                 return Preceding(last, from);
@@ -625,7 +601,7 @@ namespace Artel.Affordances.CodeGen
             return last.OpCode.FlowControl == FlowControl.Cond_Branch ? null : last;
         }
 
-        /// <summary>What one decision, taken one way, says.</summary>
+        /// <summary>한 결정을 한쪽으로 탔을 때 그것이 하는 말.</summary>
         private static Condition Literal(
             BasicBlock decision,
             BasicBlock taken,
@@ -636,12 +612,11 @@ namespace Artel.Affordances.CodeGen
         {
             var branch = decision.Last;
 
-            // Only when the branch tests the input's answer directly. Anywhere else in the block
-            // and there is no telling which way means pressed, and a gesture recorded the wrong way
-            // round turns a precondition into an instruction to press the opposite key.
+            // 분기가 그 입력의 답을 곧바로 검사할 때만. 블록의 다른 어디에서든 어느 쪽이 눌린 것을 뜻하는지 알 수 없고,
+            // 거꾸로 기록된 제스처는 선행 조건을 반대 키를 누르라는 지시로 바꾼다.
             //
-            // "Directly" is read through the local a debug build stores the answer in, which is the
-            // same test written the way a non-optimised compiler writes it.
+            // "곧바로" 는 디버그 빌드가 답을 저장하는 지역 변수를 거쳐 읽는데, 그것은 최적화하지 않는 컴파일러가 쓰는
+            // 방식으로 쓰인 같은 검사다.
             var input = ReadInput(Producer(branch, decision));
 
             if (input != null)
@@ -660,8 +635,8 @@ namespace Artel.Affordances.CodeGen
                 var branched = ReferenceEquals(taken.First, branch.Operand as Instruction);
                 input.Absent = pressedWhenBranched ? !branched : branched;
 
-                // The test itself is the gesture. Reading it as a comparison would produce
-                // "GetKeyDown != 0", which says nothing a specification could use.
+                // 검사 자체가 제스처다. 그것을 비교로 읽으면 "GetKeyDown != 0" 이 나오는데, 그것은 명세가 쓸 수 있는 말을
+                // 하나도 하지 않는다.
                 return Condition.FromGesture(input);
             }
 
@@ -695,20 +670,18 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Whether this decision is a coroutine picking up where it left off.
+        /// 이 결정이 코루틴이 멈춘 자리에서 다시 시작하는 것인지.
         /// </summary>
         /// <remarks>
-        /// A coroutine is compiled into a state machine, and the first thing <c>MoveNext</c> does is
-        /// branch on which <c>yield</c> it stopped at. Control dependence sees an ordinary decision
-        /// and everything after it reads as guarded by something — and since the field it tests is
-        /// the compiler's, not the game's, that something comes out as a condition nobody could
-        /// read. In the sample game the cast, the wave ending, the dialogue and the turn handover
-        /// are all inside coroutines, and all four arrived saying their own conditions were unread.
+        /// 코루틴은 상태 기계로 컴파일되고, <c>MoveNext</c> 가 맨 먼저 하는 일은 어느 <c>yield</c> 에서 멈췄는지로
+        /// 분기하는 것이다. control dependence 는 그것을 평범한 결정으로 보고 그 뒤의 모든 것이 무언가에 지켜지는
+        /// 것으로 읽힌다 — 그리고 그것이 검사하는 필드는 게임의 것이 아니라 컴파일러의 것이므로, 그 무언가는 아무도
+        /// 읽을 수 없는 조건으로 나온다. 샘플 게임에서 캐스팅, 웨이브 종료, 대사, 턴 넘기기가 전부 코루틴 안에 있고,
+        /// 넷 다 제 조건이 읽히지 않았다고 말하며 도착했다.
         ///
-        /// It is not an unread condition. It is not a condition. Reported as nothing having to be
-        /// true, which is what the resume point means for anyone reading the game rather than the
-        /// compiler's rewriting of it — the real conditions are the ones the original code wrote,
-        /// and those are still in the blocks that follow.
+        /// 그것은 읽지 못한 조건이 아니다. 조건이 아니다. 참이어야 했던 것이 없다고 보고하는데, 컴파일러의 고쳐 쓰기가
+        /// 아니라 게임을 읽는 사람에게 재개 지점이 뜻하는 바가 그것이기 때문이다 — 진짜 조건은 원래 코드가 쓴 것들이고,
+        /// 그것들은 여전히 뒤따르는 블록 안에 있다.
         /// </remarks>
         private static bool IsResumeDispatch(BasicBlock block, int stateSlot)
         {
@@ -723,7 +696,7 @@ namespace Artel.Affordances.CodeGen
                     return true;
                 }
 
-                // Or a later block of the same dispatch, testing the copy the first one made.
+                // 또는 같은 분배의 뒤쪽 블록. 첫 블록이 만든 복사본을 검사한다.
                 if (stateSlot >= 0 && IsLoadLocal(instruction, out var slot) && slot == stateSlot)
                 {
                     return true;
@@ -738,7 +711,7 @@ namespace Artel.Affordances.CodeGen
             return false;
         }
 
-        /// <summary>What the compiler calls the field holding which yield a coroutine stopped at.</summary>
+        /// <summary>코루틴이 어느 yield 에서 멈췄는지를 쥔 필드를 컴파일러가 부르는 이름.</summary>
         private const string StateField = "<>1__state";
 
         private static InputRead InputIn(BasicBlock block)
@@ -802,8 +775,8 @@ namespace Artel.Affordances.CodeGen
                 return read;
             }
 
-            // The key is in a variable. Which key cannot be answered here, and saying so is the
-            // whole value of the entry — it is one input the scan does not cover.
+            // 키가 변수 안에 있다. 어느 키인지는 여기서 답할 수 없고, 그렇다고 말하는 것이 이 항목의 값 전부다 —
+            // 스캔이 덮지 못하는 입력 하나다.
             read.Name = "(not a literal)";
             return read;
         }
@@ -818,11 +791,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Direct changes made in this block. Callee effects stay on the callee's own evidence.
+        /// 이 블록에서 일어난 직접 변화. 피호출자의 효과는 피호출자 자신의 근거에 남는다.
         /// </summary>
         /// <remarks>
-        /// Keeping only direct effects is deliberate. Copying a callee's outcomes here loses the
-        /// callee's conditions and makes mutually exclusive scene loads look simultaneous.
+        /// 직접 효과만 남기는 것은 일부러다. 피호출자의 결과를 여기 복사하면 피호출자의 조건을 잃고, 서로 배타적인 씬
+        /// 로드가 동시에 일어나는 것처럼 보이게 된다.
         /// </remarks>
         private static List<Outcome> OutcomesIn(BasicBlock block, MethodDefinition method)
         {
@@ -879,11 +852,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The comparison a decision makes, stated so that taking this way makes it true.
+        /// 결정이 하는 비교. 이 갈래를 타면 참이 되도록 진술한 것.
         /// </summary>
         /// <remarks>
-        /// A branch says what sends control to its target; arriving by falling through means the
-        /// opposite held. Both edges come through here, so the test is negated for one of them.
+        /// 분기는 무엇이 제어를 제 대상으로 보내는지를 말한다. 흘러 내려와 도착했다는 것은 그 반대가 성립했다는 뜻이다.
+        /// 두 엣지 모두 여기를 지나므로 그중 하나에 대해 검사를 부정한다.
         /// </remarks>
         private static Precondition ReadCondition(
             BasicBlock decision, BasicBlock taken, bool hasThis, MethodDefinition method,
@@ -894,7 +867,7 @@ namespace Artel.Affordances.CodeGen
 
             if (!(branch.Operand is Instruction target))
             {
-                // A switch. Which case was taken is knowable, but not by reading two operands.
+                // switch 다. 어느 case 를 탔는지는 알 수 있지만 피연산자 둘을 읽어서는 아니다.
                 unread = "branch:" + branch.OpCode.Name;
                 return null;
             }
@@ -920,9 +893,8 @@ namespace Artel.Affordances.CodeGen
             {
                 var producer = Producer(branch, decision) ?? JoinedAbove(decision);
 
-                // A debug build tests a comparison it has already made, so the branch says only
-                // whether that answer held. The comparison is the condition; reading it as
-                // "the answer != 0" would throw away both operands and the operator with them.
+                // 디버그 빌드는 이미 해 둔 비교를 검사하므로, 분기는 그 답이 성립했는지만 말한다. 비교가 곧 조건이다.
+                // 그것을 "그 답 != 0" 으로 읽으면 피연산자 둘과 연산자까지 함께 버리게 된다.
                 var holds = branch.OpCode.Code == Code.Brtrue || branch.OpCode.Code == Code.Brtrue_S
                     ? branched
                     : !branched;
@@ -972,22 +944,20 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Which case of a switch this way in is.
+        /// 이 들어오는 갈래가 switch 의 어느 case 인지.
         /// </summary>
         /// <remarks>
-        /// A switch was refused outright — "knowable, but not by reading two operands" — and three
-        /// of the sample game's features sat behind one: which background the map shows, which card
-        /// a stage rewards, where the character starts. The jump table is right there in the
-        /// instruction; the only work is saying what an index means.
+        /// switch 는 통째로 거절돼 왔고 — "알 수 있지만 피연산자 둘을 읽어서는 아니다" — 샘플 게임의 기능 셋이 그
+        /// 뒤에 앉아 있었다: 맵이 어떤 배경을 보이는지, 스테이지가 어떤 카드를 주는지, 캐릭터가 어디서 시작하는지.
+        /// 점프 테이블은 바로 그 명령어 안에 있고, 할 일은 인덱스가 무엇을 뜻하는지 말하는 것뿐이다.
         ///
-        /// Two things make it more than reading the table. A case can share a block with another
-        /// (<c>case 4</c> and <c>case 5</c> doing the same thing), so one way in can mean several
-        /// values at once — a choice, not one test. And a switch whose cases do not start at zero is
-        /// compiled with the subtraction folded in front of it, so the index is not the value.
+        /// 그것을 표 읽기 이상으로 만드는 것이 둘 있다. case 는 다른 case 와 블록을 공유할 수 있어서 (<c>case 4</c> 와
+        /// <c>case 5</c> 가 같은 일을 하는 식) 들어오는 갈래 하나가 여러 값을 한꺼번에 뜻할 수 있다 — 검사 하나가
+        /// 아니라 선택이다. 그리고 case 가 0 에서 시작하지 않는 switch 는 뺄셈이 앞에 접혀 컴파일되므로 인덱스가 곧
+        /// 값이 아니다.
         ///
-        /// The fall-through is written as the pair of comparisons it actually is. IL compares
-        /// unsigned, so a negative value falls through as surely as one past the end, and
-        /// <c>&gt;= count</c> alone would be a claim that is false for half the numbers.
+        /// 흘러 내려가는 갈래는 실제 모습 그대로 비교 한 쌍으로 쓴다. IL 은 부호 없이 비교하므로 음수도 끝을 넘는 값만큼
+        /// 확실하게 흘러 내려가고, <c>&gt;= count</c> 만으로는 절반의 숫자에 대해 거짓인 주장이 된다.
         /// </remarks>
         private static Condition SwitchCase(BasicBlock decision, BasicBlock taken, ControlFlowGraph graph)
         {
@@ -999,7 +969,7 @@ namespace Artel.Affordances.CodeGen
             var subject = Producer(decision.Last, decision);
             var offset = 0;
 
-            // A switch on cases starting anywhere but zero has the shift folded in front of it.
+            // 0 이 아닌 데서 시작하는 case 를 가진 switch 는 그 이동이 앞에 접혀 있다.
             if (subject != null && (subject.OpCode.Code == Code.Sub || subject.OpCode.Code == Code.Add))
             {
                 var shift = Preceding(subject, decision);
@@ -1024,9 +994,9 @@ namespace Artel.Affordances.CodeGen
             var where = IlReading.Where(
                 subject, decision.First, graph.HasThis, graph.Method, out var stoppedAt);
 
-            // A switch sends one value down a branch rather than comparing two, so it is built here
-            // and not where the other conditions say where they lost the subject. Said nowhere, a
-            // `context: null` from a switch looked like a condition that had never been asked.
+            // switch 는 둘을 비교하는 것이 아니라 값 하나를 분기로 보내므로, 다른 조건들이 주어를 어디서 잃었는지 말하는
+            // 자리가 아니라 여기서 만든다. 아무 데서도 말하지 않으면 switch 에서 온 `context: null` 은 한 번도 물어진 적
+            // 없는 조건처럼 보였다.
             var lost = where == null ? "switch:" + Shape(stoppedAt) : null;
             var cases = new List<Condition>();
 
@@ -1051,7 +1021,7 @@ namespace Artel.Affordances.CodeGen
                 return Condition.Either(cases);
             }
 
-            // Not one of the cases, so this is the default. Both ends of the range are needed.
+            // case 중 하나가 아니므로 default 다. 범위의 양 끝이 다 필요하다.
             return Condition.Every(new[]
             {
                 Condition.FromTest(new Precondition
@@ -1068,14 +1038,13 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The name of a parameter a value was loaded from.
+        /// 값을 적재해 온 매개변수의 이름.
         /// </summary>
         /// <remarks>
-        /// <see cref="IlReading.Describe"/> does not name arguments, and for the most part it should
-        /// not — an argument is a name from inside one method and means nothing beside a caller's
-        /// terms. A switch is the case where it is worth having anyway, because the whole condition
-        /// is the argument and without it there is no sentence at all. The <c>context</c> the atom
-        /// carries says <c>arg:N</c>, so nobody can mistake it for the receiver's own state.
+        /// <see cref="IlReading.Describe"/> 는 인자의 이름을 대지 않고, 대개는 대지 않는 것이 맞다 — 인자는 한 메서드
+        /// 안에서의 이름이고 호출자의 용어 옆에서는 아무 뜻도 없다. switch 는 그럼에도 가질 값이 있는 경우인데,
+        /// 조건 전체가 그 인자이고 그것이 없으면 문장 자체가 없기 때문이다. atom 이 나르는 <c>context</c> 가
+        /// <c>arg:N</c> 이라고 말하므로 아무도 그것을 수신자 자신의 상태로 오해할 수 없다.
         /// </remarks>
         private static string Argument(Instruction instruction, MethodDefinition method)
         {
@@ -1107,16 +1076,14 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The two values a comparison compared.
+        /// 비교가 비교한 두 값.
         /// </summary>
         /// <remarks>
-        /// The right one is whatever sits immediately before, which needs no analysis. The left one
-        /// is underneath it, and getting there means skipping over everything the right one
-        /// consumed — one instruction back is only one slot back for a value that consumed nothing.
-        /// Reading it as one instruction back named the wrong operand whenever the right-hand side
-        /// was a field or a call on something: <c>a == b.Count</c> came out as <c>b == b.Count</c>.
-        /// Where the skip cannot be made the left side is left unnamed and the condition is dropped
-        /// as unread, which is what it always was.
+        /// 오른쪽은 바로 앞에 앉은 것이라 분석이 필요 없다. 왼쪽은 그 아래에 있고, 거기 닿으려면 오른쪽이 소비한 모든
+        /// 것을 건너뛰어야 한다 — 아무것도 소비하지 않은 값에 대해서만 명령어 하나 뒤가 슬롯 하나 뒤다. 그것을 명령어
+        /// 하나 뒤로 읽으면 오른쪽이 필드이거나 무언가에 대한 호출일 때마다 엉뚱한 피연산자의 이름을 댔다:
+        /// <c>a == b.Count</c> 가 <c>b == b.Count</c> 로 나왔다. 건너뛰기를 할 수 없는 자리에서는 왼쪽을 이름 없이 두고
+        /// 조건을 읽지 못한 것으로 떨어뜨리는데, 그것이 늘 그랬던 바다.
         /// </remarks>
         private static void Operands(
             Instruction consumer,
@@ -1137,23 +1104,21 @@ namespace Artel.Affordances.CodeGen
             right = IlReading.Describe(rightAt, boundary, method);
             left = IlReading.Describe(leftAt, boundary, method);
 
-            // The same instruction the name came from, asked whether it is somewhere to look. Taken
-            // here rather than by the callers because this is where the left side is worked out, and
-            // a second walk to find it again could disagree with the first.
+            // 이름이 나온 바로 그 명령어에게, 그것이 찾아볼 자리인지 묻는다. 호출자가 아니라 여기서 하는 것은 왼쪽이
+            // 알아내지는 자리가 여기이고, 그것을 다시 찾으려는 두 번째 걷기가 첫 번째와 어긋날 수 있기 때문이다.
             //
-            // A field first, and failing that the field a value was read off. `spellCards.Count` is
-            // produced by a call and has nowhere to look until the list behind it is asked for.
+            // 필드를 먼저 보고, 안 되면 값을 읽어 온 필드를 본다. `spellCards.Count` 는 호출이 만들어내는 것이라 그 뒤의
+            // 목록을 청하기 전까지는 찾아볼 자리가 없다.
             watch = WatchTarget.From(IlReading.Holding(leftAt, method))
                     ?? WatchTarget.ReadOff(leftAt, boundary, method);
 
-            // The side that could not be named, so a count of unread conditions can say what shape
-            // defeated it. Left first: it is the one a walk gives up on, the right being whatever
-            // sits immediately before the branch.
+            // 이름 붙일 수 없었던 쪽. 읽지 못한 조건의 개수가 무슨 모양에 좌절했는지 말할 수 있도록. 왼쪽이 먼저다:
+            // 걷기가 포기하는 쪽이 그쪽이고, 오른쪽은 분기 바로 앞에 앉은 무엇이기 때문이다.
             unreadAt = left == null ? leftAt : (right == null ? rightAt : null);
 
-            // Both sides must agree, or the sentence is about two objects at once and there is no
-            // one thing to rewrite it against. A side rooted in nothing but constants agrees with
-            // anything, which is the ordinary shape: a field of `this` compared with a number.
+            // 양쪽이 일치해야 한다. 아니면 문장이 한꺼번에 두 객체에 대한 것이 되고 그것을 고쳐 쓸 대상 하나가 없다.
+            // 상수 말고는 아무것에도 뿌리내리지 않은 쪽은 무엇과도 일치하는데, 그것이 평범한 모양이다: `this` 의 필드를
+            // 숫자와 비교하는 것.
             var leftWhere = IlReading.Where(leftAt, boundary, hasThis, method, out var leftStop);
             var rightWhere = IlReading.Where(rightAt, boundary, hasThis, method, out var rightStop);
 
@@ -1170,21 +1135,17 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The instruction that actually produced the value an instruction consumes.
+        /// 어떤 명령어가 소비하는 값을 실제로 만들어낸 명령어.
         /// </summary>
         /// <remarks>
-        /// A release build leaves the value on the stack, so the producer is simply the instruction
-        /// before. A debug build does not: it computes into a local and reads it straight back, and
-        /// it pads with <c>nop</c>. Both shapes come out of the same compiler on the same source —
-        /// the editor compiles optimised and a development player build compiles for debugging — so
-        /// a reader that only knows one of them reports whichever build it was not looking at as
-        /// having no readable conditions at all.
+        /// 릴리스 빌드는 값을 스택에 남기므로 생산자는 그냥 앞 명령어다. 디버그 빌드는 그러지 않는다: 지역 변수로
+        /// 계산해 넣고 곧바로 되읽으며, <c>nop</c> 으로 채워 넣는다. 두 모양 다 같은 소스에 대해 같은 컴파일러에서
+        /// 나온다 — 에디터는 최적화해 컴파일하고 개발용 플레이어 빌드는 디버깅용으로 컴파일한다 — 그래서 둘 중 하나만
+        /// 아는 독자는 자기가 보고 있지 않은 쪽 빌드를 읽을 수 있는 조건이 하나도 없는 것으로 보고한다.
         ///
-        /// The store is only followed when it sits immediately before the load. A local assigned
-        /// somewhere further back may have been assigned somewhere else too, and following it then
-        /// would name a value that is not necessarily the one being tested. That is the kind of
-        /// wrong answer this analysis would rather not give, so it stops and reports the condition
-        /// as unread instead.
+        /// 저장은 적재 바로 앞에 앉아 있을 때만 따라간다. 더 뒤에서 대입된 지역 변수는 다른 데서도 대입됐을 수 있고,
+        /// 그때 그것을 따라가면 검사되는 그 값이라고 할 수 없는 값의 이름을 대게 된다. 그것이 이 분석이 되도록 내놓지
+        /// 않으려는 종류의 틀린 답이라, 대신 멈추고 조건을 읽지 못한 것으로 보고한다.
         /// </remarks>
         private static Instruction Producer(Instruction consumer, BasicBlock within)
         {
@@ -1202,7 +1163,7 @@ namespace Artel.Affordances.CodeGen
                 : value;
         }
 
-        /// <summary>The instruction before, bounded by the block being read.</summary>
+        /// <summary>앞 명령어. 읽고 있는 블록으로 가둔 채.</summary>
         private static Instruction Preceding(Instruction instruction, BasicBlock within)
         {
             return IlReading.Preceding(instruction, within?.First);
@@ -1255,14 +1216,12 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The comparison a debug build leaves as a value rather than as a branch.
+        /// 디버그 빌드가 분기가 아니라 값으로 남기는 비교.
         /// </summary>
         /// <remarks>
-        /// <c>if (a == b)</c> becomes <c>beq</c> when optimised and <c>ceq</c> followed by a
-        /// branch on the result when not. <c>&gt;=</c> and <c>&lt;=</c> have no instruction of
-        /// their own and arrive as the negation of their opposite — <c>clt</c> then
-        /// <c>ldc.i4.0 ceq</c> — so the negation is unwrapped here rather than reported as two
-        /// separate comparisons of something against zero.
+        /// <c>if (a == b)</c> 는 최적화하면 <c>beq</c> 가 되고 아니면 <c>ceq</c> 뒤에 그 결과로 분기하는 것이 된다.
+        /// <c>&gt;=</c> 와 <c>&lt;=</c> 는 제 명령어가 없어 그 반대의 부정으로 도착하므로 — <c>clt</c> 다음
+        /// <c>ldc.i4.0 ceq</c> — 무언가를 0 과 비교하는 별개의 비교 둘로 보고하는 대신 여기서 부정을 풀어낸다.
         /// </remarks>
         private static string ComparisonOperator(
             Instruction instruction, bool holds, BasicBlock within, out Instruction operands)
@@ -1277,8 +1236,8 @@ namespace Artel.Affordances.CodeGen
             switch (instruction.OpCode.Code)
             {
                 case Code.Ceq:
-                    // A comparison against a literal zero is how the compiler writes "not". When
-                    // what it negates is itself a comparison, the two collapse into one operator.
+                    // 리터럴 0 과의 비교가 컴파일러가 "아니다" 를 쓰는 방식이다. 그것이 부정하는 것이 그 자체로 비교일 때, 둘은
+                    // 연산자 하나로 접힌다.
                     var zero = Preceding(instruction, within);
 
                     if (IlReading.TryConstant(zero, out var value) && value == 0)
@@ -1314,16 +1273,16 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// A comparison written as a method, which is the only kind some types have.
+        /// 메서드로 쓰인 비교. 어떤 타입에는 그것밖에 없다.
         /// </summary>
         /// <remarks>
-        /// A string comparison, a Unity object tested against null, a struct with an <c>==</c> of
-        /// its own — none of these produce a <c>ceq</c>. They compile to a call, and reading the
-        /// call as an opaque value turned <c>name == "GameClearScene"</c> into
-        /// <c>String.op_Equality() != 0</c>, which names neither side of the thing being decided.
+        /// 문자열 비교, null 과 대조되는 Unity 객체, 제 <c>==</c> 를 가진 구조체 — 이 중 어느 것도 <c>ceq</c> 를
+        /// 만들지 않는다. 그것들은 호출로 컴파일되고, 그 호출을 불투명한 값으로 읽는 바람에
+        /// <c>name == "GameClearScene"</c> 이 <c>String.op_Equality() != 0</c> 이 됐는데, 그것은 결정되는 것의 어느
+        /// 쪽 이름도 대지 않는다.
         ///
-        /// Only the six comparisons are taken. An operator that is not a comparison leaves a value,
-        /// not a decision, and belongs on one side of one rather than in place of it.
+        /// 비교 여섯만 취한다. 비교가 아닌 연산자는 결정이 아니라 값을 남기므로, 비교를 대신하는 자리가 아니라 비교의
+        /// 한쪽에 속한다.
         /// </remarks>
         private static string OperatorMethod(MethodReference method, bool holds)
         {
