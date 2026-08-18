@@ -2,11 +2,11 @@ using System.Collections.Generic;
 
 namespace Artel.Affordances.CodeGen
 {
-    /// <summary>A decision, and which of its ways was taken to arrive.</summary>
+    /// <summary>결정 하나와, 거기 닿기 위해 그 결정의 어느 갈래를 탔는가.</summary>
     /// <remarks>
-    /// Which way matters as much as which decision. The same comparison reads as
-    /// <c>StagePosition &gt;= 1</c> down one edge and <c>&lt; 1</c> down the other, and a model that
-    /// remembers only the decision has lost the half that says what had to be true.
+    /// 어느 갈래인지는 어느 결정인지만큼 중요하다. 같은 비교가 한쪽 엣지에서는 <c>StagePosition &gt;= 1</c>
+    /// 로 읽히고 다른 쪽에서는 <c>&lt; 1</c> 로 읽힌다. 결정만 기억하는 모델은 무엇이 참이어야 했는지를
+    /// 말하는 절반을 잃은 것이다.
     /// </remarks>
     internal readonly struct Governor
     {
@@ -21,26 +21,26 @@ namespace Artel.Affordances.CodeGen
     }
 
     /// <summary>
-    /// Which decisions each block is subject to.
+    /// 각 블록이 어떤 결정들에 매여 있는가.
     /// </summary>
     /// <remarks>
-    /// Two questions matter later and both are about paths: the code a key guards is the blocks
-    /// control dependent on that key's branch, and the preconditions for arriving somewhere are the
-    /// decisions that block is control dependent on. Asked this way, <c>A || B</c> needs no special
-    /// handling — the short-circuit is just another edge.
+    /// 뒤에서 중요해지는 물음은 둘이고 둘 다 경로에 대한 것이다: 어떤 키가 지키는 코드란 그 키의 분기에
+    /// control dependent 한 블록들이고, 어딘가에 닿기 위한 선행 조건이란 그 블록이 control dependent 한
+    /// 결정들이다. 이렇게 물으면 <c>A || B</c> 에 특별한 처리가 필요 없다 — 단락 평가는 그저 또 하나의
+    /// 엣지다.
     ///
-    /// Post-dominance comes first because control dependence is defined in terms of it: B is
-    /// control dependent on A when A can choose whether B runs, which is to say B does not
-    /// post-dominate A but lies on a path out of it.
+    /// post-dominance 가 먼저인 것은 control dependence 가 그것으로 정의되기 때문이다: B 가 도는지를 A 가
+    /// 고를 수 있을 때 B 는 A 에 control dependent 하고, 이는 곧 B 가 A 를 post-dominate 하지 않으면서
+    /// A 에서 나가는 경로 위에 있다는 뜻이다.
     /// </remarks>
     internal sealed class ControlDependence
     {
         /// <summary>
-        /// Passes the fixed-point loop may take before the graph is declared unfit.
+        /// 그래프를 부적합으로 선언하기 전까지 고정점 루프가 돌 수 있는 횟수.
         /// </summary>
         /// <remarks>
-        /// The loop converges in a handful of passes on anything well formed. A bound this loose
-        /// only ever catches input that was never going to settle.
+        /// 제대로 된 입력이면 루프는 몇 번 만에 수렴한다. 이만큼 헐거운 한계에 걸리는 것은 애초에 가라앉을 리
+        /// 없던 입력뿐이다.
         /// </remarks>
         private const int MaxPasses = 200;
 
@@ -50,10 +50,10 @@ namespace Artel.Affordances.CodeGen
         private readonly bool[] _reachesExit;
         private readonly List<Governor>[] _dependsOn;
 
-        /// <summary>Blocks left out because no path from them arrives at the exit.</summary>
+        /// <summary>어느 경로로도 exit 에 닿지 못해 빼 둔 블록들.</summary>
         internal int StrandedBlocks { get; private set; }
 
-        /// <summary>True when a bound was reached and the answer is incomplete.</summary>
+        /// <summary>한계에 닿아 답이 불완전할 때 참.</summary>
         internal bool HitLimit { get; private set; }
 
         internal int DecisionCount { get; private set; }
@@ -76,7 +76,7 @@ namespace Artel.Affordances.CodeGen
             return dependence;
         }
 
-        /// <summary>The decisions this block is subject to.</summary>
+        /// <summary>이 블록이 매여 있는 결정들.</summary>
         internal IReadOnlyList<Governor> Governing(int blockIndex)
         {
             return _dependsOn[blockIndex] ?? (IReadOnlyList<Governor>)System.Array.Empty<Governor>();
@@ -90,18 +90,16 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Blocks that can reach the exit, nearest the exit first.
+        /// exit 에 닿을 수 있는 블록들. exit 에 가까운 것부터.
         /// </summary>
         /// <remarks>
-        /// This is the step that keeps the whole thing finite, and leaving it out is what froze an
-        /// editor that then could not be opened to find out why. Post-dominance is only defined for
-        /// blocks with a path to the exit; a block without one — an endless loop, code the compiler
-        /// left behind — has no immediate post-dominator, and comparing two such blocks walks a
-        /// chain of parents that never meet because neither has any.
+        /// 전체를 유한하게 유지하는 것이 이 단계이고, 이것을 빼놓은 것이 에디터를 얼려서 왜 그런지 알아보려
+        /// 열 수조차 없게 만든 원인이다. post-dominance 는 exit 로 가는 경로가 있는 블록에 대해서만 정의된다.
+        /// 그런 경로가 없는 블록은 — 끝나지 않는 루프, 컴파일러가 남긴 코드 — immediate post-dominator 가
+        /// 없고, 그런 블록 둘을 비교하면 어느 쪽에도 없는 부모 사슬을 영영 만나지 못한 채 걷게 된다.
         ///
-        /// Bounding the comparison would stop the spin. Refusing to start it is better: the answer
-        /// for those blocks does not exist, so they are counted and set aside rather than guessed
-        /// at.
+        /// 비교에 한계를 두면 회전은 멎는다. 시작하지 않는 편이 낫다: 그 블록들에 대한 답은 존재하지 않으므로
+        /// 추측하는 대신 세어서 옆으로 치워 둔다.
         /// </remarks>
         private List<BasicBlock> OrderFromExit()
         {
@@ -114,8 +112,8 @@ namespace Artel.Affordances.CodeGen
             nextEdge.Push(0);
             visited[_graph.Exit.Index] = true;
 
-            // Walked with an explicit stack. A method deep enough to matter is deep enough to
-            // overflow a recursive walk, and that failure arrives as a dead editor.
+            // 명시적 스택으로 걷는다. 문제가 될 만큼 깊은 메서드는 재귀 걷기를 넘치게 할 만큼 깊고, 그 실패는
+            // 죽은 에디터로 도착한다.
             while (nodes.Count > 0)
             {
                 var node = nodes.Peek();
@@ -213,7 +211,7 @@ namespace Artel.Affordances.CodeGen
             }
         }
 
-        /// <summary>Climbs both nodes up the tree until they stand on the same one.</summary>
+        /// <summary>두 노드가 같은 노드 위에 설 때까지 트리를 함께 거슬러 올린다.</summary>
         private BasicBlock Intersect(BasicBlock left, BasicBlock right)
         {
             var steps = 0;
@@ -254,12 +252,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Walks each decision's outgoing edges up to where the paths rejoin.
+        /// 각 결정의 나가는 엣지를 경로가 다시 합쳐지는 자리까지 걷는다.
         /// </summary>
         /// <remarks>
-        /// Everything between a branch and the point both of its ways meet again is code that
-        /// branch decided to run. That meeting point is its immediate post-dominator, which is why
-        /// it had to be computed first.
+        /// 분기와 그 두 갈래가 다시 만나는 지점 사이의 모든 것이 그 분기가 돌리기로 결정한 코드다. 그 만나는
+        /// 지점이 그것의 immediate post-dominator 이고, 그래서 그것을 먼저 계산해야 했다.
         /// </remarks>
         private void ComputeDependence()
         {

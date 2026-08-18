@@ -7,59 +7,54 @@ using Mono.Cecil;
 namespace Artel.Affordances.CodeGen
 {
     /// <summary>
-    /// Carries the evidence as one compressed blob inside the assembly rather than as an attribute
-    /// per record.
+    /// 근거를 기록마다 attribute 하나가 아니라 어셈블리 안의 압축된 blob 하나로 나른다.
     /// </summary>
     /// <remarks>
-    /// An attribute per record put the growth on the wrong thing. Measured across three projects the
-    /// assembly came out between three and eight times its own size, and which of those it landed on
-    /// had nothing to do with how big the game was — a small game with dense branching cost more
-    /// than one five times its size. Ninety-eight percent of that growth was the JSON text, most of
-    /// it the same method signatures written again and again.
+    /// 기록마다 attribute 를 두는 방식은 엉뚱한 것 위에 증가분을 얹었다. 프로젝트 셋에서 실측하니
+    /// 어셈블리가 제 크기의 3~8배로 나왔고, 어느 쪽이 얼마가 되는지는 게임 크기와 아무 상관이 없었다 —
+    /// 분기가 촘촘한 작은 게임이 다섯 배 큰 게임보다 비쌌다. 그 증가분의 98%가 JSON 텍스트였고, 대부분은
+    /// 같은 메서드 시그니처를 몇 번이고 다시 쓴 것이었다.
     ///
-    /// A resource is not metadata. It does not enlarge the tables a type load walks, it is not
-    /// parsed until something asks for it, and it compresses — the same text that took 322KB as
-    /// attributes takes 13KB here.
+    /// 리소스는 메타데이터가 아니다. 타입 로드가 걷는 테이블을 키우지 않고, 무언가 요청하기 전까지
+    /// 파싱되지 않으며, 압축된다 — attribute 로 322KB 였던 같은 텍스트가 여기서는 13KB 다.
     ///
-    /// Deflate rather than gzip because gzip writes a header this has no use for, and one field of
-    /// it is a timestamp. Analysing the same assembly twice has to produce the same bytes, and a
-    /// clock in the output would quietly break that.
+    /// gzip 이 아니라 deflate 인 것은, gzip 이 여기서 쓸데없는 헤더를 쓰고 그 필드 하나가 타임스탬프이기
+    /// 때문이다. 같은 어셈블리를 두 번 분석하면 같은 바이트가 나와야 하는데, 출력 안의 시계는 그것을
+    /// 조용히 깨뜨린다.
     /// </remarks>
     internal static class EvidenceResource
     {
         /// <summary>
-        /// What the resource is called inside the assembly.
+        /// 어셈블리 안에서 이 리소스가 불리는 이름.
         /// </summary>
         /// <remarks>
-        /// Named for this package so it cannot collide with a resource the game already carries.
-        /// The scan asks for it by this name, which is the one thing here that obfuscation could
-        /// take away — an attribute survives renaming because it stays attached to its type, and a
-        /// resource has nothing to stay attached to.
+        /// 게임이 이미 나르는 리소스와 부딪치지 않도록 이 패키지의 이름을 따랐다. 스캔은 이 이름으로 그것을
+        /// 찾는데, 난독화가 앗아갈 수 있는 것은 여기서 이것 하나다 — attribute 는 제 타입에 붙어 있으므로
+        /// 이름이 바뀌어도 살아남지만, 리소스는 붙어 있을 것이 없다.
         /// </remarks>
         internal const string ResourceName = "kr.artel.affordance.evidence";
 
         /// <summary>
-        /// What the watch list is called inside the assembly.
+        /// 어셈블리 안에서 watch list 가 불리는 이름.
         /// </summary>
         /// <remarks>
-        /// Its own resource rather than another line in the evidence blob. The two are read at
-        /// different moments by different code — the evidence when a scan meets a type, the watch
-        /// list once before any polling starts — and a reader that wants one should not have to
-        /// unpack and skip past the other, which on a real game is two orders of magnitude larger.
+        /// 근거 blob 안의 또 한 줄이 아니라 제 리소스로 둔다. 둘은 서로 다른 코드가 서로 다른 순간에 읽는다 —
+        /// 근거는 스캔이 어떤 타입을 만났을 때, watch list 는 폴링이 시작되기 전 한 번. 한쪽을 원하는 독자가
+        /// 다른 쪽을 풀어헤치고 건너뛸 일은 없어야 하는데, 실제 게임에서 그 차이는 두 자릿수다.
         ///
-        /// Separate also degrades the right way. An older runtime meeting a newer assembly simply
-        /// does not ask for this and reads the evidence exactly as it always did; folding it into
-        /// the same document would have made every reader agree about a line it has no use for.
+        /// 떨어져 있으면 무너지는 방식도 옳다. 새 어셈블리를 만난 옛 런타임은 그저 이것을 요청하지 않고 근거를
+        /// 늘 하던 대로 읽는다. 같은 문서에 접어 넣었다면 모든 독자가 제게 쓸모없는 한 줄에 대해 합의해야
+        /// 했을 것이다.
         /// </remarks>
         internal const string WatchResourceName = "kr.artel.affordance.watch";
 
-        /// <summary>Replaces the blob on a module, and says how many bytes it took.</summary>
+        /// <summary>모듈 위의 blob 을 갈아 끼우고, 몇 바이트였는지 말한다.</summary>
         internal static int Attach(ModuleDefinition module, string json)
         {
             return Attach(module, ResourceName, json);
         }
 
-        /// <summary>Replaces the watch list on a module, and says how many bytes it took.</summary>
+        /// <summary>모듈 위의 watch list 를 갈아 끼우고, 몇 바이트였는지 말한다.</summary>
         internal static int AttachWatch(ModuleDefinition module, string json)
         {
             return Attach(module, WatchResourceName, json);
@@ -83,12 +78,12 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Removes a blob left by an earlier pass.
+        /// 앞선 패스가 남긴 blob 을 걷어낸다.
         /// </summary>
         /// <remarks>
-        /// The pipeline hands over a freshly compiled assembly, so this should find nothing. An
-        /// assembly that has been through here twice would carry two generations at once, and the
-        /// older one is indistinguishable from the newer while quietly contradicting it.
+        /// 파이프라인은 갓 컴파일된 어셈블리를 건네주므로 여기서 찾을 것은 없어야 한다. 여기를 두 번 지난
+        /// 어셈블리는 두 세대를 한꺼번에 나르게 되고, 옛 것은 새 것과 구분되지 않으면서 조용히 그것과 어긋난
+        /// 말을 한다.
         /// </remarks>
         internal static void Detach(ModuleDefinition module)
         {
@@ -111,9 +106,8 @@ namespace Artel.Affordances.CodeGen
         {
             using (var output = new MemoryStream())
             {
-                // Fixed level on purpose. The default is already deterministic, but naming it is
-                // what keeps a framework upgrade from changing the bytes underneath the
-                // byte-identical check without anyone touching this file.
+                // 일부러 레벨을 고정한다. 기본값도 이미 결정적이지만, 이름을 적어 두는 것이 프레임워크 업그레이드가
+                // 이 파일을 아무도 건드리지 않은 채 바이트 동일 검사 밑의 바이트를 바꾸는 일을 막는다.
                 using (var compressor = new DeflateStream(output, CompressionLevel.Optimal, true))
                 {
                     compressor.Write(raw, 0, raw.Length);

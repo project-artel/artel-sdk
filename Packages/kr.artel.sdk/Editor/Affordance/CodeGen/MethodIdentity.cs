@@ -3,7 +3,7 @@ using Mono.Cecil;
 
 namespace Artel.Affordances.CodeGen
 {
-    /// <summary>Stable enough to join compile-time evidence without relying on a bare method name.</summary>
+    /// <summary>맨 메서드 이름에 기대지 않고 컴파일 시점 근거를 이어 붙일 만큼은 안정적이다.</summary>
     internal static class MethodIdentity
     {
         internal static string Of(MethodReference method)

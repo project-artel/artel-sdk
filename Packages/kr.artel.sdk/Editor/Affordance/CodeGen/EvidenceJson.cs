@@ -3,26 +3,25 @@ using System.Text;
 
 namespace Artel.Affordances.CodeGen
 {
-    /// <summary>Writes one bounded, deterministic evidence document for the runtime scanner.</summary>
+    /// <summary>런타임 스캐너를 위해 유계이고 결정적인 근거 문서 하나를 쓴다.</summary>
     internal static class EvidenceJson
     {
         /// <summary>
-        /// Six: a record says what reaches it.
+        /// 여섯: 기록은 무엇이 자신에게 닿는지를 말한다.
         /// </summary>
         /// <remarks>
-        /// Three added a receiver and arguments to call edges and wrote out subscriptions. Four
-        /// folds together the records that differ only in where they were reached from and puts the
-        /// other ways in <c>alsoReachedBy</c>.
+        /// 셋은 호출 엣지에 수신자와 인자를 더하고 구독을 써냈다. 넷은 어디서 닿았는지만 다른 기록들을 하나로
+        /// 접고 나머지 갈래를 <c>alsoReachedBy</c> 에 넣는다.
         ///
-        /// Every field a version-two document had is still in the same place with the same meaning,
-        /// so nothing has to be rewritten to read this. The number moves because what a document
-        /// *omits* now means something different: a reader that ignores <c>handles</c> concludes a
-        /// type subscribes to nothing, and one that ignores <c>alsoReachedBy</c> sees fewer ways to
-        /// an effect than there are. The version is the only thing that says which it is holding.
+        /// 버전 둘 문서가 가지고 있던 필드는 전부 같은 자리에 같은 뜻으로 남아 있으므로, 이것을 읽기 위해
+        /// 다시 써야 할 것은 없다. 번호가 움직이는 이유는 문서가 *빠뜨린 것* 의 뜻이 달라졌기 때문이다:
+        /// <c>handles</c> 를 무시하는 독자는 그 타입이 아무것도 구독하지 않는다고 결론짓고,
+        /// <c>alsoReachedBy</c> 를 무시하는 독자는 어떤 효과에 이르는 갈래를 실제보다 적게 본다. 자기가
+        /// 무엇을 쥐고 있는지 말해 주는 것은 버전뿐이다.
         ///
-        /// Six adds <c>calledBy</c>: what reaches a record, which the record's own calls could
-        /// never say. It only adds, and it moves with the document that carries it rather than
-        /// drifting a version behind — one file should not hold two answers to which shape it is.
+        /// 여섯은 <c>calledBy</c> 를 더한다: 무엇이 이 기록에 닿는가 — 기록 자신의 호출로는 결코 말할 수 없는
+        /// 것이다. 더하기만 하고, 그것을 나르는 문서와 함께 움직이지 한 버전 뒤에 처지지 않는다. 한 파일이
+        /// 자신이 어떤 모양인지에 대해 두 개의 답을 쥐고 있어서는 안 된다.
         /// </remarks>
         internal const int SchemaVersion = 6;
         private const int MaxItems = 64;
@@ -70,8 +69,8 @@ namespace Artel.Affordances.CodeGen
                 text.Append(',');
                 Property(text, "handedOverIn", variant.HandedIn);
 
-                // What took it. A predicate given to `WaitUntil` is a coroutine standing still
-                // until it comes true; the same predicate given to a list of callbacks is not.
+                // 무엇이 그것을 가져갔는가. `WaitUntil` 에 넘긴 술어는 그것이 참이 될 때까지 멈춰 선 코루틴이고,
+                // 같은 술어를 콜백 목록에 넘긴 것은 그것이 아니다.
                 if (variant.HandedTo != null)
                 {
                     text.Append(',');
@@ -79,8 +78,8 @@ namespace Artel.Affordances.CodeGen
                 }
             }
 
-            // Who reaches this, which the record's own calls cannot say: they are the edges going
-            // out, and a caller with no record of its own leaves none of them.
+            // 무엇이 여기에 닿는가. 기록 자신의 호출로는 말할 수 없다: 그것들은 나가는 엣지이고, 제 기록이 없는
+            // 호출자는 그중 하나도 남기지 않는다.
             if (callers != null && variant.EntryId != null &&
                 callers.TryGetValue(variant.EntryId, out var reachedBy))
             {
@@ -127,8 +126,8 @@ namespace Artel.Affordances.CodeGen
                 text.Append(',');
                 Property(text, "target", effect.Target);
 
-                // Which values the target could have been. Absent unless the source chose between
-                // them, so a reader that sees it knows the single name above is not an answer.
+                // 대상이 될 수 있었던 값들. 원본이 그중에서 골랐을 때만 나온다. 그러니 이것을 본 독자는 위의 이름
+                // 하나가 답이 아니라는 것을 안다.
                 if (effect.TargetCandidates != null && effect.TargetCandidates.Count > 0)
                 {
                     text.Append(",\"targetCandidates\":");
@@ -319,7 +318,7 @@ namespace Artel.Affordances.CodeGen
             text.Append(value ? ":true" : ":false");
         }
 
-        /// <summary>Shared so a second writer cannot disagree with this one about escaping.</summary>
+        /// <summary>두 번째 writer 가 이스케이프에 대해 이쪽과 다른 말을 하지 못하도록 공유한다.</summary>
         internal static void String(StringBuilder text, string value)
         {
             if (value == null)

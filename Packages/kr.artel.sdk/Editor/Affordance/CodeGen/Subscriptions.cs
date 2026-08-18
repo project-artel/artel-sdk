@@ -5,28 +5,26 @@ using Mono.Cecil.Cil;
 namespace Artel.Affordances.CodeGen
 {
     /// <summary>
-    /// Where a method was hung on something that will call it later.
+    /// 어떤 메서드가 나중에 자신을 부를 무언가에 걸린 자리.
     /// </summary>
     /// <remarks>
-    /// A call graph follows calls, and a game built on event channels barely has any. A button
-    /// publishes to a ScriptableObject asset and whatever does the work has subscribed to the same
-    /// asset from somewhere else entirely; the two halves never name each other. Measured on Chop
-    /// Chop this was not a shortfall but the whole result — 1,468 evidence records and nothing a
-    /// specification could be written from, because every button ended at a channel.
+    /// 호출 그래프는 호출을 따라가는데, 이벤트 채널 위에 세워진 게임에는 호출이 거의 없다. 버튼은
+    /// ScriptableObject 애셋에 발행하고, 실제 일을 하는 쪽은 전혀 다른 데서 같은 애셋을 구독해 두었다.
+    /// 두 쪽은 서로의 이름을 한 번도 부르지 않는다. Chop Chop 에서 실측했을 때 이것은 부족분이 아니라
+    /// 결과 전체였다 — 근거 기록 1,468건에 명세를 쓸 수 있는 것은 하나도 없었다. 모든 버튼이 채널에서
+    /// 끝났기 때문이다.
     ///
-    /// The subscription itself is in the IL and is unmissable: taking a method's address is
-    /// <c>ldftn</c>, and there is exactly one reason to do it. What it is attached to comes from
-    /// following the value forward to whatever consumes it — an <c>add_</c> accessor, an
-    /// <c>AddListener</c>, or a store into a delegate field.
+    /// 구독 자체는 IL 안에 있고 놓칠 수 없다: 메서드의 주소를 취하는 것이 <c>ldftn</c> 이고, 그럴 이유는
+    /// 정확히 하나뿐이다. 그것이 무엇에 붙었는지는 값을 앞으로 따라가 그것을 소비하는 것에 닿아서 안다 —
+    /// <c>add_</c> 접근자이거나, <c>AddListener</c> 이거나, 델리게이트 필드로의 저장이다.
     ///
-    /// This does not join the two halves. It cannot: which subscriber hears which publisher is
-    /// decided by the asset an inspector field points at, and that is in the scene, not in the code.
-    /// What is written here is the type of the channel on both sides, which narrows it to the
-    /// channels of that type, and the serialized field read gives the rest.
+    /// 이것이 두 쪽을 이어 주지는 않는다. 이을 수 없다: 어느 구독자가 어느 발행자를 듣는지는 인스펙터
+    /// 필드가 가리키는 애셋이 정하고, 그것은 코드가 아니라 씬에 있다. 여기 적히는 것은 양쪽 채널의
+    /// 타입이고, 그것이 후보를 그 타입의 채널들로 좁히며, 나머지는 직렬화된 필드 읽기가 준다.
     /// </remarks>
     internal static class Subscriptions
     {
-        /// <summary>How many instructions forward a delegate is followed before giving up.</summary>
+        /// <summary>델리게이트를 포기하기 전까지 앞으로 몇 명령어나 따라가는지.</summary>
         private const int Reach = 8;
 
         internal static void ReadInto(BasicBlock block, ModuleDefinition module, List<Subscription> found)
@@ -58,7 +56,7 @@ namespace Artel.Affordances.CodeGen
 
             if (handler == null || handler.Module != module)
             {
-                // A delegate over engine code. The game did not write it and cannot be told to run it.
+                // 엔진 코드 위의 델리게이트. 게임이 쓴 것이 아니고 게임더러 돌리라고 할 수도 없다.
                 return null;
             }
 
@@ -85,10 +83,9 @@ namespace Artel.Affordances.CodeGen
                     return null;
                 }
 
-                // The type that declares the field, not the field's own type. A field-like event
-                // compiles to a delegate field, so its type is UnityAction — true and useless. What
-                // makes a subscriber meet a publisher is the type the event belongs to, which is
-                // also the type declaring the Raise the publisher called.
+                // 필드를 선언하는 타입이지 필드 자신의 타입이 아니다. 필드형 이벤트는 델리게이트 필드로
+                // 컴파일되므로 그 타입은 UnityAction 이다 — 맞는 말이고 쓸모없는 말이다. 구독자와 발행자를 만나게
+                // 하는 것은 이벤트가 속한 타입이고, 그것은 발행자가 부른 Raise 를 선언하는 타입이기도 하다.
                 subscription.Channel = IlReading.FieldName(field);
                 subscription.ChannelType = field.DeclaringType?.FullName;
                 subscription.Member = field.Name;
@@ -112,13 +109,12 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The instruction that takes delivery of the delegate.
+        /// 델리게이트를 넘겨받는 명령어.
         /// </summary>
         /// <remarks>
-        /// Between taking a method's address and handing it over there is only ever wrapping: the
-        /// delegate is constructed, sometimes combined with what was already there, sometimes cast
-        /// back to its own type. Anything else means this value went somewhere this cannot follow,
-        /// and following it wrongly would name a channel that is not the one it was attached to.
+        /// 메서드의 주소를 취하는 것과 그것을 건네는 것 사이에 있는 것은 포장뿐이다: 델리게이트가 만들어지고,
+        /// 때로는 이미 있던 것과 합쳐지고, 때로는 제 타입으로 다시 캐스팅된다. 그 밖의 것은 이 값이 여기서
+        /// 따라갈 수 없는 데로 갔다는 뜻이고, 잘못 따라가면 그것이 붙은 적 없는 채널의 이름을 대게 된다.
         /// </remarks>
         private static Instruction Attachment(Instruction from, BasicBlock block)
         {
@@ -139,8 +135,7 @@ namespace Artel.Affordances.CodeGen
 
                     case Code.Call:
                     case Code.Callvirt:
-                        // Delegate.Combine sits in the middle of a += on a field; anything else is
-                        // the thing being subscribed to.
+                        // Delegate.Combine 은 필드에 대한 += 한가운데 앉아 있다. 그 밖의 것은 구독 대상 그 자체다.
                         if (!IsCombining(at.Operand as MethodReference))
                         {
                             return at;

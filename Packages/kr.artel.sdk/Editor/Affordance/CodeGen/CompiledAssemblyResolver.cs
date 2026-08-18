@@ -7,17 +7,15 @@ using Unity.CompilationPipeline.Common.ILPostProcessing;
 namespace Artel.Affordances.CodeGen
 {
     /// <summary>
-    /// Finds the assemblies a game assembly was compiled against.
+    /// 게임 어셈블리가 무엇에 대고 컴파일됐는지를 찾아낸다.
     /// </summary>
     /// <remarks>
-    /// Deciding whether a type is a behaviour means walking its base types, and every step of that
-    /// walk lands in another assembly — <c>UnityEngine.CoreModule</c> at the least. Cecil cannot
-    /// follow those on its own here because the assembly under analysis is a stream in memory with
-    /// no directory to search next to.
+    /// 어떤 타입이 behaviour 인지 판단하려면 그 기반 타입들을 거슬러 올라가야 하고, 그 걸음마다 다른
+    /// 어셈블리에 닿는다 — 최소한 <c>UnityEngine.CoreModule</c> 에는. 여기서 Cecil 은 그것을 스스로
+    /// 따라가지 못한다. 분석 대상 어셈블리가 메모리 위의 스트림이라 옆에서 뒤질 디렉터리가 없기 때문이다.
     ///
-    /// The reference paths handed over by the compiler are the answer, and they are the only
-    /// answer: a module's own <c>AssemblyReferences</c> lists what its code actually used, which is
-    /// a different and smaller set.
+    /// 컴파일러가 건네준 참조 경로가 답이고, 그것이 유일한 답이다: 모듈 자신의 <c>AssemblyReferences</c>
+    /// 는 그 코드가 실제로 쓴 것을 적은 목록이라 다르고 더 작은 집합이다.
     /// </remarks>
     internal sealed class CompiledAssemblyResolver : IAssemblyResolver
     {
@@ -39,8 +37,8 @@ namespace Artel.Affordances.CodeGen
                     continue;
                 }
 
-                // Keyed by file name because that is what an assembly reference carries. Later
-                // entries win; the compiler does not hand over two paths for one name.
+                // 파일 이름으로 키를 잡는다. 어셈블리 참조가 들고 다니는 것이 그것이기 때문이다. 뒤에 온 항목이
+                // 이긴다 — 컴파일러가 한 이름에 두 경로를 건네지는 않는다.
                 _pathsByName[Path.GetFileNameWithoutExtension(reference)] = reference;
             }
         }
@@ -64,8 +62,8 @@ namespace Artel.Affordances.CodeGen
 
             var opened = Open(name.Name, parameters);
 
-            // Cached even when it came back null. A reference that cannot be found will be asked
-            // for once per type that inherits through it, and failing takes as long as succeeding.
+            // null 로 돌아왔을 때도 캐시한다. 찾지 못하는 참조는 그것을 거쳐 상속하는 타입마다 한 번씩 다시
+            // 물어보게 되고, 실패하는 데 걸리는 시간은 성공하는 것과 같다.
             _opened[name.Name] = opened;
             return opened;
         }
@@ -85,8 +83,8 @@ namespace Artel.Affordances.CodeGen
             }
             catch (Exception)
             {
-                // Unreadable references are ordinary input when walking someone else's build.
-                // Returning null costs one unresolved base type; throwing costs the whole assembly.
+                // 남의 빌드를 걸을 때 읽히지 않는 참조는 예외가 아니라 평범한 입력이다. null 을 돌려주면 해석되지
+                // 않은 기반 타입 하나를 잃고, 던지면 어셈블리 전체를 잃는다.
                 return null;
             }
         }
