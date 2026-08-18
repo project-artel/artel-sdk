@@ -5,7 +5,7 @@ using Mono.Cecil.Cil;
 
 namespace Artel.Affordances.CodeGen
 {
-    /// <summary>Reading values and names back out of instructions.</summary>
+    /// <summary>명령어에서 값과 이름을 되읽어 내는 일.</summary>
     internal static class IlReading
     {
         internal static bool TryConstant(Instruction instruction, out int value)
@@ -36,17 +36,15 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// A short name for whatever an instruction puts on the stack.
+        /// 명령어가 스택에 올려놓는 무엇이든, 그것의 짧은 이름.
         /// </summary>
         /// <remarks>
-        /// Null when the value is something this cannot name — a computed expression, a local whose
-        /// history is not tracked. Callers treat null as an unread condition and say so rather than
-        /// inventing a plausible one.
+        /// 이것이 이름 붙일 수 없는 값일 때 null 이다 — 계산된 식, 내력이 추적되지 않는 지역 변수. 호출자는 null 을
+        /// 읽지 못한 조건으로 다루고 그럴듯한 것을 지어내는 대신 그렇다고 말한다.
         ///
-        /// The bound is the first instruction of the block being read, and nothing is read past it.
-        /// Without one, arguments are not read at all: a call's arguments are the instructions
-        /// before it, and where control can arrive from more than one place the instructions before
-        /// it belong to whichever path happens to be written above.
+        /// 경계는 읽고 있는 블록의 첫 명령어이고, 그것을 지나서는 아무것도 읽지 않는다. 경계가 없으면 인자는 아예 읽히지
+        /// 않는다: 호출의 인자는 그 앞의 명령어들인데, 제어가 여러 자리에서 도착할 수 있는 곳에서는 그 앞의 명령어들이
+        /// 마침 위에 쓰인 경로의 것이기 때문이다.
         /// </remarks>
         internal static string Describe(Instruction instruction)
         {
@@ -54,26 +52,21 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The object a call was made on, followed down to the field holding it.
+        /// 호출이 이루어진 객체를, 그것을 쥔 필드까지 따라 내려간 것.
         /// </summary>
         /// <remarks>
-        /// <c>MapMove.character.transform.position = MapMove.battle2.transform.position</c> is the
-        /// sample game moving its map cursor, and both halves of it are a field with
-        /// <c>.transform</c> on the end. Read as a receiver the answer is a call; read one hop
-        /// further it is <c>character</c>, which is a place a value can be read back from while the
-        /// game runs.
+        /// <c>MapMove.character.transform.position = MapMove.battle2.transform.position</c> 은 샘플 게임이 맵 커서를
+        /// 옮기는 것이고, 그 양쪽 절반 다 끝에 <c>.transform</c> 이 붙은 필드다. 수신자로 읽으면 답이 호출이지만, 한 걸음
+        /// 더 읽으면 <c>character</c> 이고 그것은 게임이 도는 동안 값을 되읽을 수 있는 자리다.
         ///
-        /// This matters more now that a screen recording is watched beside the readings. The video
-        /// shows a sprite arriving somewhere and cannot say that the sprite is <c>wordHead</c> or
-        /// that the somewhere is <c>battle2</c>; those are names, and naming them is what turns two
-        /// unrelated observations into one fact.
+        /// 화면 녹화를 판독 옆에서 함께 보게 된 지금 이것이 더 중요해졌다. 영상은 스프라이트가 어딘가에 도착하는 것을
+        /// 보여 주지만 그 스프라이트가 <c>wordHead</c> 라거나 그 어딘가가 <c>battle2</c> 라고는 말할 수 없다. 그것들은
+        /// 이름이고, 이름을 대는 일이 서로 무관한 관측 둘을 하나의 사실로 만든다.
         ///
-        /// Only <c>transform</c> and <c>gameObject</c> are stepped through, and only those. They are
-        /// the two accessors that answer with the same object in another guise, so the field behind
-        /// them is genuinely the thing that moved. Any other getter may hand back something else
-        /// entirely — <c>list.First().position</c> would root to <c>list</c>, and a list has no
-        /// position — so the walk stops and the value is left unwatched, which is the truthful
-        /// answer rather than a plausible one.
+        /// <c>transform</c> 과 <c>gameObject</c> 만 밟고 지나가며, 그 둘만이다. 그 둘은 같은 객체를 다른 모습으로
+        /// 답해 주는 접근자라, 그 뒤의 필드가 실제로 움직인 그것이다. 다른 getter 는 전혀 다른 것을 돌려줄 수 있으므로 —
+        /// <c>list.First().position</c> 은 <c>list</c> 로 뿌리내릴 텐데 목록에는 위치가 없다 — 걷기를 멈추고 그 값을
+        /// 감시하지 않은 채 둔다. 그것이 그럴듯한 답이 아니라 정직한 답이다.
         /// </remarks>
         internal static Instruction Rooted(
             MethodReference method, Instruction call, Instruction boundary, MethodDefinition within)
@@ -86,11 +79,10 @@ namespace Artel.Affordances.CodeGen
             return RootedAt(Receiving(method, call, boundary), boundary, within);
         }
 
-        /// <summary>The same walk, begun at an instruction rather than at a call's receiver.</summary>
+        /// <summary>같은 걷기를, 호출의 수신자가 아니라 어떤 명령어에서 시작한 것.</summary>
         /// <remarks>
-        /// A tweening library moves a transform that was passed to it rather than called on, so what
-        /// has to be rooted is an argument. Same walk, different starting point — and keeping them
-        /// one walk is what stops the two shapes from disagreeing about which field moved.
+        /// 트윈 라이브러리는 대고 불린 것이 아니라 넘겨받은 transform 을 옮기므로, 뿌리내려야 할 것이 인자다. 같은 걷기,
+        /// 다른 출발점 — 그리고 그 둘을 한 걷기로 두는 것이 두 모양이 어느 필드가 움직였는지에 대해 어긋나지 않게 한다.
         /// </remarks>
         internal static Instruction RootedAt(
             Instruction from, Instruction boundary, MethodDefinition within)
@@ -118,19 +110,17 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Where <see cref="Describe"/> ends up: the instruction that actually holds the value.
+        /// <see cref="Describe"/> 가 도착하는 자리: 실제로 값을 쥔 명령어.
         /// </summary>
         /// <remarks>
-        /// The same follow through singly-written locals, and only that. Naming a value and finding
-        /// somewhere to read it back are the same walk, so a member watched at runtime has to be the
-        /// one the sentence is about — <c>MapMove.position</c> named through two copies in a
-        /// debugging build is still that field, and a watcher pointed at the local would be watching
-        /// something that stops existing the moment the method returns.
+        /// 한 번만 쓰인 지역 변수를 거쳐 가는 같은 따라가기이고, 그것뿐이다. 값에 이름을 대는 일과 그것을 되읽을 자리를
+        /// 찾는 일은 같은 걷기이므로, 런타임에 감시되는 멤버는 그 문장이 말하는 바로 그것이어야 한다 — 디버깅 빌드에서
+        /// 복사본 둘을 거쳐 이름 붙은 <c>MapMove.position</c> 은 여전히 그 필드이고, 지역 변수를 겨눈 감시자는 메서드가
+        /// 돌아오는 순간 존재하기를 그만두는 무언가를 감시하게 된다.
         ///
-        /// Kept beside <see cref="Describe"/> rather than folded into it because they answer
-        /// different questions and only one of them can fail politely. A name that cannot be read is
-        /// an unread condition; an instruction that is not a field is simply not somewhere to look,
-        /// which is an ordinary and frequent answer.
+        /// <see cref="Describe"/> 에 접어 넣지 않고 그 옆에 두는 것은, 둘이 서로 다른 물음에 답하고 그중 하나만 정중하게
+        /// 실패할 수 있기 때문이다. 읽을 수 없는 이름은 읽지 못한 조건이지만, 필드가 아닌 명령어는 그냥 찾아볼 자리가
+        /// 아닌 것이고 그것은 평범하고 잦은 답이다.
         /// </remarks>
         internal static Instruction Holding(Instruction instruction, MethodDefinition within)
         {
@@ -155,14 +145,13 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The same naming, able to see through a local that can only hold one thing.
+        /// 같은 이름 붙이기인데, 한 가지만 담을 수 있는 지역 변수를 꿰뚫어 볼 수 있는 것.
         /// </summary>
         /// <remarks>
-        /// An optimised compiler puts a value in a local and reads it back where a debugging one
-        /// fetches it again, so the same source left twenty conditions unnamed in an editor scan
-        /// and readable in a development build. Following a local is refused in general — it may
-        /// have been assigned out of sight — and allowed when the method stores it in exactly one
-        /// place, because then there is nowhere else it could have come from.
+        /// 최적화하는 컴파일러는 값을 지역 변수에 넣고 되읽는 자리에서 디버깅용 컴파일러는 그것을 다시 가져오므로, 같은
+        /// 소스가 에디터 스캔에서는 조건 스물을 이름 없이 남기고 개발 빌드에서는 읽히게 했다. 지역 변수를 따라가는 일은
+        /// 일반적으로는 거절한다 — 보이지 않는 데서 대입됐을 수 있다 — 그리고 메서드가 그것을 정확히 한 자리에서 저장할
+        /// 때만 허용한다. 그러면 다른 어디서도 올 수 없기 때문이다.
         /// </remarks>
         internal static string Describe(
             Instruction instruction, Instruction boundary, MethodDefinition within)
@@ -177,13 +166,11 @@ namespace Artel.Affordances.CodeGen
 
             if (stored != null)
             {
-                // Followed on, not stopped after one. A debugging compiler copies a switch's
-                // subject through two locals before testing it — `ldarg.1; stloc.1; ldloc.1;
-                // stloc.0` — and stopping at the first left the sample game's five map screens and
-                // five word positions as switches on nothing anybody could name. Each step is still
-                // a local its method writes exactly once, which is the whole of the safety and does
-                // not weaken by being applied twice; the depth is what keeps a field assigned from
-                // itself from going round.
+                // 하나에서 멈추지 않고 계속 따라간다. 디버깅용 컴파일러는 switch 의 주어를 검사하기 전에 지역 변수 둘을 거쳐
+                // 복사하는데 — `ldarg.1; stloc.1; ldloc.1; stloc.0` — 첫 번째에서 멈추는 바람에 샘플 게임의 맵 화면 다섯과 단어
+                // 위치 다섯이 아무도 이름 댈 수 없는 것에 대한 switch 로 남았다. 각 걸음은 여전히 제 메서드가 정확히 한 번 쓰는
+                // 지역 변수이고 그것이 안전의 전부이며 두 번 적용한다고 약해지지 않는다. 깊이는 제 자신에서 대입된 필드가 원을
+                // 도는 것을 막는 몫이다.
                 return Describe(stored, boundary, depth + 1 < MaxReceiverDepth ? within : null, depth + 1);
             }
 
@@ -248,21 +235,19 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The object a method was called on, or the name a parameter was declared with.
+        /// 메서드가 대고 불린 객체, 또는 매개변수가 선언될 때 받은 이름.
         /// </summary>
         /// <remarks>
-        /// Left unread until now, and the cost was two different things. A condition comparing a
-        /// parameter had no left-hand side at all and was reported as unread, which is a rule nobody
-        /// can write down. And <c>Destroy(this)</c> came out as a target nobody could name — while
-        /// the singleton plumbing that wants to recognise it has been looking for the word
-        /// <c>this</c> the whole time, so an <c>Awake</c> that destroys the second copy of itself
-        /// was arriving as a feature.
+        /// 지금까지 읽지 않았고, 그 값은 서로 다른 둘이었다. 매개변수를 비교하는 조건은 좌변이 아예 없어 읽지 못한 것으로
+        /// 보고됐는데, 그것은 아무도 적을 수 없는 규칙이다. 그리고 <c>Destroy(this)</c> 는 아무도 이름 댈 수 없는 대상으로
+        /// 나왔다 — 정작 그것을 알아보려는 싱글턴 배관 인식은 내내 <c>this</c> 라는 말을 찾고 있었으므로, 제 두 번째
+        /// 복사본을 파괴하는 <c>Awake</c> 가 기능으로 도착하고 있었다.
         ///
-        /// The name is the one in the assembly's own metadata, so an obfuscated build gives back
-        /// whatever it kept — and nothing, rather than a guess, when it kept nothing.
+        /// 이름은 어셈블리 자신의 메타데이터에 있는 것이므로, 난독화된 빌드는 그것이 지킨 것을 돌려주고 — 아무것도 지키지
+        /// 않았다면 추측이 아니라 아무것도 돌려주지 않는다.
         ///
-        /// Naming a parameter says what the comparison is about, not who could arrange it. That is
-        /// the subject's job, and <see cref="Where"/> answers it with <c>arg:N</c> as it always did.
+        /// 매개변수의 이름을 대는 일은 그 비교가 무엇에 대한 것인지를 말하지, 누가 그것을 마련할 수 있는지를 말하지
+        /// 않는다. 그것은 주어의 몫이고, <see cref="Where"/> 가 늘 그랬듯 <c>arg:N</c> 으로 답한다.
         /// </remarks>
         private static string ArgumentName(Instruction instruction, MethodDefinition within)
         {
@@ -308,26 +293,24 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The name the source gave a local, when the assembly still carries it.
+        /// 어셈블리가 아직 그것을 나를 때, 소스가 지역 변수에 준 이름.
         /// </summary>
         /// <remarks>
-        /// Named, not followed. Following a local is what this refuses in general and allows only
-        /// when the method writes it once; naming it asks a different question, and the answer is
-        /// written down in the symbols rather than worked out.
+        /// 이름을 대는 것이지 따라가는 것이 아니다. 지역 변수를 따라가는 일은 이것이 일반적으로 거절하고 메서드가 한 번
+        /// 쓸 때만 허용하는 것이다. 이름을 대는 일은 다른 물음이고, 그 답은 알아내는 것이 아니라 심볼에 적혀 있다.
         ///
-        /// It is the counter of a <c>for</c> loop that made this worth having. A loop's own test is
-        /// <c>i &lt; cards.Count</c>, and <c>i</c> is written twice — once at zero and once at
-        /// itself plus one — so it is exactly the shape the one-store rule refuses. The test came
-        /// out as an unread condition and took the whole record with it: thirteen of the sample
-        /// game's records said nothing at all except that a loop was involved.
+        /// 이것을 가질 값이 있게 만든 것은 <c>for</c> 루프의 카운터다. 루프 자신의 검사는 <c>i &lt; cards.Count</c> 이고
+        /// <c>i</c> 는 두 번 쓰인다 — 한 번은 0 으로, 한 번은 제 자신 더하기 1 로 — 그래서 정확히 한 번 저장 규칙이
+        /// 거절하는 모양이다. 그 검사는 읽지 못한 조건으로 나왔고 기록 전체를 함께 끌고 갔다: 샘플 게임의 기록 열셋이
+        /// 루프가 관련됐다는 것 말고는 아무 말도 하지 않았다.
         ///
-        /// A local says nothing about whose it is, so the subject is still lost and the report still
-        /// says so. What is gained is the sentence: "the number gone through is less than the number
-        /// of cards" is a rule someone can read, where "unread condition" is not.
+        /// 지역 변수는 그것이 누구의 것인지 아무 말도 하지 않으므로 주어는 여전히 잃고 리포트도 여전히 그렇다고 말한다.
+        /// 얻는 것은 문장이다: "지나온 개수가 카드 개수보다 작다" 는 누군가 읽을 수 있는 규칙이지만 "읽지 못한 조건" 은
+        /// 아니다.
         ///
-        /// Nothing is claimed when the symbols are not there. A release build is not baked at all
-        /// and an obfuscated one gives back whatever it kept, which may be nothing — and nothing is
-        /// what this then says. Names the compiler invented for itself are left alone.
+        /// 심볼이 없으면 아무것도 주장하지 않는다. 릴리스 빌드는 아예 굽지 않고 난독화된 것은 그것이 지킨 것을 돌려주는데
+        /// 그것은 아무것도 아닐 수 있다 — 그러면 이것도 아무것도 아니라고 말한다. 컴파일러가 스스로 지어낸 이름은
+        /// 건드리지 않는다.
         /// </remarks>
         private static string LocalName(Instruction instruction, MethodDefinition within)
         {
@@ -353,21 +336,18 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// A value the code worked out, written the way the source wrote it.
+        /// 코드가 계산해 낸 값을, 소스가 쓴 방식으로 적은 것.
         /// </summary>
         /// <remarks>
-        /// Conditions in a game loop compare something computed, not something stored: a slide ends
-        /// when the distance travelled since it began divided by its length reaches one. Refusing to
-        /// name the sum left every one of those as an unread condition — on Trash Dash three hundred
-        /// and sixty-seven of them — and an unread condition is a rule nobody can write down.
+        /// 게임 루프 안의 조건은 저장된 것이 아니라 계산된 것을 비교한다: 슬라이드는 시작한 뒤 이동한 거리를 그 길이로 나눈
+        /// 값이 1 에 닿을 때 끝난다. 그 합에 이름 대기를 거절한 탓에 그것들 하나하나가 읽지 못한 조건으로 남았고 —
+        /// Trash Dash 에서 367 건 — 읽지 못한 조건은 아무도 적을 수 없는 규칙이다.
         ///
-        /// Only what is on the stack at that moment. A value the code put in a local and read back
-        /// is not followed, because a local may have been assigned somewhere this cannot see and a
-        /// condition bound to the wrong assignment is the expensive kind of wrong. That is a
-        /// separate piece of work and it is not done here.
+        /// 그 순간 스택 위에 있는 것만 본다. 코드가 지역 변수에 넣고 되읽은 값은 따라가지 않는다. 지역 변수는 이것이 볼 수
+        /// 없는 데서 대입됐을 수 있고, 엉뚱한 대입에 묶인 조건은 값비싼 종류의 틀림이기 때문이다. 그것은 별개의 일이고
+        /// 여기서 하지 않는다.
         ///
-        /// Bounded by depth as well as by the block. A long expression makes a long sentence, and
-        /// past a few levels the sentence stops being one anybody reads.
+        /// 블록뿐 아니라 깊이로도 가둔다. 긴 식은 긴 문장을 만들고, 몇 단계를 지나면 그 문장은 누구도 읽는 것이 아니게 된다.
         /// </remarks>
         private static string Arithmetic(
             Instruction instruction, Instruction boundary, int depth, MethodDefinition within)
@@ -393,7 +373,7 @@ namespace Artel.Affordances.CodeGen
             return left == null || right == null ? null : "(" + left + " " + symbol + " " + right + ")";
         }
 
-        /// <summary>A unary operation, which is one operand rather than two.</summary>
+        /// <summary>단항 연산. 피연산자가 둘이 아니라 하나다.</summary>
         private static string Negation(
             Instruction instruction, Instruction boundary, int depth, MethodDefinition within)
         {
@@ -406,7 +386,7 @@ namespace Artel.Affordances.CodeGen
             return value == null ? null : "-" + value;
         }
 
-        /// <summary>Names an operand, going one level deeper into a sum if it is one.</summary>
+        /// <summary>피연산자에 이름을 대고, 그것이 합이면 한 단계 더 들어간다.</summary>
         private static string Read(
             Instruction instruction, Instruction boundary, int depth, MethodDefinition within)
         {
@@ -433,34 +413,30 @@ namespace Artel.Affordances.CodeGen
             }
         }
 
-        /// <summary>How many levels of a computed value are written out.</summary>
+        /// <summary>계산된 값을 몇 단계까지 써 나가는지.</summary>
         private const int MaxArithmeticDepth = 4;
 
         /// <summary>
-        /// Names the answer a call gave, with whatever of its arguments can be read.
+        /// 호출이 준 답에, 읽을 수 있는 인자를 곁들여 이름을 댄다.
         /// </summary>
         /// <remarks>
-        /// Conditions in real code test what a method returned as often as they test a field —
-        /// whether a save exists, whether a list is empty. Refusing to name those left the branch
-        /// they guard reported as an unread condition, which in the sample game meant the fact that
-        /// decides which scene loads was the one fact missing.
+        /// 실제 코드의 조건은 필드를 검사하는 만큼이나 자주 메서드가 무엇을 돌려줬는지를 검사한다 — 세이브가 있는지,
+        /// 목록이 비었는지. 그것들에 이름 대기를 거절한 탓에 그것들이 지키는 분기가 읽지 못한 조건으로 보고됐고, 샘플
+        /// 게임에서 그것은 어느 씬이 로드되는지를 결정하는 사실이 빠진 바로 그 하나였다는 뜻이다.
         ///
-        /// Arguments used to be left off on the grounds that a signature on every condition costs
-        /// more than it says. That was answered by measurement: <c>Component.CompareTag()</c> is a
-        /// hundred and five conditions in the sample game and every one of them reads the same, so
-        /// the tag-based half of its combat rules arrived as one repeated sentence. What is wanted
-        /// is not the signature but the argument — and an argument that cannot be read is written
-        /// as <c>_</c>, so a condition never claims to know one it does not.
+        /// 인자는 조건마다 시그니처를 다는 값이 그것이 말하는 것보다 크다는 이유로 빼 왔다. 그것은 실측으로 답해졌다:
+        /// <c>Component.CompareTag()</c> 는 샘플 게임에서 조건 105 건이고 그 하나하나가 똑같이 읽혀서, 태그에 기반한
+        /// 전투 규칙의 절반이 반복되는 한 문장으로 도착했다. 원하는 것은 시그니처가 아니라 인자이고 — 읽을 수 없는 인자는
+        /// <c>_</c> 로 쓰므로 조건이 모르는 것을 안다고 주장하는 일은 없다.
         ///
-        /// Written against what the call was made on, and only against the declaring type when that
-        /// cannot be read. The type is the same for every object of it, so two lists on one object
-        /// were both <c>List`1.Count</c> and a reader had no way to tell which — the sample game's
-        /// combine button needs one spell card and one element card, and the two conditions arrived
-        /// as one sentence. The receiver was never missing; it was simply not asked for, and
-        /// <see cref="Receiver"/> has been asking for it on call edges all along.
+        /// 호출이 대고 이루어진 것에 대해 쓰고, 그것을 읽을 수 없을 때만 선언 타입에 대해 쓴다. 타입은 그 타입의 모든
+        /// 객체에 대해 같으므로 한 객체 위의 목록 둘이 모두 <c>List`1.Count</c> 였고 독자는 어느 쪽인지 알 방법이 없었다 —
+        /// 샘플 게임의 합치기 버튼은 주문 카드 하나와 원소 카드 하나를 필요로 하는데 그 두 조건이 한 문장으로 도착했다.
+        /// 수신자는 없던 적이 없다. 그저 아무도 청하지 않았을 뿐이고, <see cref="Receiver"/> 는 호출 엣지에서 내내 그것을
+        /// 청해 왔다.
         ///
-        /// A receiver is itself a value with a receiver, so this walks. Bounded, because a name is
-        /// for reading and past a few links it stops being one.
+        /// 수신자 자체도 수신자를 가진 값이므로 이것은 걷는다. 가둔다. 이름은 읽으라고 있는 것이고 몇 고리를 지나면 그것은
+        /// 이름이기를 그만두기 때문이다.
         /// </remarks>
         private static string CallName(
             MethodReference method, Instruction call, Instruction boundary, MethodDefinition within,
@@ -484,9 +460,8 @@ namespace Artel.Affordances.CodeGen
             {
                 var property = owner + "." + method.Name.Substring(4);
 
-                // An indexer is a getter with parameters, and it is read as one in the source too.
-                // Written with the brackets rather than as get_Item so that a name the compiler
-                // invented does not end up in a specification.
+                // 인덱서는 매개변수가 있는 getter 이고, 소스에서도 그렇게 읽힌다. 컴파일러가 지어낸 이름이 명세에 들어가지
+                // 않도록 get_Item 이 아니라 대괄호로 쓴다.
                 return method.Parameters.Count == 0
                     ? property
                     : property + "[" + (arguments ?? Unread(method.Parameters.Count)) + "]";
@@ -496,14 +471,13 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// What a call was made on, named, or null when it is not worth a name.
+        /// 호출이 대고 이루어진 것의 이름, 또는 이름을 붙일 값이 없을 때 null.
         /// </summary>
         /// <remarks>
-        /// A static call has no receiver, and one made on <c>this</c> is left to the declaring type
-        /// on purpose: a field of <c>this</c> is already written that way (<c>CombineZone.spellCards</c>,
-        /// not <c>this.spellCards</c>) and the subject is carried by the condition's own
-        /// <c>context</c>. So nothing moves for the ordinary case, and what moves is exactly the
-        /// case where two objects were sharing one name.
+        /// static 호출은 수신자가 없고, <c>this</c> 에 대고 이루어진 것은 일부러 선언 타입에 맡긴다: <c>this</c> 의 필드는
+        /// 이미 그렇게 쓰이고 (<c>this.spellCards</c> 가 아니라 <c>CombineZone.spellCards</c>) 주어는 조건 자신의
+        /// <c>context</c> 가 나른다. 그래서 평범한 경우에는 아무것도 움직이지 않고, 움직이는 것은 정확히 두 객체가 한
+        /// 이름을 나눠 쓰고 있던 경우다.
         /// </remarks>
         private static string Owner(
             MethodReference method, Instruction call, Instruction boundary, MethodDefinition within,
@@ -517,21 +491,18 @@ namespace Artel.Affordances.CodeGen
             return Describe(Receiving(method, call, boundary), boundary, within, depth + 1);
         }
 
-        /// <summary>How many receivers deep a name is written before it stops being readable.</summary>
+        /// <summary>이름이 읽을 수 있기를 그만두기 전까지 수신자를 몇 겹까지 써 나가는지.</summary>
         private const int MaxReceiverDepth = 3;
 
         /// <summary>
-        /// The arguments a call was given, as far back as the stack can be followed.
+        /// 호출이 받은 인자들. 스택을 따라갈 수 있는 데까지.
         /// </summary>
         /// <remarks>
-        /// Read from the last argument backwards, because the last one is the only position that is
-        /// certain without any analysis: whatever the instruction before a call left on the stack is
-        /// its final argument. Every step further back has to skip over what the argument it just
-        /// read consumed, which is what <see cref="Under"/> does, and it stops the moment it meets
-        /// an instruction whose effect on the stack is not known.
+        /// 마지막 인자에서 거슬러 읽는다. 아무 분석 없이도 확실한 위치가 마지막 하나뿐이기 때문이다: 호출 앞 명령어가
+        /// 스택에 남긴 것이 무엇이든 그것이 마지막 인자다. 한 걸음 더 거슬러 갈 때마다 방금 읽은 인자가 소비한 것을 건너뛰어야
+        /// 하고, 그 일을 <see cref="Under"/> 가 하며, 스택에 대한 효과가 알려지지 않은 명령어를 만나는 순간 멈춘다.
         ///
-        /// Null when nothing at all could be read, so that a call with unreadable arguments still
-        /// reads as it always did rather than as an empty argument list.
+        /// 아무것도 읽지 못했을 때는 null 이다. 인자를 읽을 수 없는 호출이 빈 인자 목록이 아니라 늘 그랬던 대로 읽히도록.
         /// </remarks>
         internal static string Arguments(MethodReference method, Instruction call, Instruction boundary)
         {
@@ -553,12 +524,11 @@ namespace Artel.Affordances.CodeGen
             return string.Join(", ", names);
         }
 
-        /// <summary>One argument by position, or null if that one could not be read.</summary>
+        /// <summary>위치로 지목한 인자 하나, 또는 그것을 읽을 수 없으면 null.</summary>
         /// <remarks>
-        /// For an extension method the object being acted on is argument zero rather than a receiver,
-        /// so naming what a call changed means asking for a single position. Reading the whole list
-        /// and taking one of it rather than walking to that position directly: the walk has to pass
-        /// over every later argument anyway, and doing it twice invites the two to disagree.
+        /// 확장 메서드에서는 작용 대상 객체가 수신자가 아니라 인자 0 이므로, 호출이 무엇을 바꿨는지 이름 대려면 위치 하나를
+        /// 청해야 한다. 그 위치로 곧장 걷는 대신 목록 전체를 읽고 그중 하나를 취한다: 걷기는 어차피 그 뒤의 모든 인자를
+        /// 지나가야 하고, 그 일을 두 번 하면 둘이 어긋날 여지를 부른다.
         /// </remarks>
         internal static string ArgumentAt(
             MethodReference method, Instruction call, Instruction boundary, int index)
@@ -575,7 +545,7 @@ namespace Artel.Affordances.CodeGen
             return names != null && index >= 0 && index < names.Length ? names[index] : null;
         }
 
-        /// <summary>The instruction that produced one of a call's arguments.</summary>
+        /// <summary>호출의 인자 하나를 만들어낸 명령어.</summary>
         internal static Instruction ArgumentFrom(
             MethodReference method, Instruction call, Instruction boundary, int index)
         {
@@ -597,25 +567,22 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Every value a local is written with, when it is written more than once.
+        /// 지역 변수가 여러 번 쓰일 때, 그것에 쓰인 모든 값.
         /// </summary>
         /// <remarks>
-        /// A local written once is that value and is read as it (see <see cref="StoredOnce"/>).
-        /// Written five times it is none of them, and until now the report said so by saying
-        /// nothing — the sample game picks a spell prefab in five switch arms and instantiates it
-        /// after they join, so what was made came out as `(not a simple target)` and later, once
-        /// locals had names, as `prefabToInstantiate`. Both are honest and neither is an answer.
+        /// 한 번 쓰인 지역 변수는 그 값이고 그것으로 읽힌다 (<see cref="StoredOnce"/> 참고). 다섯 번 쓰이면 그중 어느
+        /// 것도 아니고, 지금까지 리포트는 아무 말도 하지 않는 방식으로 그렇다고 말했다 — 샘플 게임은 switch 팔 다섯에서
+        /// 주문 프리팹을 고르고 그것들이 합쳐진 뒤에 인스턴스화하므로, 만들어진 것이 `(not a simple target)` 으로 나왔고
+        /// 나중에 지역 변수에 이름이 생긴 뒤에는 `prefabToInstantiate` 로 나왔다. 둘 다 정직하고 둘 다 답이 아니다.
         ///
-        /// Five names is an answer of a different kind: not which one, but which five. A reader can
-        /// say the spell that was cast is one of these and go looking, where before it had a word
-        /// the game invented for a variable.
+        /// 이름 다섯은 다른 종류의 답이다: 어느 것인가가 아니라 어느 다섯인가. 독자는 시전된 주문이 이것들 중 하나라고 말하고
+        /// 찾으러 갈 수 있는데, 전에는 게임이 변수에 붙인 말 한 마디를 쥐고 있었다.
         ///
-        /// All or nothing. If one of the stores cannot be named the set is not returned at all — a
-        /// list missing a member reads like a complete one, and a reader would rule out the value
-        /// that is actually there. That is the failure this is meant to prevent, not cause.
+        /// 전부 아니면 전무다. 저장 중 하나라도 이름 댈 수 없으면 집합을 아예 돌려주지 않는다 — 멤버가 빠진 목록은 완전한
+        /// 것처럼 읽히고, 독자는 실제로 거기 있는 값을 배제해 버린다. 그것이 이것이 일으키는 것이 아니라 막으려는 실패다.
         ///
-        /// Bounded, because a local assigned in twenty places is not being chosen between; it is
-        /// being accumulated into, and listing twenty names says nothing about what was made.
+        /// 가둔다. 스무 자리에서 대입되는 지역 변수는 그중에서 고르는 것이 아니라 거기에 누적되는 것이고, 이름 스물을
+        /// 나열해 봐야 무엇이 만들어졌는지에 대해 아무 말도 하지 않기 때문이다.
         /// </remarks>
         internal static List<string> Candidates(
             Instruction instruction, Instruction boundary, MethodDefinition within, int most)
@@ -685,13 +652,12 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// What a call was made on.
+        /// 호출이 대고 이루어진 것.
         /// </summary>
         /// <remarks>
-        /// The receiver sits under every argument, so getting to it means skipping each of them in
-        /// turn. It is the half of a call edge that says which object the call was about — two
-        /// buttons calling <c>Raise</c> on two different channel fields are two different wirings,
-        /// and without this they were the same line.
+        /// 수신자는 모든 인자 아래에 앉아 있으므로 거기 닿으려면 그것들을 차례로 건너뛰어야 한다. 그것은 호출 엣지에서 그
+        /// 호출이 어느 객체에 대한 것이었는지를 말하는 절반이다 — 서로 다른 두 채널 필드에 대고 <c>Raise</c> 를 부르는
+        /// 버튼 둘은 서로 다른 두 배선인데, 이것 없이는 같은 줄이었다.
         /// </remarks>
         internal static string Receiver(MethodReference method, Instruction call, Instruction boundary)
         {
@@ -709,7 +675,7 @@ namespace Artel.Affordances.CodeGen
             return Describe(Receiving(method, call, boundary), boundary, within);
         }
 
-        /// <summary>Where a call's receiver came from, in the caller's own terms.</summary>
+        /// <summary>호출의 수신자가 어디서 왔는가. 호출자 자신의 용어로.</summary>
         internal static string ReceiverWhere(
             MethodReference method, Instruction call, Instruction boundary, bool hasThis)
         {
@@ -722,17 +688,16 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Whose value this is — the object a name is written against.
+        /// 이 값이 누구의 것인가 — 이름이 대고 쓰인 객체.
         /// </summary>
         /// <remarks>
-        /// <c>count &gt; 0</c> is not a fact until it says whose <c>count</c>. That is the whole
-        /// reason a callee's condition cannot be put beside its caller's: read next to the caller's
-        /// terms it becomes a claim about the caller's object, and a wrong precondition is worse
-        /// than a missing one.
+        /// <c>count &gt; 0</c> 은 누구의 <c>count</c> 인지 말하기 전까지 사실이 아니다. 피호출자의 조건을 호출자의 것 옆에
+        /// 놓을 수 없는 이유가 그것이다: 호출자의 용어 옆에서 읽히면 그것은 호출자의 객체에 대한 주장이 되고, 틀린 선행
+        /// 조건은 없는 것보다 나쁘다.
         ///
-        /// Found by walking down to what the expression was ultimately read from. A field of a field
-        /// of <c>this</c> is still about <c>this</c>; a field of an argument is about whatever was
-        /// passed. Anything the walk cannot follow says so, and nothing is composed on a maybe.
+        /// 식이 궁극적으로 무엇에서 읽혔는지까지 걸어 내려가 찾는다. <c>this</c> 의 필드의 필드는 여전히 <c>this</c> 에 대한
+        /// 것이고, 인자의 필드는 거기 넘어간 무엇에 대한 것이다. 걷기가 따라갈 수 없는 것은 그렇다고 말하고, 아무것도
+        /// 어쩌면 위에서 합성되지 않는다.
         /// </remarks>
         internal static string Where(Instruction instruction, Instruction boundary, bool hasThis)
         {
@@ -746,12 +711,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The same walk, saying where it gave up.
+        /// 같은 걷기인데, 어디서 포기했는지를 말하는 것.
         /// </summary>
         /// <remarks>
-        /// The operand a condition started from is not where the subject was lost — a call names
-        /// itself while the thing that defeated the walk is somewhere down its receiver. Counting
-        /// the starting point told us a call was involved and nothing more.
+        /// 조건이 출발한 피연산자는 주어를 잃은 자리가 아니다 — 호출은 제 이름을 대고, 걷기를 좌절시킨 것은 그 수신자
+        /// 어딘가 아래에 있다. 출발점을 세는 것은 호출이 관련됐다는 것만 알려 주고 그 이상은 알려 주지 않았다.
         /// </remarks>
         internal static string Where(
             Instruction instruction,
@@ -766,14 +730,12 @@ namespace Artel.Affordances.CodeGen
             {
                 stoppedAt = instruction;
 
-                // A local written in one place is the value written there, and whose that value is
-                // is the same question one step further back. Naming already saw through such a
-                // local; the subject did not, so a debug build could say `MapMove.StagePosition`
-                // and in the same breath refuse to say whose it was.
+                // 한 자리에서 쓰인 지역 변수는 거기 쓰인 값이고, 그 값이 누구의 것인지는 한 걸음 더 거슬러 간 같은 물음이다.
+                // 이름 대기는 이미 그런 지역 변수를 꿰뚫어 보았지만 주어는 그러지 못했고, 그래서 디버그 빌드가
+                // `MapMove.StagePosition` 이라고 말하면서 같은 숨에 그것이 누구의 것인지는 말하기를 거절할 수 있었다.
                 //
-                // Followed once. Asking the rest without `within` keeps a local named through
-                // another local from chaining, which is where one store stops being the whole of
-                // the safety.
+                // 한 번만 따라간다. 나머지를 `within` 없이 물으면 다른 지역 변수를 거쳐 이름 붙은 지역 변수가 사슬을 이루지 못하게
+                // 되는데, 거기가 한 번 저장이 안전의 전부이기를 그만두는 지점이다.
                 var stored = StoredOnce(instruction, within);
 
                 if (stored != null)
@@ -803,10 +765,9 @@ namespace Artel.Affordances.CodeGen
                     case Code.Ldstr:
                     case Code.Ldnull:
 
-                    // A number too wide for the small-integer opcodes is still a number, and a
-                    // condition comparing a field with -10 is about the field. Left out, the
-                    // literal named no object, nothing agreed with it, and the whole comparison
-                    // lost its subject — `Vector3.x < -10` was unusable for want of reading -10.
+                    // 작은 정수 opcode 로 담기에 너무 넓은 수도 여전히 수이고, 필드를 -10 과 비교하는 조건은 그 필드에 대한 것이다.
+                    // 이것을 빼놓으면 그 리터럴이 아무 객체의 이름도 대지 않고, 아무것도 그것과 일치하지 않으며, 비교 전체가 주어를
+                    // 잃었다 — `Vector3.x < -10` 이 -10 을 읽지 못한 탓에 쓸모없었다.
                     case Code.Ldc_I8:
                     case Code.Ldc_R4:
                     case Code.Ldc_R8:
@@ -818,10 +779,9 @@ namespace Artel.Affordances.CodeGen
                             return "static";
                         }
 
-                        // A sum is about whatever both of its sides are about. Without this, reading
-                        // an expression that used to be unreadable made the condition *less*
-                        // composable than when nobody could read it at all — the atom went from
-                        // "names no object" to "names an object nobody worked out".
+                        // 합은 그 양쪽이 대한 그것에 대한 것이다. 이것이 없으면, 전에는 읽을 수 없던 식을 읽어낸 결과가 조건을 아무도 읽지
+                        // 못하던 때보다 *덜* 합성 가능하게 만들었다 — atom 이 "아무 객체의 이름도 대지 않는다" 에서 "아무도 알아내지 못한
+                        // 객체의 이름을 댄다" 로 옮겨 갔다.
                         if (Operator(instruction.OpCode.Code) != null)
                         {
                             var rightSide = Preceding(instruction, boundary);
@@ -837,8 +797,8 @@ namespace Artel.Affordances.CodeGen
                             continue;
                         }
 
-                        // Down to whatever this was read from. One input means the thing it was read
-                        // from; more than one, or none that can be followed, ends the walk.
+                        // 이것이 무엇에서 읽혔는지까지 내려간다. 입력이 하나면 그것이 읽혀 온 그것이고, 하나보다 많거나 따라갈 수 있는
+                        // 것이 없으면 걷기가 끝난다.
                         if (Consumes(instruction) != 1)
                         {
                             var call = instruction.Operand as MethodReference;
@@ -867,11 +827,10 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The one object two sides are both about, or null when there is not one.
+        /// 양쪽이 함께 대한 하나의 객체, 또는 그런 것이 없을 때 null.
         /// </summary>
         /// <remarks>
-        /// A side made only of constants agrees with anything, which is the ordinary shape — a field
-        /// of <c>this</c> divided by a number.
+        /// 상수만으로 된 쪽은 무엇과도 일치하는데, 그것이 평범한 모양이다 — <c>this</c> 의 필드를 숫자로 나눈 것.
         /// </remarks>
         internal static string Agreeing(string left, string right)
         {
@@ -886,7 +845,7 @@ namespace Artel.Affordances.CodeGen
             return left == right ? left : null;
         }
 
-        /// <summary>The instruction that produced a call's receiver.</summary>
+        /// <summary>호출의 수신자를 만들어낸 명령어.</summary>
         private static Instruction Receiving(MethodReference method, Instruction call, Instruction boundary)
         {
             var at = Preceding(call, boundary);
@@ -899,7 +858,7 @@ namespace Artel.Affordances.CodeGen
             return at;
         }
 
-        /// <summary>A place for each argument that could not be read.</summary>
+        /// <summary>읽을 수 없었던 인자마다 놓는 자리.</summary>
         private static string Unread(int count)
         {
             var places = new string[count];
@@ -913,12 +872,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// One argument, named as the source would have written it where that is knowable.
+        /// 인자 하나. 알 수 있는 자리에서는 소스가 썼을 방식으로 이름 붙인 것.
         /// </summary>
         /// <remarks>
-        /// A flag and an enum both arrive as a number, and the number on its own is unreadable —
-        /// <c>SetActive(0)</c> and <c>Play(4)</c> say nothing. The parameter's own type is what
-        /// turns them back into <c>false</c> and the member's name.
+        /// 플래그와 열거형은 둘 다 숫자로 도착하고, 숫자만으로는 읽을 수 없다 — <c>SetActive(0)</c> 과 <c>Play(4)</c> 는
+        /// 아무 말도 하지 않는다. 그것들을 <c>false</c> 와 멤버의 이름으로 되돌리는 것이 매개변수 자신의 타입이다.
         /// </remarks>
         private static string Argument(
             Instruction instruction, TypeReference parameter, Instruction boundary,
@@ -936,8 +894,7 @@ namespace Artel.Affordances.CodeGen
                     return number == 0 ? "false" : "true";
                 }
 
-                // Resolved only for a value type, so that an int argument does not pay for a type
-                // load on every condition. An enum is a value type in a signature.
+                // 값 타입일 때만 해석한다. int 인자가 조건마다 타입 로드 값을 치르지 않도록. 시그니처에서 열거형은 값 타입이다.
                 return parameter?.MetadataType == MetadataType.ValueType
                     ? EnumName(parameter, number)
                     : number.ToString();
@@ -951,8 +908,8 @@ namespace Artel.Affordances.CodeGen
                     return Convert.ToString(instruction.Operand, System.Globalization.CultureInfo.InvariantCulture);
 
                 case Code.Box:
-                    // An enum compared through Equals or passed as an object arrives boxed, and the
-                    // number underneath means nothing without the type the box names.
+                    // Equals 를 거쳐 비교되거나 object 로 넘어간 열거형은 박싱돼 도착하고, 그 아래의 숫자는 박스가 이름 대는 타입
+                    // 없이는 아무 뜻도 없다.
                     return Argument(
                         Preceding(instruction, boundary), instruction.Operand as TypeReference, boundary,
                         within);
@@ -963,16 +920,13 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The instruction before, with a debug build's padding stepped over, and never past the
-        /// start of the block being read.
+        /// 앞 명령어. 디버그 빌드의 채움을 밟고 지나가되, 읽고 있는 블록의 시작을 결코 넘지 않는다.
         /// </summary>
         /// <remarks>
-        /// The bound is what makes reading backwards sound. A block begins where control can arrive
-        /// from more than one place, so the instruction before a block's first is only one of the
-        /// ways the value could have been produced. Stepping over that boundary reads the tail of
-        /// whichever path happens to be written above, and a short-circuited <c>&amp;&amp;</c> puts
-        /// a literal <c>0</c> there — the first attempt at this reported the map's unlock rule as
-        /// <c>0 != 0</c>, which is worse than reporting nothing.
+        /// 거슬러 읽기를 건전하게 만드는 것이 그 경계다. 블록은 제어가 여러 자리에서 도착할 수 있는 데서 시작하므로, 블록의
+        /// 첫 명령어 앞의 명령어는 그 값이 만들어졌을 수 있는 갈래 중 하나일 뿐이다. 그 경계를 넘어가면 마침 위에 쓰인
+        /// 경로의 꼬리를 읽게 되고, 단락된 <c>&amp;&amp;</c> 는 거기에 리터럴 <c>0</c> 을 놓는다 — 이것의 첫 시도는 맵의
+        /// 해금 규칙을 <c>0 != 0</c> 으로 보고했는데, 그것은 아무것도 보고하지 않는 것보다 나쁘다.
         /// </remarks>
         internal static Instruction Preceding(Instruction instruction, Instruction boundary)
         {
@@ -983,9 +937,8 @@ namespace Artel.Affordances.CodeGen
 
             var previous = instruction.Previous;
 
-            // A prefix — constrained., volatile., readonly. — is written as an instruction of its
-            // own but leaves the stack alone, and stopping at one hid every argument of a method
-            // called on a value type. Enum.Equals is the common case and it is a comparison.
+            // 접두 명령 — constrained., volatile., readonly. — 은 제 명령어로 쓰이면서 스택은 건드리지 않는데, 거기서 멈춘
+            // 탓에 값 타입에 대고 불린 메서드의 모든 인자가 가려졌다. Enum.Equals 가 흔한 경우이고 그것은 비교다.
             while (previous != null &&
                    (previous.OpCode.Code == Code.Nop || previous.OpCode.OpCodeType == OpCodeType.Prefix))
             {
@@ -1001,17 +954,15 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// What produced the value sitting under the one an instruction produced.
+        /// 어떤 명령어가 만든 값 아래에 앉은 값을 만들어낸 것.
         /// </summary>
         /// <remarks>
-        /// Stepping one instruction back is only the same thing as stepping one stack slot back for
-        /// an instruction that consumes nothing. <c>ldfld</c> eats an object reference,
-        /// <c>op_Equality</c> eats two arguments, and a reader that ignores that names the wrong
-        /// operand rather than none — <c>a == b.Count</c> would be read as <c>b == b.Count</c>.
+        /// 명령어 하나를 되짚는 일이 스택 슬롯 하나를 되짚는 것과 같은 것은 아무것도 소비하지 않는 명령어에 대해서뿐이다.
+        /// <c>ldfld</c> 는 객체 참조를 먹고 <c>op_Equality</c> 는 인자 둘을 먹으며, 그것을 무시하는 독자는 아무 이름도 대지
+        /// 않는 것이 아니라 엉뚱한 피연산자의 이름을 댄다 — <c>a == b.Count</c> 가 <c>b == b.Count</c> 로 읽힌다.
         ///
-        /// So each input is skipped by the same rule, recursively, and anything whose effect on the
-        /// stack is not in the table below stops the walk. Refusing there is the point: the caller
-        /// reports the condition as unread, which is the honest answer.
+        /// 그래서 각 입력을 같은 규칙으로 재귀적으로 건너뛰고, 스택에 대한 효과가 아래 표에 없는 것은 걷기를 멈춘다. 거기서
+        /// 거절하는 것이 요점이다: 호출자는 그 조건을 읽지 못한 것으로 보고하고, 그것이 정직한 답이다.
         /// </remarks>
         internal static Instruction Under(Instruction instruction, Instruction boundary)
         {
@@ -1032,7 +983,7 @@ namespace Artel.Affordances.CodeGen
             return cursor;
         }
 
-        /// <summary>How many stack slots an instruction eats, or -1 when that is not known here.</summary>
+        /// <summary>명령어가 스택 슬롯을 몇 개 먹는지, 또는 여기서 알 수 없을 때 -1.</summary>
         private static int Consumes(Instruction instruction)
         {
             if (instruction == null)
@@ -1125,12 +1076,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The families that are too long to list one by one.
+        /// 하나하나 나열하기에는 너무 긴 계열들.
         /// </summary>
         /// <remarks>
-        /// <c>conv.*</c> replaces the value it is given, <c>ldind.*</c> replaces an address with what
-        /// is at it, and <c>ldelem.*</c> eats an array and an index. Anything else is unknown, and
-        /// unknown stops the walk.
+        /// <c>conv.*</c> 는 받은 값을 갈아치우고, <c>ldind.*</c> 는 주소를 그 자리에 있는 것으로 갈아치우며,
+        /// <c>ldelem.*</c> 는 배열과 인덱스를 먹는다. 그 밖의 것은 unknown 이고, unknown 은 걷기를 멈춘다.
         /// </remarks>
         private static int ByName(string opcode)
         {
@@ -1151,18 +1101,16 @@ namespace Artel.Affordances.CodeGen
         private const string BackingSuffix = ">k__BackingField";
 
         /// <summary>
-        /// Names a field, or refuses to when it is the compiler's own bookkeeping.
+        /// 필드에 이름을 대거나, 그것이 컴파일러 자신의 장부일 때 거절한다.
         /// </summary>
         /// <remarks>
-        /// A coroutine or a lambda is compiled into a type of its own, and the fields on it —
-        /// <c>&lt;&gt;1__state</c>, <c>&lt;&gt;4__this</c>, the captured locals of a display class —
-        /// are plumbing. Reported as effects they read as the game changing something, and in the
-        /// sample game they were a seventh of everything the analysis claimed to have found.
+        /// 코루틴이나 람다는 제 타입으로 컴파일되고, 그 위의 필드들은 — <c>&lt;&gt;1__state</c>, <c>&lt;&gt;4__this</c>,
+        /// display class 가 붙든 지역 변수들 — 배관이다. 효과로 보고되면 게임이 무언가를 바꾸는 것으로 읽히는데, 샘플
+        /// 게임에서 그것들이 분석이 찾았다고 주장한 것 전체의 7분의 1이었다.
         ///
-        /// Refused by the type that declares them rather than by their own names, because one
-        /// pattern of angle-bracketed name is not plumbing: the field behind an auto-property is
-        /// declared on the game's own type and holds the game's own state. Dropping those by name
-        /// would lose every <c>public int Score { get; set; }</c> in a codebase.
+        /// 제 이름이 아니라 그것들을 선언하는 타입으로 거절한다. 꺾쇠 이름 패턴 하나는 배관이 아니기 때문이다: 자동 프로퍼티
+        /// 뒤의 필드는 게임 자신의 타입에 선언되고 게임 자신의 상태를 쥔다. 그것들을 이름으로 떨어뜨리면 코드베이스의 모든
+        /// <c>public int Score { get; set; }</c> 을 잃는다.
         /// </remarks>
         internal static string FieldName(FieldReference field)
         {
@@ -1190,29 +1138,26 @@ namespace Artel.Affordances.CodeGen
                 return null;
             }
 
-            // Named as the property, which is what the source says and what a specification would
-            // have to write.
+            // 프로퍼티로 이름 붙인다. 그것이 소스가 말하는 바이고 명세가 적어야 할 바다.
             return declaring.Name + "." + name.Substring(1, name.Length - BackingSuffix.Length - 1);
         }
 
         /// <summary>
-        /// A local the compiler moved onto a coroutine, named as the source named it.
+        /// 컴파일러가 코루틴 위로 옮겨 놓은 지역 변수. 소스가 부르던 이름으로.
         /// </summary>
         /// <remarks>
-        /// A <c>for</c> counter inside a coroutine is not a local by the time it is read: it lives
-        /// across a yield, so it is a field on the generated type. Refusing the whole type refused
-        /// it with the plumbing, and the sample game's story screen lost the one term that says
-        /// when the loop is over — without it "press a key and the map opens" is promised for every
-        /// press rather than the last.
+        /// 코루틴 안의 <c>for</c> 카운터는 읽힐 무렵이면 지역 변수가 아니다: yield 를 건너 살아 있으므로 생성된 타입 위의
+        /// 필드다. 타입 전체를 거절하면 그것을 배관과 함께 거절하게 되고, 샘플 게임의 이야기 화면은 루프가 언제 끝나는지를
+        /// 말하는 유일한 항을 잃었다 — 그것이 없으면 "아무 키나 누르면 맵이 열린다" 가 마지막 누름이 아니라 모든 누름에
+        /// 대해 약속된다.
         ///
-        /// The two are told apart by what is inside the brackets. Plumbing has nothing there
-        /// (<c>&lt;&gt;1__state</c>, <c>&lt;&gt;4__this</c>, <c>&lt;&gt;t__builder</c>) because
-        /// there was no source name to keep; a hoisted local has its own (<c>&lt;i&gt;5__1</c>).
-        /// So this is not a guess about what a field means — it is the name the source wrote,
-        /// read back out of where the compiler put it.
+        /// 둘은 꺾쇠 안에 무엇이 있는지로 가려진다. 배관은 거기 아무것도 없고 (<c>&lt;&gt;1__state</c>,
+        /// <c>&lt;&gt;4__this</c>, <c>&lt;&gt;t__builder</c>) 지킬 소스 이름이 없었기 때문이다. 옮겨진 지역 변수는 제
+        /// 이름을 가진다 (<c>&lt;i&gt;5__1</c>). 그러니 이것은 필드가 무엇을 뜻하는지에 대한 추측이 아니다 — 소스가 쓴
+        /// 이름을, 컴파일러가 넣어 둔 자리에서 되읽은 것이다.
         ///
-        /// No type name in front of it. The declaring type is a name nobody wrote and nobody could
-        /// look up, and <c>&lt;StoryTelling&gt;d__8.i</c> says less than <c>i</c> does.
+        /// 그 앞에 타입 이름을 붙이지 않는다. 선언 타입은 아무도 쓰지 않았고 아무도 찾아볼 수 없는 이름이며,
+        /// <c>&lt;StoryTelling&gt;d__8.i</c> 는 <c>i</c> 보다 적게 말한다.
         /// </remarks>
         private static string Hoisted(string name)
         {
@@ -1227,20 +1172,17 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// What a local holds when the method writes it in exactly one place.
+        /// 메서드가 정확히 한 자리에서 쓸 때 지역 변수가 쥐고 있는 것.
         /// </summary>
         /// <remarks>
-        /// Returns the instruction that produced the stored value, so naming it is the same work
-        /// as naming anything else. One store is the whole of the safety: however many times it
-        /// runs, there is no other assignment this read could have seen, so nothing is being
-        /// guessed about which one it was. More than one and the question comes back, and the
-        /// answer is still no.
+        /// 저장된 값을 만들어낸 명령어를 돌려주므로, 그것에 이름 대는 일은 다른 무엇에 이름 대는 일과 같은 일이다. 한 번
+        /// 저장이 안전의 전부다: 그것이 몇 번을 돌든 이 읽기가 보았을 수 있는 다른 대입은 없으므로, 그중 어느 것이었는지에
+        /// 대해 추측하는 것이 없다. 하나보다 많으면 물음이 되돌아오고, 답은 여전히 아니오다.
         ///
-        /// Both what a value is called and whose it is come through here, and they have to come
-        /// through together. An optimised compiler puts the value in a local and reads it back
-        /// where a debugging one fetches it again, so the same source read one way in an editor
-        /// scan and another in a development build; letting only the name see through the local
-        /// left conditions that said <c>MapMove.StagePosition == 0</c> and refused to say whose.
+        /// 값이 무엇이라 불리는지와 그것이 누구의 것인지가 둘 다 여기를 지나고, 둘은 함께 지나야 한다. 최적화하는 컴파일러는
+        /// 값을 지역 변수에 넣고 되읽는 자리에서 디버깅용은 그것을 다시 가져오므로, 같은 소스가 에디터 스캔에서 한 방식으로
+        /// 개발 빌드에서 다른 방식으로 읽혔다. 이름만 지역 변수를 꿰뚫어 보게 두면 <c>MapMove.StagePosition == 0</c> 이라고
+        /// 말하면서 그것이 누구의 것인지는 말하기를 거절하는 조건이 남았다.
         /// </remarks>
         private static Instruction StoredOnce(Instruction instruction, MethodDefinition within)
         {
@@ -1266,38 +1208,33 @@ namespace Artel.Affordances.CodeGen
                 only = candidate;
             }
 
-            // The value is what came before the store. Reading it is bounded by nothing here
-            // because the store is wherever the method put it, not wherever this read is.
+            // 값은 저장 앞에 온 것이다. 그것을 읽는 일은 여기서 아무것에도 가두지 않는데, 저장은 이 읽기가 있는 자리가 아니라
+            // 메서드가 그것을 놓은 자리에 있기 때문이다.
             return only?.Previous;
         }
 
         /// <summary>
-        /// The name a field is written by, when the field is nothing but a copy of which scene is
-        /// running.
+        /// 필드가 어느 씬이 도는지의 복사본에 지나지 않을 때, 그 필드가 불리는 이름.
         /// </summary>
         /// <remarks>
-        /// A controller that keeps <c>sceneName = SceneManager.GetActiveScene().name</c> and guards
-        /// its whole body with <c>sceneName == "GameClearScene"</c> reads, without this, as a
-        /// condition about a string nobody can evaluate. The sample game puts that one controller on
-        /// two screens, so half of what it says is about a screen it is not on — and a specification
-        /// that cannot see the guard promises the game-over screen everything the clear screen does.
-        /// Whoever knows which scene an object was found in can settle it; nobody could settle
-        /// <c>GameClearController.sceneName</c>.
+        /// <c>sceneName = SceneManager.GetActiveScene().name</c> 을 쥐고 제 본문 전체를
+        /// <c>sceneName == "GameClearScene"</c> 으로 지키는 컨트롤러는, 이것이 없으면 아무도 평가할 수 없는 문자열에 대한
+        /// 조건으로 읽힌다. 샘플 게임은 그 컨트롤러 하나를 화면 둘에 올리므로 그것이 말하는 것의 절반은 그것이 있지 않은
+        /// 화면에 대한 것이고 — 그 파수꾼을 보지 못하는 명세는 클리어 화면이 하는 모든 것을 게임오버 화면에도 약속한다.
+        /// 객체가 어느 씬에서 발견됐는지를 아는 쪽이면 그것을 결판낼 수 있지만, 아무도
+        /// <c>GameClearController.sceneName</c> 은 결판낼 수 없었다.
         ///
-        /// Only this one shape. The general rule — name a singly-written field by whatever was
-        /// written to it — was tried and measured, and it is wrong: a local's one store sits in the
-        /// same method as the read and a field's need not run first. <c>flag = true</c> is the only
-        /// write to <c>flag</c>, and reading the field as <c>1</c> turned every test of it into
-        /// <c>1 == 0</c>, which reads as a branch that can never be taken while the game takes it
-        /// every time. It cost eighty-four good names besides — <c>onPushArea1</c> says more than
-        /// the <c>Array.Exists()</c> that filled it.
+        /// 이 한 가지 모양만 본다. 일반 규칙 — 한 번 쓰인 필드를 거기 쓰인 무엇으로 이름 붙인다 — 은 시도하고 실측했으며,
+        /// 틀렸다: 지역 변수의 한 번 저장은 읽기와 같은 메서드 안에 앉아 있지만 필드의 저장은 먼저 돌 필요가 없다.
+        /// <c>flag = true</c> 는 <c>flag</c> 에 대한 유일한 쓰기이고, 그 필드를 <c>1</c> 로 읽으면 그것에 대한 모든 검사가
+        /// <c>1 == 0</c> 이 되는데, 게임은 매번 그 분기를 타는데도 그것은 결코 탈 수 없는 분기로 읽힌다. 게다가 좋은 이름
+        /// 여든넷을 함께 잃었다 — <c>onPushArea1</c> 은 그것을 채운 <c>Array.Exists()</c> 보다 많은 말을 한다.
         ///
-        /// The active scene survives that objection because it is not a value: it is the same
-        /// expression wherever it is read, before the write as after. So this names the expression
-        /// and stops, and what it comes to is the reader's business.
+        /// 활성 씬은 그 반론을 견딘다. 그것은 값이 아니기 때문이다: 어디서 읽히든 같은 식이고, 쓰기 전에도 쓴 뒤에도 같다.
+        /// 그래서 이것은 그 식에 이름을 대고 멈추며, 그것이 무엇이 되는지는 독자의 몫이다.
         ///
-        /// Private, so the only writer C# allows is the type itself, and not serialized, so there is
-        /// no authored value sitting under the one store.
+        /// private 이므로 C# 이 허용하는 유일한 쓰기 주체가 그 타입 자신이고, 직렬화되지 않으므로 그 한 번의 저장 아래에
+        /// 작성자가 넣어 둔 값이 없다.
         /// </remarks>
         private static string WhichScene(
             FieldReference field, MethodDefinition within, Instruction boundary, int depth)
@@ -1319,10 +1256,10 @@ namespace Artel.Affordances.CodeGen
             return named == ActiveScene ? named : null;
         }
 
-        /// <summary>The one expression a field may be read as, because it never comes to anything else.</summary>
+        /// <summary>필드가 그것으로 읽혀도 되는 유일한 식. 다른 무엇도 되는 일이 없기 때문이다.</summary>
         private const string ActiveScene = "SceneManager.GetActiveScene().name";
 
-        /// <summary>What a type's field is written from, when the type writes it in exactly one place.</summary>
+        /// <summary>타입이 정확히 한 자리에서 쓸 때, 그 타입의 필드가 무엇에서 쓰이는가.</summary>
         private static Instruction WrittenOnce(
             FieldReference field, MethodDefinition within, out MethodDefinition wroteIt)
         {
@@ -1330,8 +1267,8 @@ namespace Artel.Affordances.CodeGen
 
             var owner = within?.DeclaringType;
 
-            // Only the type being read, so that naming a field never resolves a reference into an
-            // assembly this was not asked to look at.
+            // 읽고 있는 타입만 본다. 필드에 이름 대는 일이 참조를, 들여다보라고 청받은 적 없는 어셈블리로 해석하는 일이 결코
+            // 없도록.
             if (field?.DeclaringType == null || owner == null ||
                 field.DeclaringType.FullName != owner.FullName)
             {
@@ -1396,7 +1333,7 @@ namespace Artel.Affordances.CodeGen
             return only.Previous;
         }
 
-        /// <summary>Whether the inspector could have put a value here before any code ran.</summary>
+        /// <summary>어떤 코드가 돌기 전에 인스펙터가 여기에 값을 넣어 두었을 수 있는지.</summary>
         private static bool IsSerialized(FieldDefinition field)
         {
             if (!field.HasCustomAttributes)
@@ -1464,7 +1401,7 @@ namespace Artel.Affordances.CodeGen
             }
         }
 
-        /// <summary>Names a property read as the property rather than as its getter.</summary>
+        /// <summary>프로퍼티 읽기를 getter 가 아니라 프로퍼티로 이름 붙인다.</summary>
         private static string PropertyName(MethodReference method)
         {
             if (method == null || !method.Name.StartsWith("get_", StringComparison.Ordinal))
@@ -1488,12 +1425,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// The name an enum gives to one of its values.
+        /// 열거형이 제 값 하나에 붙이는 이름.
         /// </summary>
         /// <remarks>
-        /// The number is what the instruction carries; the name lives in the enum's own metadata, in
-        /// whichever assembly defines it. Falls back to the number, which is still usable and is
-        /// visibly not a name.
+        /// 숫자는 명령어가 나르는 것이고, 이름은 그것을 정의하는 어셈블리 안, 열거형 자신의 메타데이터에 산다. 숫자로
+        /// 물러서는데, 그것은 여전히 쓸 만하고 눈에 띄게 이름이 아니다.
         /// </remarks>
         internal static string EnumName(TypeReference enumType, int value)
         {
