@@ -7,77 +7,70 @@ using System.Text;
 
 namespace Artel.Affordances.Live
 {
-    /// <summary>One member the evidence asks to be read while the game runs.</summary>
+    /// <summary>게임이 도는 동안 읽어 달라고 근거가 청하는 멤버 하나.</summary>
     internal sealed class Watched
     {
         internal string Declaring;
         internal string Member;
 
-        /// <summary>What the analysis said the value was, before anything read it.</summary>
+        /// <summary>아무것도 읽기 전에, 분석이 그 값이 무엇이라고 말했는지.</summary>
         /// <remarks>
-        /// Carried so that a value can be reported as what it is rather than as what it prints as.
-        /// A bool comes off a field as <c>True</c> and an int as <c>1</c>, and the report has spent
-        /// a long time learning not to let those two look alike.
+        /// 값을 그것이 출력되는 모습이 아니라 그것인 바로 보고할 수 있도록 나른다. bool 은 필드에서 <c>True</c> 로 나오고
+        /// int 는 <c>1</c> 로 나오는데, 리포트는 그 둘이 닮아 보이지 않게 하는 법을 오래 배워 왔다.
         /// </remarks>
         internal string Type;
 
         internal bool Static;
 
         /// <summary>
-        /// What everything other than reflection calls this, when a compiler renamed it.
+        /// 컴파일러가 이름을 바꿨을 때, 리플렉션 말고 나머지 전부가 이것을 부르는 이름.
         /// </summary>
         /// <remarks>
-        /// An automatic property is a field called <c>&lt;Instance&gt;k__BackingField</c>. That name
-        /// is what finds it and nothing else uses it — the evidence says
-        /// <c>StageDataSingleton.Instance</c> — so a reading naming the field would not join to the
-        /// condition it answers.
+        /// 자동 프로퍼티는 <c>&lt;Instance&gt;k__BackingField</c> 라 불리는 필드다. 그 이름이 그것을 찾아 주고 다른 무엇도
+        /// 그것을 쓰지 않는다 — 근거는 <c>StageDataSingleton.Instance</c> 라고 말한다 — 그래서 필드 이름을 댄 판독은 그것이
+        /// 답하는 조건에 이어지지 않는다.
         /// </remarks>
         internal string Property;
 
-        /// <summary>What was read off the field, when the field is not itself the value.</summary>
+        /// <summary>필드 자체가 값이 아닐 때, 그 필드에서 무엇을 읽었는지.</summary>
         internal string Via;
 
-        /// <summary>The field itself, once reflection has been asked. Null until then.</summary>
+        /// <summary>리플렉션에 물어본 뒤의 필드 그 자체. 그 전까지는 null.</summary>
         internal FieldInfo Field;
 
-        /// <summary>The type it lives on, for finding the instances that carry it.</summary>
+        /// <summary>그것이 사는 타입. 그것을 나르는 인스턴스를 찾기 위한 것.</summary>
         internal Type Owner;
 
         /// <summary>
-        /// Whether a condition or an effect named this member, or it is merely readable.
+        /// 조건이나 효과가 이 멤버의 이름을 댔는지, 아니면 그저 읽을 수 있을 뿐인지.
         /// </summary>
         /// <remarks>
-        /// Both are read and both go out; the difference is what a reader should do with them. A
-        /// member the evidence asked for is one some specification row turns on, and a reader
-        /// checking that row wants exactly those. The rest are carried for the rows nobody has
-        /// written yet — see <see cref="Readable"/> for why they are carried at all — and a reader
-        /// that treated them alike would be reading a game's whole state where it meant to read a
-        /// premise.
+        /// 둘 다 읽히고 둘 다 나간다. 차이는 독자가 그것으로 무엇을 해야 하는가다. 근거가 청한 멤버는 어떤 명세 줄이 걸려 있는
+        /// 것이고, 그 줄을 확인하는 독자는 정확히 그것들을 원한다. 나머지는 아직 아무도 쓰지 않은 줄을 위해 나른다 — 애초에 왜
+        /// 나르는지는 <see cref="Readable"/> 참고 — 그리고 그 둘을 똑같이 다루는 독자는 전제를 읽으려던 자리에서 게임의 상태
+        /// 전체를 읽게 된다.
         ///
-        /// True for everything the watch list itself holds, since that list is nothing but what was
-        /// asked for.
+        /// watch list 자신이 쥔 것에 대해서는 전부 참이다. 그 목록은 청해진 것 말고는 아무것도 아니기 때문이다.
         /// </remarks>
         internal bool Asked = true;
 
-        /// <summary>What names this member apart from any other.</summary>
+        /// <summary>이 멤버를 다른 어떤 것과도 구별해 부르는 이름.</summary>
         internal string Key => Declaring + "::" + Member;
     }
 
     /// <summary>
-    /// What to look at while the game runs, as the analysis worked it out.
+    /// 게임이 도는 동안 무엇을 볼 것인가. 분석이 알아낸 그대로.
     /// </summary>
     /// <remarks>
-    /// The other SDK asked the game to mark its own fields. That put the decision in the wrong place
-    /// twice over: a field nobody thought to mark is invisible however much the report turns on it,
-    /// and the escape hatch — read every serialized field — makes an idle animation look like a
-    /// state change, which is why it was never used on the live path.
+    /// 다른 SDK 는 게임더러 제 필드를 표시하라고 청했다. 그것은 결정을 두 겹으로 엉뚱한 자리에 두었다: 아무도 표시할 생각을
+    /// 못 한 필드는 리포트가 아무리 그것에 걸려 있어도 보이지 않고, 탈출구인 — 직렬화된 필드를 전부 읽기 — 쪽은 idle
+    /// 애니메이션을 상태 변화처럼 보이게 만드는데, 그래서 그것은 라이브 경로에서 쓰인 적이 없다.
     ///
-    /// Nothing is marked here. The analysis already read the instruction behind every condition and
-    /// every effect, so the members worth watching fell out of work that was being done anyway, and
-    /// the list is exactly as long as the evidence requires rather than as long as the game is.
+    /// 여기서는 표시할 것이 없다. 분석은 모든 조건과 모든 효과 뒤의 명령어를 이미 읽었으므로, 감시할 값이 있는 멤버는 어차피
+    /// 하고 있던 일에서 떨어져 나왔고, 목록은 게임의 길이가 아니라 근거가 요구하는 만큼 정확히 길다.
     ///
-    /// Read once. Resolving a name to a field is reflection, and reflection on a hundred members
-    /// every poll would cost more than reading them.
+    /// 한 번 읽는다. 이름을 필드로 해석하는 일은 리플렉션이고, 폴링마다 멤버 백 개에 리플렉션을 거는 것은 그것들을 읽는
+    /// 것보다 비싸다.
     /// </remarks>
     internal static class WatchList
     {
@@ -88,18 +81,17 @@ namespace Artel.Affordances.Live
         private static Dictionary<string, Offer> _offers;
 
         /// <summary>
-        /// The ways a player can set a type going, when it is on something in the scene.
+        /// 플레이어가 어떤 타입을 움직이게 만들 수 있는 방법들. 그것이 씬 안의 무엇에 붙어 있을 때.
         /// </summary>
         /// <remarks>
-        /// A reading says what the game holds and, without this, nothing about what may be done to
-        /// it next. The scan finds buttons on its own — a persistent call is wiring anybody can
-        /// see — and these are the two it cannot: which keys mean something here, and which objects
-        /// answer a pointer. Both are literals and method names inside compiled code.
+        /// 판독은 게임이 무엇을 쥐고 있는지를 말하고, 이것이 없으면 다음에 그것에 무엇을 할 수 있는지는 아무것도 말하지 않는다.
+        /// 스캔은 버튼을 스스로 찾는다 — persistent call 은 누구나 볼 수 있는 배선이다 — 그리고 이것들이 스캔이 볼 수 없는
+        /// 둘이다: 여기서 어떤 키가 뜻을 가지는가, 그리고 어떤 객체가 포인터에 답하는가. 둘 다 컴파일된 코드 안의 리터럴과
+        /// 메서드 이름이다.
         ///
-        /// Keyed by the type rather than the scene, because what makes a key meaningful is that
-        /// something reading it is on screen now. A reading walks the objects that are there and
-        /// asks each of their components, so a screen the type is absent from offers nothing without
-        /// anyone having to work out which screen this is.
+        /// 씬이 아니라 타입으로 키를 잡는다. 키를 뜻 있게 만드는 것은 그것을 읽는 무언가가 지금 화면에 있다는 사실이기
+        /// 때문이다. 판독은 거기 있는 객체들을 걷고 각각의 컴포넌트에 물으므로, 그 타입이 없는 화면은 누가 여기가 어느 화면인지
+        /// 알아내지 않아도 아무것도 내놓지 않는다.
         /// </remarks>
         internal sealed class Offer
         {
@@ -107,7 +99,7 @@ namespace Artel.Affordances.Live
             internal readonly List<string> Pointers = new List<string>();
         }
 
-        /// <summary>What this type answers to, or null.</summary>
+        /// <summary>이 타입이 무엇에 답하는지, 또는 null.</summary>
         internal static Offer OfferedBy(string declaring)
         {
             All();
@@ -121,13 +113,12 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// Every name the game's code hands an animator.
+        /// 게임 코드가 animator 에 건네는 모든 이름.
         /// </summary>
         /// <remarks>
-        /// Unity gives back a hash for the state an animator is in and nothing that turns it into
-        /// words, so a reading can say the state changed and not to what — the half a recording of
-        /// the screen already shows, and not the half it cannot. <c>IsName</c> answers the question
-        /// the other way round, so a reading that knows the candidates can name the state by asking.
+        /// Unity 는 animator 가 있는 상태를 해시로 돌려주고 그것을 말로 바꿔 주는 것은 없으므로, 판독은 상태가 바뀌었다고만
+        /// 말하고 무엇으로 바뀌었는지는 말하지 못한다 — 화면 녹화가 이미 보여 주는 절반이고, 녹화가 줄 수 없는 절반은 아니다.
+        /// <c>IsName</c> 은 그 물음에 거꾸로 답하므로, 후보를 아는 판독은 물어서 상태의 이름을 댈 수 있다.
         /// </remarks>
         internal static IReadOnlyList<string> AnimatorNames
         {
@@ -138,16 +129,15 @@ namespace Artel.Affordances.Live
             }
         }
 
-        /// <summary>How many the analysis named but reflection could not find.</summary>
+        /// <summary>분석은 이름을 댔으나 리플렉션이 찾지 못한 것이 몇인지.</summary>
         /// <remarks>
-        /// Obfuscation is the ordinary cause: the list holds the names the code had when it was
-        /// compiled and the assembly ships with different ones. Said rather than skipped, because a
-        /// watcher reporting eleven of two hundred members with no explanation looks like a game
-        /// that has almost no state.
+        /// 난독화가 흔한 원인이다: 목록은 코드가 컴파일될 때 가지고 있던 이름을 쥐고 있고 어셈블리는 다른 이름으로 나간다.
+        /// 건너뛰지 않고 말한다. 이백 개 멤버 중 열하나를 아무 설명 없이 보고하는 감시자는 상태가 거의 없는 게임처럼 보이기
+        /// 때문이다.
         /// </remarks>
         internal static int Unresolved { get; private set; }
 
-        /// <summary>How many values the analysis had nowhere to read, summed over assemblies.</summary>
+        /// <summary>분석이 읽을 자리를 찾지 못한 값이 몇인지. 어셈블리를 통틀어 합한 것.</summary>
         internal static int Unwatchable { get; private set; }
 
         internal static IReadOnlyList<Watched> All()
@@ -171,8 +161,7 @@ namespace Artel.Affordances.Live
                 }
                 catch (Exception)
                 {
-                    // A dynamic assembly, or one whose resources will not open. Skipping it makes
-                    // the list shorter, never wrong.
+                    // 동적 어셈블리이거나 리소스가 열리지 않는 어셈블리다. 건너뛰면 목록이 짧아지지 틀리지는 않는다.
                 }
             }
 
@@ -217,13 +206,12 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// Finds each object in the <c>watch</c> array, without a JSON parser.
+        /// JSON 파서 없이 <c>watch</c> 배열의 각 객체를 찾는다.
         /// </summary>
         /// <remarks>
-        /// The document is written by the same package that reads it, one field shape, no nesting
-        /// inside the array elements and no strings holding braces — a type name cannot contain one.
-        /// Bringing a parser into the runtime assembly for that would be weight on every game that
-        /// ships this, and the writer is fifty lines away.
+        /// 문서는 그것을 읽는 바로 그 패키지가 쓰고, 필드 모양은 하나이며, 배열 원소 안에 중첩이 없고, 중괄호를 담은 문자열도
+        /// 없다 — 타입 이름은 그것을 담을 수 없다. 그것 하나 때문에 런타임 어셈블리에 파서를 들이는 일은 이것을 싣고 나가는 모든
+        /// 게임에 얹히는 무게이고, writer 는 오십 줄 옆에 있다.
         /// </remarks>
         private static IEnumerable<string> Entries(string text, string array)
         {
@@ -255,10 +243,8 @@ namespace Artel.Affordances.Live
                 yield return text.Substring(open + 1, close - open - 1);
                 index = close + 1;
 
-                // Stopping at the array's own end rather than running to the next one. Told by what
-                // follows an entry — a comma or the closing bracket, and nothing else — because a
-                // bracket count would be wrong the moment a field holds a generic type name, which
-                // carries brackets of its own.
+                // 다음 배열까지 달려가지 않고 이 배열 자신의 끝에서 멈춘다. 항목 뒤에 오는 것으로 안다 — 쉼표이거나 닫는 대괄호이지
+                // 그 밖의 것은 아니다 — 대괄호를 세는 방식은 필드가 제 대괄호를 나르는 제네릭 타입 이름을 쥐는 순간 틀리기 때문이다.
                 while (index < text.Length && char.IsWhiteSpace(text[index]))
                 {
                     index++;
@@ -289,8 +275,8 @@ namespace Artel.Affordances.Live
                 return;
             }
 
-            // Private and inherited both. A game's state is mostly private, and a condition on a
-            // field a base class declares is still a condition on this component.
+            // private 인 것과 상속된 것 둘 다. 게임의 상태는 대개 private 이고, 기반 클래스가 선언한 필드에 대한 조건도 여전히 이
+            // 컴포넌트에 대한 조건이다.
             var field = owner.GetField(
                 member,
                 BindingFlags.Instance | BindingFlags.Static |
@@ -316,23 +302,19 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// The path, when it can actually be walked from what the field holds — otherwise nothing.
+        /// 필드가 쥔 것에서 실제로 걸어갈 수 있을 때의 경로 — 아니면 없음.
         /// </summary>
         /// <remarks>
-        /// Settled once here rather than asked on every reading, because whether a type has a member
-        /// does not change while the game runs, and a reading that answered differently from the
-        /// name beside it would be worse than either answer.
+        /// 판독마다 묻지 않고 여기서 한 번 결정한다. 타입이 어떤 멤버를 가졌는지는 게임이 도는 동안 바뀌지 않고, 옆의 이름과
+        /// 다르게 답하는 판독은 둘 중 어느 답보다도 나쁘기 때문이다.
         ///
-        /// Dropped rather than reported when it will not walk. The evidence strips <c>transform</c>
-        /// on the way to a field, so a destination written as
-        /// <c>MapMove.battle1.transform.position</c> arrives here as <c>position</c> on a
-        /// <c>GameObject</c>, which has no such member — while the coordinates that row wants are
-        /// already what a reference is written as. Calling that unreadable took thirteen rows'
-        /// destinations away; leaving the field to answer for itself is what this did before there
-        /// were paths at all.
+        /// 걸어지지 않을 때는 보고하지 않고 떨어뜨린다. 근거는 필드로 가는 길에 <c>transform</c> 을 벗겨 내므로,
+        /// <c>MapMove.battle1.transform.position</c> 으로 쓰인 목적지가 여기에는 <c>GameObject</c> 위의 <c>position</c> 으로
+        /// 도착하는데 그런 멤버는 없다 — 정작 그 줄이 원하는 좌표는 이미 참조가 쓰이는 방식 그 자체다. 그것을 읽을 수 없다고 한
+        /// 탓에 열세 줄의 목적지를 잃었다. 필드가 스스로 답하게 두는 것이 경로라는 것이 있기 전에 이것이 하던 일이다.
         ///
-        /// Judged against the declared type. A field holding something more derived may offer more
-        /// than this can see, and the cost of that is a path not taken rather than a wrong value.
+        /// 선언된 타입에 대고 판단한다. 더 파생된 것을 쥔 필드는 이것이 볼 수 있는 것보다 많이 내놓을 수 있고, 그 값은 틀린 값이
+        /// 아니라 가지 않은 경로 하나다.
         /// </remarks>
         private static string Walkable(Type from, string path)
         {
@@ -368,7 +350,7 @@ namespace Artel.Affordances.Live
             return path;
         }
 
-        /// <summary>One type's offered inputs, out of an entry of the <c>inputs</c> array.</summary>
+        /// <summary><c>inputs</c> 배열의 한 항목에서 꺼낸, 한 타입이 내놓는 입력들.</summary>
         private static void Offered(string entry)
         {
             var declaring = Text(entry, "\"declaring\":\"");
@@ -389,12 +371,11 @@ namespace Artel.Affordances.Live
         }
 
         /// <summary>
-        /// A flat array of strings sitting inside one entry, up to that array's own end.
+        /// 한 항목 안에 앉은 평평한 문자열 배열. 그 배열 자신의 끝까지.
         /// </summary>
         /// <remarks>
-        /// Bounded to the array rather than run to the document's end, which is what
-        /// <see cref="Names"/> can do because it reads the only array of its name. Two of these sit
-        /// side by side in one entry, so the first would otherwise swallow the second.
+        /// 문서 끝까지 달리지 않고 배열로 가둔다. <see cref="Names"/> 가 그렇게 할 수 있는 것은 그것이 제 이름의 유일한 배열을
+        /// 읽기 때문이다. 이런 것 둘이 한 항목 안에 나란히 앉아 있으므로, 그러지 않으면 첫째가 둘째를 삼킨다.
         /// </remarks>
         private static void Listed(string entry, string key, List<string> into)
         {
@@ -440,7 +421,7 @@ namespace Artel.Affordances.Live
             }
         }
 
-        /// <summary>Reads the flat string array the writer put the animator names in.</summary>
+        /// <summary>writer 가 animator 이름을 넣어 둔 평평한 문자열 배열을 읽는다.</summary>
         private static void Names(string text, List<string> into)
         {
             const string key = "\"animatorNames\":[";
@@ -452,11 +433,9 @@ namespace Artel.Affordances.Live
                 return;
             }
 
-            // Past the key's own closing quote, not at it. Starting on the key meant the first pair
-            // of quotes found was the key's own and its own name became the first entry — measured,
-            // the list came out as `:[` and `,`, so every state went unnamed and the reason was
-            // invisible because an unnamed state is also what a game that names them differently
-            // produces.
+            // 키 자신의 닫는 따옴표 뒤에서 시작하지 그 자리에서 시작하지 않는다. 키에서 시작하면 처음 찾은 따옴표 쌍이 키 자신의
+            // 것이고 그 이름이 첫 항목이 됐다 — 실측하니 목록이 `:[` 와 `,` 로 나왔고, 그래서 모든 상태가 이름 없이 남았으며,
+            // 이름 없는 상태는 상태를 다르게 이름 짓는 게임이 만들어내는 것이기도 해서 그 이유가 보이지 않았다.
             var index = start + key.Length - 1;
             var end = text.IndexOf(']', index);
 
