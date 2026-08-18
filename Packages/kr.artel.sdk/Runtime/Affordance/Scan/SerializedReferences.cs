@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Artel.Affordances.Scan
 {
-    /// <summary>What a component's inspector fields point at.</summary>
+    /// <summary>컴포넌트의 인스펙터 필드가 무엇을 가리키는가.</summary>
     internal struct Reference
     {
         internal string Field;
@@ -14,78 +14,73 @@ namespace Artel.Affordances.Scan
         internal string Name;
 
         /// <summary>
-        /// What makes two fields on two components the same object.
+        /// 두 컴포넌트 위의 두 필드를 같은 객체로 만드는 것.
         /// </summary>
         /// <remarks>
-        /// The number itself means nothing outside the run that produced it, which is exactly what
-        /// is wanted: it is a join key, not an identity to keep. Two behaviours holding the same
-        /// event channel asset carry the same one here, and that is the only place in the whole
-        /// report where that fact exists — the code says a channel of some type, the scene says
-        /// which asset, and neither says it alone.
+        /// 그 숫자 자체는 그것을 만들어낸 실행 밖에서 아무 뜻도 없는데, 그것이 바로 원하는 바다: 그것은 이음쇠 키이지 간직할
+        /// 정체가 아니다. 같은 이벤트 채널 애셋을 쥔 두 behaviour 는 여기서 같은 것을 나르고, 리포트 전체에서 그 사실이 존재하는
+        /// 자리는 거기뿐이다 — 코드는 어떤 타입의 채널이라고 말하고 씬은 어느 애셋이라고 말하며, 어느 쪽도 홀로 그것을 말하지
+        /// 않는다.
         /// </remarks>
         internal int Id;
 
-        /// <summary>Where in the scene, when it is something in one.</summary>
+        /// <summary>씬 안의 무엇일 때, 씬의 어디인지.</summary>
         internal string Path;
 
         /// <summary>
-        /// True when this is not in any scene — a prefab, or an asset.
+        /// 어느 씬에도 없을 때 참 — 프리팹이거나 애셋이다.
         /// </summary>
         /// <remarks>
-        /// It has to be said because the two used to look identical. A prefab's root transform has
-        /// no parent, so the path built for it was its own name, which is exactly what a scene root
-        /// object's path looks like: <c>CardManager.cardPrefab -&gt; "Card"</c> and
-        /// <c>MapMove.character -&gt; "wordHead"</c> were the same shape and only one of them was
-        /// somewhere a test could go.
+        /// 말해야만 한다. 예전에는 그 둘이 똑같아 보였기 때문이다. 프리팹의 루트 transform 은 부모가 없으므로 그것에 대해
+        /// 만들어진 경로는 제 이름이었는데, 그것이 정확히 씬 루트 객체의 경로가 생긴 모습이다:
+        /// <c>CardManager.cardPrefab -&gt; "Card"</c> 와 <c>MapMove.character -&gt; "wordHead"</c> 가 같은 모양이었고 그중
+        /// 하나만이 테스트가 갈 수 있는 자리였다.
         /// </remarks>
         internal bool Asset;
 
         /// <summary>
-        /// The component types a referenced prefab carries.
+        /// 참조된 프리팹이 나르는 컴포넌트 타입들.
         /// </summary>
         /// <remarks>
-        /// This is the answer to "who makes this". A type that only ever exists on a prefab is
-        /// missing from the report until something instantiates it, and the report could not say
-        /// whether that was because nobody ever does — dead code — or because the run had not got
-        /// there yet. A prefab held in an inspector field by a component that *is* in a scene is
-        /// the second case, and this is where that shows.
+        /// "누가 이것을 만드는가" 에 대한 답이 이것이다. 프리팹 위에만 존재하는 타입은 무언가 그것을 인스턴스화하기 전까지
+        /// 리포트에서 빠져 있고, 리포트는 그것이 아무도 그러지 않기 때문인지 — 죽은 코드 — 아니면 그 실행이 아직 거기 이르지
+        /// 못했기 때문인지 말할 수 없었다. 씬 *안에 있는* 컴포넌트가 인스펙터 필드로 쥔 프리팹은 두 번째 경우이고, 그것이
+        /// 드러나는 자리가 여기다.
         /// </remarks>
         internal List<string> Carries;
 
         /// <summary>
-        /// The object itself, for following it further. Never written to the report.
+        /// 더 따라가기 위한 객체 그 자체. 리포트에는 결코 쓰지 않는다.
         /// </summary>
         /// <remarks>
-        /// The report gets names and a join key; this is the live reference, and it exists only so
-        /// that a prefab held two steps away can be found. Kept off the written form deliberately —
-        /// nothing outside this run could use it.
+        /// 리포트가 받는 것은 이름과 이음쇠 키다. 이것은 살아 있는 참조이고, 두 걸음 떨어져 쥐고 있는 프리팹을 찾을 수 있도록
+        /// 하기 위해서만 존재한다. 일부러 쓰인 형태에서 뺀다 — 이 실행 밖의 무엇도 그것을 쓸 수 없다.
         /// </remarks>
         internal UnityEngine.Object Held;
     }
 
     /// <summary>
-    /// Reads the object references Unity serialized on a component.
+    /// Unity 가 컴포넌트 위에 직렬화해 둔 객체 참조를 읽는다.
     /// </summary>
     /// <remarks>
-    /// The analysis reads code and the scan reads hierarchy, and an inspector reference is the one
-    /// fact that belongs to neither. <c>_teleportChannel.RaiseEvent()</c> is in the code without
-    /// saying which channel, and the asset is in the scene without saying what happens when it is
-    /// raised. Measured on Chop Chop, 23 channel types had both a publisher and a subscriber in the
-    /// evidence and not one of them could be paired to an actual asset.
+    /// 분석은 코드를 읽고 스캔은 계층을 읽는데, 인스펙터 참조는 그 어느 쪽에도 속하지 않는 유일한 사실이다.
+    /// <c>_teleportChannel.RaiseEvent()</c> 는 어느 채널인지 말하지 않은 채 코드 안에 있고, 애셋은 그것이 올라갔을 때 무슨
+    /// 일이 일어나는지 말하지 않은 채 씬 안에 있다. Chop Chop 에서 실측하니 채널 타입 23 개가 근거 안에 발행자와 구독자를
+    /// 둘 다 가지고 있었고 그중 하나도 실제 애셋과 짝지어질 수 없었다.
     ///
-    /// Only references are read, not values. A field's number or string is the game's own data and
-    /// carries no wiring; reading it would make the report a dump of the game's content, cost the
-    /// size of one, and say nothing about what a player can do.
+    /// 참조만 읽고 값은 읽지 않는다. 필드의 숫자나 문자열은 게임 자신의 데이터이고 아무 배선도 나르지 않는다. 그것을 읽으면
+    /// 리포트가 게임 콘텐츠의 덤프가 되고, 덤프만 한 크기를 치르며, 플레이어가 무엇을 할 수 있는지에 대해서는 아무 말도
+    /// 하지 않는다.
     /// </remarks>
     internal static class SerializedReferences
     {
         private const int MaxReferencesPerComponent = 32;
         private const int MaxElementsPerCollection = 16;
 
-        /// <summary>How many distinct component types are read off one prefab.</summary>
+        /// <summary>프리팹 하나에서 서로 다른 컴포넌트 타입을 몇 개까지 읽는지.</summary>
         private const int MaxCarriedTypes = 16;
 
-        /// <summary>What each prefab carries, worked out once however many fields point at it.</summary>
+        /// <summary>각 프리팹이 무엇을 나르는지. 몇 개의 필드가 그것을 가리키든 한 번 알아낸다.</summary>
         private static readonly Dictionary<int, List<string>> CarriedByPrefab =
             new Dictionary<int, List<string>>();
 
@@ -122,8 +117,7 @@ namespace Artel.Affordances.Scan
                 }
                 catch (Exception)
                 {
-                    // A field whose type failed to load. One unreadable field is not a reason to
-                    // stop reading the component.
+                    // 타입 로드에 실패한 필드. 읽을 수 없는 필드 하나가 그 컴포넌트 읽기를 멈출 이유는 아니다.
                     continue;
                 }
 
@@ -156,9 +150,8 @@ namespace Artel.Affordances.Scan
 
         private static void Add(List<Reference> found, string field, UnityEngine.Object value)
         {
-            // Unity's destroyed objects compare equal to null while still being a live reference.
-            // An empty slot in the inspector arrives here the same way, and neither points at
-            // anything a test could act on.
+            // Unity 의 파괴된 객체는 여전히 살아 있는 참조이면서 null 과 같다고 비교된다. 인스펙터의 빈 슬롯도 여기에 같은 방식으로
+            // 도착하고, 둘 다 테스트가 작용할 수 있는 무엇도 가리키지 않는다.
             if (value == null)
             {
                 return;
@@ -177,8 +170,7 @@ namespace Artel.Affordances.Scan
 
             if (subject == null)
             {
-                // A sprite, a clip, a ScriptableObject. Never in a scene and carries nothing that
-                // can be walked to.
+                // 스프라이트, 클립, ScriptableObject. 씬에 있는 일이 없고 걸어갈 수 있는 것을 나르지 않는다.
                 reference.Asset = true;
                 found.Add(reference);
                 return;
@@ -190,8 +182,8 @@ namespace Artel.Affordances.Scan
             }
             else
             {
-                // No scene means a prefab. Its path is not written at all: the string that could be
-                // built for it is indistinguishable from a scene root's, which is worse than none.
+                // 씬이 없다는 것은 프리팹이라는 뜻이다. 그 경로는 아예 쓰지 않는다: 그것에 대해 만들 수 있는 문자열은 씬 루트의 것과
+                // 구분되지 않고, 그것은 없느니만 못하다.
                 reference.Asset = true;
                 reference.Carries = CarriedBy(subject);
             }
@@ -200,21 +192,18 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Follows an asset one or two steps to find what it would ultimately put in a scene.
+        /// 애셋을 한두 걸음 따라가 그것이 결국 씬에 무엇을 놓을지를 찾는다.
         /// </summary>
         /// <remarks>
-        /// A prefab is often not held directly. The sample game's enemies live in a
-        /// <c>ScriptableObject</c> that a pool component points at, so the chain is
-        /// <c>EnemyPoolController.enemyDataContainer → EnemyData.prefab → Enemy</c> and reading only
-        /// the component's own fields finds none of it — which left the report unable to tell those
-        /// enemies from dead code.
+        /// 프리팹은 곧바로 쥐고 있지 않은 일이 많다. 샘플 게임의 적들은 풀 컴포넌트가 가리키는 <c>ScriptableObject</c> 안에
+        /// 살아서 사슬이 <c>EnemyPoolController.enemyDataContainer → EnemyData.prefab → Enemy</c> 이고, 컴포넌트 자신의
+        /// 필드만 읽으면 그중 아무것도 찾지 못한다 — 그 때문에 리포트가 그 적들을 죽은 코드와 가리지 못했다.
         ///
-        /// Attributed to the field in the scene, not to the link in the middle. That field is the
-        /// one a person or an agent can actually follow, and naming the intermediate asset would be
-        /// telling them about a step they cannot take.
+        /// 중간의 연결 고리가 아니라 씬 안의 필드에 귀속시킨다. 사람이든 에이전트든 실제로 따라갈 수 있는 것이 그 필드이고,
+        /// 중간 애셋의 이름을 대는 것은 그들이 밟을 수 없는 걸음에 대해 말해 주는 일이다.
         ///
-        /// Two steps and sixty-four objects, whichever comes first. A ScriptableObject can hold a
-        /// graph, and the point here is finding prefabs rather than walking the game's content.
+        /// 두 걸음과 객체 예순넷 중 먼저 오는 쪽까지. ScriptableObject 는 그래프를 쥘 수 있고, 여기의 요점은 게임 콘텐츠를 걷는
+        /// 것이 아니라 프리팹을 찾는 것이다.
         /// </remarks>
         internal static void Trace(UnityEngine.Object from, string ownerType, string field)
         {
@@ -240,7 +229,7 @@ namespace Artel.Affordances.Scan
             {
                 if (subject.scene.IsValid())
                 {
-                    // Already in a scene, so it is not something that has to be made.
+                    // 이미 씬 안에 있으므로 만들어져야 하는 무엇이 아니다.
                     return;
                 }
 
@@ -249,7 +238,7 @@ namespace Artel.Affordances.Scan
                     AffordanceReport.Creates(carried, ownerType, field);
                 }
 
-                // A prefab's own components can hold further prefabs — a pool holding what it spawns.
+                // 프리팹 자신의 컴포넌트가 또 다른 프리팹을 쥘 수 있다 — 자기가 만들어낼 것을 쥔 풀.
                 foreach (var component in Components(subject))
                 {
                     Onward(component, ownerType, field, depth, seen);
@@ -258,8 +247,8 @@ namespace Artel.Affordances.Scan
                 return;
             }
 
-            // A ScriptableObject or any other asset. Its fields are read the same way a component's
-            // are, because that is where a prefab held indirectly is kept.
+            // ScriptableObject 이거나 그 밖의 애셋이다. 그 필드는 컴포넌트의 것과 같은 방식으로 읽는다. 간접적으로 쥐고 있는
+            // 프리팹이 보관되는 자리가 거기이기 때문이다.
             Onward(value, ownerType, field, depth, seen);
         }
 
@@ -287,17 +276,15 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Every object reference inside a value, however deeply the game nested it.
+        /// 값 안의 모든 객체 참조. 게임이 아무리 깊이 중첩해 두었더라도.
         /// </summary>
         /// <remarks>
-        /// Written because the emitted references are not enough to answer &quot;who makes this&quot;.
-        /// The sample game keeps its enemy prefabs in a <c>List&lt;EnemyData&gt;</c> where
-        /// <c>EnemyData</c> is a plain serializable struct — the list holds structs, not objects, so
-        /// reading only the fields that are objects found nothing and five live enemy types read as
-        /// dead code.
+        /// 내놓는 참조만으로는 "누가 이것을 만드는가" 에 답할 수 없어서 쓴다. 샘플 게임은 적 프리팹을
+        /// <c>List&lt;EnemyData&gt;</c> 에 두는데 <c>EnemyData</c> 는 평범한 직렬화 가능 구조체다 — 목록이 쥔 것은 객체가
+        /// 아니라 구조체이므로, 객체인 필드만 읽어서는 아무것도 찾지 못했고 살아 있는 적 타입 다섯이 죽은 코드로 읽혔다.
         ///
-        /// This walk does not reach the report. It exists to register who would make a type, and
-        /// stopping at a serializable struct would be stopping one step short of the answer.
+        /// 이 걷기는 리포트에 닿지 않는다. 어떤 타입을 누가 만들지를 등록하려고 존재하고, 직렬화 가능 구조체에서 멈추는 것은
+        /// 답을 한 걸음 앞두고 멈추는 일이다.
         /// </remarks>
         private static void Gather(object value, List<UnityEngine.Object> into, int depth)
         {
@@ -356,11 +343,11 @@ namespace Artel.Affordances.Scan
             }
             catch (Exception)
             {
-                // A field that will not read. The rest of the value is still worth walking.
+                // 읽히지 않는 필드 하나. 그 값의 나머지는 여전히 걸을 값이 있다.
             }
         }
 
-        /// <summary>How deep a serializable value is walked looking for object references.</summary>
+        /// <summary>객체 참조를 찾아 직렬화 가능한 값을 얼마나 깊이 걷는지.</summary>
         private const int MaxNesting = 4;
 
         private static Component[] Components(GameObject subject)
@@ -376,12 +363,12 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// The game's own component types on a prefab, including its children.
+        /// 프리팹 위의, 게임 자신의 컴포넌트 타입들. 그 자식까지 포함해서.
         /// </summary>
         /// <remarks>
-        /// Children included because a prefab is a tree and the behaviour is as likely to be one
-        /// level down — a spell prefab whose animator and collider hang off a child. Engine
-        /// components are left out for the same reason their fields are: nobody wrote them.
+        /// 자식을 포함하는 것은 프리팹이 트리이고 behaviour 가 한 단계 아래에 있을 가능성도 그만큼 크기 때문이다 — animator 와
+        /// collider 가 자식에 매달린 주문 프리팹처럼. 엔진 컴포넌트를 빼는 것은 그 필드를 빼는 것과 같은 이유다: 아무도 그것을
+        /// 쓰지 않았다.
         /// </remarks>
         private static List<string> CarriedBy(GameObject prefab)
         {
@@ -412,10 +399,8 @@ namespace Artel.Affordances.Scan
                         continue;
                     }
 
-                    // Base classes too. A prefab carrying BossEnemy will, when instantiated, be an
-                    // Enemy as well — and Enemy is the type the shared rules are baked onto, so
-                    // asking only about the exact component left the base with no known creator and
-                    // reading like dead code.
+                    // 기반 클래스도 함께. BossEnemy 를 나르는 프리팹은 인스턴스화되면 Enemy 이기도 하고 — 공유 규칙이 구워지는 타입이
+                    // Enemy 이므로, 정확한 컴포넌트만 물으면 그 기반은 알려진 생성자가 없는 채로 남아 죽은 코드처럼 읽혔다.
                     for (var current = type; Walkable(current); current = current.BaseType)
                     {
                         var name = current.FullName;
@@ -437,11 +422,11 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// The fields Unity would serialize, from the type down to where the engine's own begin.
+        /// Unity 가 직렬화할 필드들. 그 타입에서 시작해 엔진 자신의 것이 시작되는 자리까지.
         /// </summary>
         /// <remarks>
-        /// Sorted by name so that two runs over the same game produce the same bytes, and cached
-        /// because a scene holds many instances of few types.
+        /// 같은 게임을 두 번 돌면 같은 바이트가 나오도록 이름으로 정렬하고, 한 씬이 적은 수의 타입의 인스턴스를 많이 쥐고 있으므로
+        /// 캐시한다.
         /// </remarks>
         private static FieldInfo[] FieldsOf(Type type)
         {
@@ -457,8 +442,8 @@ namespace Artel.Affordances.Scan
             {
                 foreach (var field in current.GetFields(Declared))
                 {
-                    // A derived class can shadow a base field of the same name. What the object
-                    // presents is the most derived one, which is the one already taken.
+                    // 파생 클래스가 같은 이름의 기반 필드를 가릴 수 있다. 객체가 내놓는 것은 가장 파생된 쪽이고, 그것이 이미 취해진
+                    // 그것이다.
                     if (Serialized(field) && named.Add(field.Name))
                     {
                         fields.Add(field);
@@ -474,17 +459,15 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Stops where the game's own code stops.
+        /// 게임 자신의 코드가 멈추는 자리에서 멈춘다.
         /// </summary>
         /// <remarks>
-        /// By namespace rather than by naming the base classes, because <c>Button</c> is as much the
-        /// engine's as <c>MonoBehaviour</c> is and its <c>m_TargetGraphic</c> is engine plumbing —
-        /// true, and not a wiring anyone wrote. Measured on Chop Chop those fields were a third of
-        /// the report on their own.
+        /// 기반 클래스의 이름을 대는 대신 네임스페이스로 한다. <c>Button</c> 은 <c>MonoBehaviour</c> 만큼이나 엔진의 것이고 그
+        /// <c>m_TargetGraphic</c> 은 엔진 배관이기 때문이다 — 맞는 말이고 누가 쓴 배선은 아니다. Chop Chop 에서 실측하니 그
+        /// 필드들만으로 리포트의 3분의 1이었다.
         ///
-        /// A game type that derives from an engine one still has all of its own fields read; the
-        /// walk stops when it reaches the engine's part of the chain, which is exactly where the
-        /// game stopped writing.
+        /// 엔진 타입에서 파생된 게임 타입은 제 필드를 전부 읽는다. 걷기는 사슬에서 엔진의 몫에 닿았을 때 멈추는데, 그 자리가
+        /// 정확히 게임이 쓰기를 멈춘 자리다.
         /// </remarks>
         private static bool Walkable(Type type)
         {
