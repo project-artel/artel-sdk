@@ -12,12 +12,11 @@ namespace Artel.Affordances.Scan
     /// 스스로 부팅하는 것이 패키지 설치가 통합의 전부라는 약속을 지키는 방법이다. 게임 팀에게 매니저 객체를 모든 씬에
     /// 떨어뜨리라고 청하는 일은 그들의 씬을 바꾸는 일이고, 그것이 이것이 요구해서는 안 되는 그것이다.
     ///
-    /// 로드되는 모든 씬이 읽혀 리포트에 더해지므로, 그저 게임을 하는 것만으로 다녀온 모든 곳에 대한 진술이 쌓인다.
-    /// 아무도 걸어가지 않은 화면에 닿는 일이 <see cref="WalkAllScenes"/> 의 몫이다.
+    /// 로드되는 모든 씬이 읽혀 리포트에 더해지므로, 그저 게임을 하는 것만으로 다녀온 모든 곳에 대한 진술이 쌓인다. 아무도
+    /// 걸어가지 않은 화면에 닿는 일이 <see cref="WalkAllScenes"/> 의 몫이다.
     ///
-    /// Always compiled, and doing nothing is the release build's business rather than the
-    /// compiler's: the subscription below is the only thing that makes any of this run, and it is
-    /// held only where <c>UNITY_EDITOR</c> or <c>DEVELOPMENT_BUILD</c> is true.
+    /// 언제나 컴파일되고, 아무것도 하지 않는 일은 컴파일러가 아니라 출시 빌드의 몫이다: 아래의 구독만이 이 전부를 돌게 만드는
+    /// 것이고, 그것은 <c>UNITY_EDITOR</c> 나 <c>DEVELOPMENT_BUILD</c> 가 참인 자리에서만 쥐어진다.
     /// </remarks>
     public static class AffordanceBootstrap
     {
@@ -27,15 +26,12 @@ namespace Artel.Affordances.Scan
         public static string ReportPath => Path.Combine(Application.persistentDataPath, FileName);
 
         /// <remarks>
-        /// Nothing is subscribed to in a released game. Asked as an <c>#if</c> rather than a runtime
-        /// test so a shipping player holds no subscription, no callback, and no reason to have
-        /// loaded any of this.
+        /// 출시된 게임에서는 아무것도 구독하지 않는다. 런타임 검사가 아니라 <c>#if</c> 로 묻는 것은, 출시된 플레이어가 구독도,
+        /// 콜백도, 이것을 로드했을 이유도 쥐지 않도록 하기 위해서다.
         ///
-        /// The same pair of symbols is read from the other side in
-        /// <c>AffordanceILPostProcessor.IsDiscoveryBuild</c>, which decides whether the evidence
-        /// this reads was ever baked. Change one and change the other: this one cannot share a
-        /// constant with it, because a preprocessor test is evaluated where its own assembly is
-        /// compiled and cannot read a value from anywhere.
+        /// 같은 심볼 쌍을 반대쪽 <c>AffordanceILPostProcessor.IsDiscoveryBuild</c> 에서 읽고, 그쪽이 이것이 읽는 근거가 애초에
+        /// 구워졌는지를 결정한다. 하나를 바꾸면 다른 하나도 바꿔라: 이쪽은 그것과 상수를 공유할 수 없다. 전처리기 검사는 제
+        /// 어셈블리가 컴파일되는 자리에서 평가되고 어디서도 값을 읽을 수 없기 때문이다.
         /// </remarks>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Install()

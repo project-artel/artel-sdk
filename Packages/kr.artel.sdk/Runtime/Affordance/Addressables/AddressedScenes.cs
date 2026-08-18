@@ -8,22 +8,19 @@ using UnityEngine.SceneManagement;
 namespace Artel.Affordances.Scan
 {
     /// <summary>
-    /// Tells the walk about the scenes that live at addresses.
+    /// 주소에 사는 씬들에 대해 순회에 일러 준다.
     /// </summary>
     /// <remarks>
-    /// This assembly is compiled only when the project has Addressables. The asmdef turns
-    /// <c>ARTEL_ADDRESSABLES</c> on from the package's own presence and then requires it, so a
-    /// project without the package builds exactly what it built before and this file does not
-    /// exist as far as the compiler is concerned. That is the whole reason it is an assembly of its
-    /// own rather than an <c>#if</c> somewhere.
+    /// 이 어셈블리는 프로젝트에 Addressables 가 있을 때만 컴파일된다. asmdef 이 패키지 자신의 존재로부터
+    /// <c>ARTEL_ADDRESSABLES</c> 를 켜고 그것을 요구하므로, 그 패키지가 없는 프로젝트는 전에 빌드하던 것을 그대로 빌드하고
+    /// 이 파일은 컴파일러가 보기에 존재하지 않는다. 어딘가의 <c>#if</c> 가 아니라 제 어셈블리인 이유 전체가 그것이다.
     ///
-    /// The catalogue is asked, not the disk. A built player has no asset database and no folder of
-    /// scenes; what it has is the locators the game itself uses to find them, which is the same list
-    /// by construction.
+    /// 디스크가 아니라 카탈로그에 묻는다. 빌드된 플레이어에는 애셋 데이터베이스도 씬 폴더도 없다. 그것이 가진 것은 게임 자신이
+    /// 씬을 찾는 데 쓰는 locator 이고, 그것은 구성상 같은 목록이다.
     /// </remarks>
     internal static class AddressedScenes
     {
-        /// <summary>How long one addressed scene may take before the walk gives up on it.</summary>
+        /// <summary>순회가 포기하기까지 주소로 된 씬 하나가 걸릴 수 있는 시간.</summary>
         private const float Patience = 30f;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -36,13 +33,12 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// Every address that resolves to a scene.
+        /// 씬으로 해석되는 모든 주소.
         /// </summary>
         /// <remarks>
-        /// A locator answers to several keys for the same asset — its address, its guid, each of its
-        /// labels. Guids are dropped because they are not what anybody wrote, and a label would
-        /// bring up whichever of its members the resolver picked. What is left is the address, which
-        /// is the name the game itself uses.
+        /// locator 는 같은 애셋에 대해 여러 키에 답한다 — 그 주소, 그 guid, 그 라벨 하나하나. guid 는 아무도 쓴 것이 아니므로
+        /// 버리고, 라벨은 resolver 가 고른 멤버가 무엇이든 그것을 띄우게 된다. 남는 것은 주소이고, 그것이 게임 자신이 쓰는
+        /// 이름이다.
         /// </remarks>
         private static List<string> List()
         {
@@ -66,8 +62,7 @@ namespace Artel.Affordances.Scan
                     if (locator.Locate(key, typeof(SceneInstance), out var locations) &&
                         locations != null && locations.Count == 1)
                     {
-                        // Exactly one, because a key answering with several is a label rather than
-                        // an address and loading it would bring up whichever came first.
+                        // 정확히 하나여야 한다. 여럿으로 답하는 키는 주소가 아니라 라벨이고, 그것을 로드하면 먼저 온 무엇이 올라오기 때문이다.
                         found.Add(address);
                     }
                 }

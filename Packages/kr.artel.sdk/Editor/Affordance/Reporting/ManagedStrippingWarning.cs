@@ -30,9 +30,8 @@ namespace Artel.Affordances.Editor
                 return;
             }
 
-            // No longer offers a switch to turn off instead. There is not one any more, and naming a
-            // menu that does not exist would send someone looking for it. Lowering the level is the
-            // only answer, and a build that reports nothing is worth saying so about either way.
+            // 대신 끄는 스위치를 더는 내놓지 않는다. 그런 것이 이제 없고, 존재하지 않는 메뉴의 이름을 대면 누군가 그것을 찾으러
+            // 가게 된다. 레벨을 낮추는 것이 유일한 답이고, 아무것도 보고하지 않는 빌드는 어느 쪽이든 그렇다고 말할 값이 있다.
             Debug.LogWarning(
                 "[Artel] Managed stripping is set to High, which removes this package from the " +
                 "build. The game will run and write no report. Lower the stripping level to keep " +
