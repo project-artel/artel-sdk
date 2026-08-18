@@ -5,49 +5,47 @@ using Mono.Cecil.Cil;
 
 namespace Artel.Affordances.CodeGen
 {
-    /// <summary>What a type turned out to be.</summary>
+    /// <summary>그 타입이 무엇으로 밝혀졌는가.</summary>
     internal enum TypeVerdict
     {
-        /// <summary>Cannot carry game logic on a GameObject.</summary>
+        /// <summary>GameObject 위에 게임 로직을 실을 수 없다.</summary>
         NotBehaviour,
 
-        /// <summary>Derives from MonoBehaviour.</summary>
+        /// <summary>MonoBehaviour 를 상속한다.</summary>
         Behaviour,
 
         /// <summary>
-        /// The base type chain ran out before reaching an answer.
+        /// 답에 닿기 전에 기반 타입 사슬이 끊겼다.
         /// </summary>
         /// <remarks>
-        /// Kept apart from <see cref="NotBehaviour"/> deliberately. A type whose base class lives
-        /// in an assembly that would not open looks exactly like a type that was never a behaviour,
-        /// and silently treating one as the other drops the game's own code with nothing said. It
-        /// costs a counter to tell them apart and it is the difference between a small number and
-        /// a wrong answer.
+        /// <see cref="NotBehaviour"/> 와 일부러 갈라 둔다. 기반 클래스가 열리지 않는 어셈블리에 사는 타입은
+        /// 애초에 behaviour 였던 적 없는 타입과 똑같아 보이고, 한쪽을 다른 쪽으로 조용히 취급하면 게임 자신의
+        /// 코드를 아무 말 없이 떨어뜨리게 된다. 둘을 가리는 데 드는 값은 카운터 하나이고, 그 차이는 작은
+        /// 숫자와 틀린 답의 차이다.
         /// </remarks>
         Unresolved
     }
 
-    /// <summary>Why a method is worth analysing.</summary>
+    /// <summary>이 메서드를 분석할 값이 있는 이유.</summary>
     internal enum MethodScope
     {
-        /// <summary>Nothing reaches this method through a player's hands.</summary>
+        /// <summary>플레이어의 손을 거쳐 이 메서드에 닿는 것이 없다.</summary>
         OutOfScope,
 
-        /// <summary>Wired to a UnityEvent in the inspector — a button's onClick, for instance.</summary>
+        /// <summary>인스펙터에서 UnityEvent 에 연결됐다 — 예컨대 버튼의 onClick.</summary>
         InspectorCallable,
 
-        /// <summary>Called by the engine. Where key and pointer handling lives.</summary>
+        /// <summary>엔진이 부른다. 키와 포인터 처리가 사는 자리다.</summary>
         EngineMessage
     }
 
     /// <summary>
-    /// Decides what is worth looking at before any looking happens.
+    /// 들여다보기 전에 무엇을 들여다볼 값이 있는지를 먼저 정한다.
     /// </summary>
     /// <remarks>
-    /// The first version of this analysis was slow on a project of a few hundred scripts, and the
-    /// reason was not that the work was expensive — it was that almost none of the work could
-    /// affect the result. Narrowing first is cheaper than caching afterwards, and it is what keeps
-    /// the later stages small enough to reason about.
+    /// 이 분석의 첫 판은 스크립트 수백 개짜리 프로젝트에서 느렸는데, 이유는 일이 비쌌기 때문이 아니라 그
+    /// 일의 거의 전부가 결과에 영향을 줄 수 없었기 때문이다. 먼저 좁히는 것이 나중에 캐시하는 것보다 싸고,
+    /// 뒤 단계들을 따져 볼 수 있을 만큼 작게 유지하는 것도 그것이다.
     /// </remarks>
     internal static class AnalysisScope
     {
@@ -55,45 +53,42 @@ namespace Artel.Affordances.CodeGen
         private const string ObjectTypeName = "UnityEngine.Object";
 
         /// <summary>
-        /// How far a base-type walk may go before it is treated as garbage.
+        /// 기반 타입 걷기가 쓰레기로 취급되기까지 갈 수 있는 거리.
         /// </summary>
         /// <remarks>
-        /// Nothing legitimate is this deep. The cap is not for depth, it is for cycles: a
-        /// hand-written or obfuscated assembly can describe a type as its own ancestor, and this
-        /// loop is the kind that has already frozen an editor that then could not be opened to find
-        /// out why.
+        /// 정상적인 것 중에 이만큼 깊은 것은 없다. 이 한계는 깊이를 위한 것이 아니라 순환을 위한 것이다: 손으로
+        /// 쓰거나 난독화한 어셈블리는 타입을 제 조상으로 적을 수 있고, 이 루프는 이미 에디터를 얼려서 왜
+        /// 그런지 알아보려 열 수조차 없게 만든 그런 종류다.
         /// </remarks>
         private const int MaxInheritanceDepth = 32;
 
         /// <summary>
-        /// Instruction count past which a method is left alone.
+        /// 이 명령어 수를 넘으면 메서드를 건드리지 않는다.
         /// </summary>
         /// <remarks>
-        /// Generated code — state machines, large switch dispatchers — arrives at sizes no human
-        /// writes. Counted and reported rather than dropped quietly, because a method this big is
-        /// usually a compiler artifact and knowing that changes what to do about it.
+        /// 생성된 코드는 — 상태 기계, 커다란 switch 분배기 — 사람이 쓰지 않는 크기로 도착한다. 조용히
+        /// 떨어뜨리지 않고 세어서 보고한다. 이만큼 큰 메서드는 대개 컴파일러 산출물이고, 그것을 아는 것이
+        /// 그것에 대해 무엇을 할지를 바꾸기 때문이다.
         /// </remarks>
         internal const int MaxInstructions = 4000;
 
         /// <summary>
-        /// Methods the engine calls on a behaviour.
+        /// 엔진이 behaviour 위에서 부르는 메서드들.
         /// </summary>
         /// <remarks>
-        /// Collected regardless of visibility, which is the whole point of listing them: these are
-        /// private by convention, so a filter that asked for public members dropped every one of
-        /// them — and with them the pointer handling and the <c>Update</c> bodies where key input
-        /// is read. Restricting the earlier filter to what the inspector can call is what left
-        /// mouse and drag unaccounted for.
+        /// 가시성과 무관하게 모은다. 이것들을 나열하는 이유 전체가 그것이다: 이것들은 관례상 private 이라,
+        /// public 멤버를 요구하는 필터는 그 전부를 떨어뜨렸다 — 그리고 그와 함께 포인터 처리와 키 입력을 읽는
+        /// <c>Update</c> 본문까지 떨어뜨렸다. 앞선 필터를 인스펙터가 부를 수 있는 것으로 제한한 것이 마우스와
+        /// 드래그를 셈에서 빠뜨린 원인이다.
         /// </remarks>
         private static readonly HashSet<string> EngineMessages = new HashSet<string>(StringComparer.Ordinal)
         {
             "Awake", "Start", "OnEnable", "OnDisable", "OnDestroy",
             "Update", "FixedUpdate", "LateUpdate", "OnGUI",
 
-            // The end of the run. A game that saves on the way out does it here, and that is a
-            // change a test has to know about: the state the next run starts from was decided by
-            // whether the player quit, not by anything they pressed. Left out, the sample game's
-            // "progress is saved when you quit" had no evidence at all.
+            // 실행의 끝. 나가는 길에 저장하는 게임은 여기서 하고, 그것은 테스트가 알아야 하는 변화다: 다음
+            // 실행이 시작하는 상태를 정한 것은 플레이어가 무엇을 눌렀는지가 아니라 그가 종료했는지다. 이것을
+            // 빼놓으면 샘플 게임의 "종료하면 진행이 저장된다" 에는 근거가 하나도 없었다.
             "OnApplicationQuit", "OnApplicationPause", "OnApplicationFocus",
             "OnMouseDown", "OnMouseUp", "OnMouseUpAsButton", "OnMouseDrag",
             "OnMouseEnter", "OnMouseExit", "OnMouseOver",
@@ -102,18 +97,17 @@ namespace Artel.Affordances.CodeGen
             "OnCollisionEnter", "OnCollisionStay", "OnCollisionExit",
             "OnCollisionEnter2D", "OnCollisionStay2D", "OnCollisionExit2D",
 
-            // Handlers the event system calls through an interface. Their argument is an
-            // EventData, which is not a UnityEngine.Object and not a primitive, so the
-            // inspector-callable rule turns every one of them away. On a project built with uGUI
-            // this is where clicking and dragging lives — leaving it to that rule would repeat the
-            // omission that lost the magic methods, on the same category of input.
+            // 이벤트 시스템이 인터페이스를 통해 부르는 핸들러들. 그 인자는 EventData 인데, UnityEngine.Object 도
+            // 아니고 기본형도 아니어서 인스펙터가 부를 수 있는지 규칙은 그 전부를 돌려보낸다. uGUI 로 만든
+            // 프로젝트에서는 클릭과 드래그가 사는 자리가 여기다 — 그 규칙에 맡겨 두면 매직 메서드를 잃었던 누락을
+            // 같은 입력 범주에 대해 되풀이하게 된다.
             "OnPointerClick", "OnPointerDown", "OnPointerUp", "OnPointerEnter", "OnPointerExit",
             "OnBeginDrag", "OnDrag", "OnEndDrag", "OnDrop", "OnScroll",
             "OnInitializePotentialDrag", "OnSubmit", "OnCancel", "OnMove",
             "OnSelect", "OnDeselect"
         };
 
-        /// <summary>Works out whether the type can sit on a GameObject and carry game logic.</summary>
+        /// <summary>그 타입이 GameObject 위에 앉아 게임 로직을 나를 수 있는지 알아낸다.</summary>
         internal static TypeVerdict Inspect(TypeDefinition type)
         {
             if (type == null || type.IsInterface || !type.IsClass)
@@ -147,11 +141,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// True when a UnityEvent could hold a persistent call to this method.
+        /// UnityEvent 가 이 메서드에 대한 지속 호출을 담을 수 있을 때 참.
         /// </summary>
         /// <remarks>
-        /// Mirrors what Unity's inspector will offer in the dropdown: an instance method returning
-        /// nothing, taking either no argument or one the inspector can supply a literal for.
+        /// Unity 인스펙터가 드롭다운에 내놓을 것을 그대로 비춘다: 아무것도 돌려주지 않는 인스턴스 메서드로,
+        /// 인자가 없거나 인스펙터가 리터럴을 채워 줄 수 있는 인자 하나를 받는 것.
         /// </remarks>
         private static bool IsInspectorCallable(MethodDefinition method)
         {
@@ -194,13 +188,12 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// True when reading this method in order would give the wrong answer.
+        /// 이 메서드를 순서대로 읽으면 틀린 답이 나올 때 참.
         /// </summary>
         /// <remarks>
-        /// A method with no decision in it has one path, so its control flow graph would be a
-        /// single block and building one is wasted. Anything else has to go through the graph:
-        /// walking instructions in sequence reads the body guarded by one key as belonging to
-        /// another once an <c>if/else</c> chain puts an <c>||</c> between them.
+        /// 결정이 하나도 없는 메서드는 경로가 하나이므로 제어 흐름 그래프가 블록 하나가 되고 그것을 만드는 일은
+        /// 낭비다. 그 밖의 것은 전부 그래프를 거쳐야 한다: 명령어를 차례대로 걷는 방식은, <c>if/else</c> 사슬이
+        /// <c>||</c> 를 그 사이에 넣는 순간 한 키가 지키는 본문을 다른 키의 것으로 읽는다.
         /// </remarks>
         internal static bool NeedsControlFlow(MethodDefinition method)
         {
@@ -232,11 +225,11 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Climbs the base type chain looking for a name.
+        /// 이름을 찾아 기반 타입 사슬을 거슬러 오른다.
         /// </summary>
         /// <param name="unresolved">
-        /// Set when the climb stopped without an answer — a base type that would not open, or a
-        /// chain long enough to suspect it loops back on itself.
+        /// 답 없이 오르기가 멈췄을 때 설정된다 — 열리지 않는 기반 타입이거나, 스스로에게 되감긴다고 의심할
+        /// 만큼 긴 사슬이다.
         /// </param>
         private static bool Walk(TypeDefinition type, string baseTypeFullName, out bool unresolved)
         {
@@ -253,7 +246,7 @@ namespace Artel.Affordances.CodeGen
                 var baseType = current.BaseType;
                 if (baseType == null)
                 {
-                    // Reached the root of the chain. The answer is no, and it is a real answer.
+                    // 사슬의 뿌리에 닿았다. 답은 아니오이고, 그것은 진짜 답이다.
                     return false;
                 }
 
@@ -279,8 +272,8 @@ namespace Artel.Affordances.CodeGen
             }
             catch (Exception)
             {
-                // A reference that will not resolve is ordinary input, not a fault. It costs one
-                // unanswered question about one type.
+                // 해석되지 않는 참조는 결함이 아니라 평범한 입력이다. 값으로 치면 타입 하나에 대한 답하지 못한 물음
+                // 하나다.
                 return null;
             }
         }

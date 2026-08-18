@@ -9,18 +9,17 @@ using Unity.CompilationPipeline.Common.ILPostProcessing;
 namespace Artel.Affordances.CodeGen
 {
     /// <summary>
-    /// Bakes what was found onto the game's own types.
+    /// 찾아낸 것을 게임 자신의 타입 위에 굽는다.
     /// </summary>
     /// <remarks>
-    /// The only change made to a game assembly, anywhere in this package: a custom attribute added
-    /// to a type. No method body is touched, nothing is renamed, no code is inserted. An attribute
-    /// cannot change what the game does, which is the property that makes this safe to put in
-    /// somebody else's build — and the reason the analysis bakes metadata rather than
-    /// instrumentation.
+    /// 이 패키지 전체를 통틀어 게임 어셈블리에 가하는 유일한 변경이다: 타입에 커스텀 attribute 하나를
+    /// 더한다. 메서드 본문은 건드리지 않고, 아무것도 이름을 바꾸지 않으며, 코드를 끼워 넣지 않는다.
+    /// attribute 는 게임이 하는 일을 바꿀 수 없고, 그 성질이 이것을 남의 빌드에 넣어도 안전하게 만든다 —
+    /// 그리고 분석이 계측이 아니라 메타데이터를 굽는 이유이기도 하다.
     ///
-    /// Attaching to the type rather than keeping a table on the side is what survives the trip. The
-    /// scan that reads this runs against a built player where names may be obfuscated and IL2CPP
-    /// has rewritten everything; an attribute is still on whatever the type became.
+    /// 옆에 표를 따로 두지 않고 타입에 붙이는 것이 여정을 견디는 방법이다. 이것을 읽는 스캔은 이름이
+    /// 난독화되고 IL2CPP 가 전부 다시 쓴 빌드된 플레이어를 상대로 돌아간다. attribute 는 그 타입이 무엇이
+    /// 되었든 여전히 그 위에 있다.
     /// </remarks>
     internal static class AffordanceWriter
     {
@@ -38,30 +37,27 @@ namespace Artel.Affordances.CodeGen
             internal int ResourceBytes;
             internal int Anchored;
 
-            /// <summary>How many distinct members the evidence asks somebody to watch.</summary>
+            /// <summary>근거가 누군가에게 감시하라고 청하는 서로 다른 멤버의 수.</summary>
             internal int Watched;
 
             /// <summary>
-            /// How many conditions and effects named a value with nowhere to read it.
+            /// 읽을 자리가 없는 값을 부른 조건과 효과가 몇이었는가.
             /// </summary>
             /// <remarks>
-            /// Said beside the list because the two numbers are only meaningful together. A short
-            /// list next to a large refusal count is a game whose logic runs through calls, and a
-            /// watcher that saw only the list would think it had covered everything.
+            /// 목록 옆에 함께 적는다. 두 숫자는 함께여야만 뜻이 있기 때문이다. 큰 거절 수 옆의 짧은 목록은 논리가
+            /// 호출을 통해 흐르는 게임이고, 목록만 본 감시자는 자기가 전부를 덮었다고 생각하게 된다.
             /// </remarks>
             internal int Unwatchable;
         }
 
         /// <summary>
-        /// Adds one attribute per variant to the type it belongs to.
+        /// variant 마다 attribute 하나를 그것이 속한 타입에 더한다.
         /// </summary>
         /// <remarks>
-        /// Refuses rather than guesses when the assembly holding the attribute cannot be found on
-        /// disk. Inventing an assembly identity would produce a game assembly referring to
-        /// something that may not exist under that name, and the failure would arrive as a type
-        /// load error in a built player rather than here. Finding the file and reading its identity
-        /// is not guessing, which is why <see cref="FindRuntimeAssembly"/> is allowed to look past
-        /// the compiler's reference list.
+        /// attribute 를 담은 어셈블리를 디스크에서 찾지 못하면 추측하지 않고 거절한다. 어셈블리 정체를 지어
+        /// 내면 그 이름으로는 존재하지 않을 수 있는 무언가를 가리키는 게임 어셈블리가 나오고, 그 실패는 여기가
+        /// 아니라 빌드된 플레이어의 타입 로드 오류로 도착한다. 파일을 찾아 그 정체를 읽는 것은 추측이 아니고,
+        /// 그래서 <see cref="FindRuntimeAssembly"/> 는 컴파일러의 참조 목록 너머를 봐도 된다.
         /// </remarks>
         internal static Result Write(
             ModuleDefinition module,
@@ -112,22 +108,21 @@ namespace Artel.Affordances.CodeGen
                     return result;
                 }
 
-                // Imported from a file read with Cecil, never loaded. The assembly reference this
-                // adds to the module is the real identity of the assembly that will ship.
+                // Cecil 로 읽은 파일에서 가져온다. 로드하지는 않는다. 이것이 모듈에 더하는 어셈블리 참조는 실제로
+                // 출시될 어셈블리의 진짜 정체다.
                 constructor = module.ImportReference(declared);
             }
 
             var integers = module.TypeSystem.Int32;
 
-            // Anything already baked on is cleared first. The pipeline hands over a freshly compiled
-            // assembly, so this should never find one — but an assembly that has been through here
-            // twice would carry two generations of evidence at once, and the older half would be
-            // indistinguishable from the newer while quietly contradicting it.
+            // 이미 구워져 있는 것은 먼저 지운다. 파이프라인은 갓 컴파일된 어셈블리를 건네주므로 여기서 하나도
+            // 찾지 못해야 한다 — 다만 여기를 두 번 지난 어셈블리는 근거 두 세대를 한꺼번에 나르게 되고, 옛 절반은
+            // 새 것과 구분되지 않으면서 조용히 그것과 어긋난 말을 한다.
             Clear(module, variants);
             EvidenceResource.Detach(module);
 
-            // Grouped by type because that is how it is asked for. A scene holds many instances of
-            // few types, and the scan looks the answer up once per type.
+            // 타입으로 묶는다. 그렇게 물어보기 때문이다. 한 씬은 적은 수의 타입의 인스턴스를 많이 쥐고 있고,
+            // 스캔은 타입마다 한 번씩 답을 찾는다.
             var byOwner = new List<TypeDefinition>();
             var payloadsByOwner = new Dictionary<TypeDefinition, List<string>>();
 
@@ -137,9 +132,8 @@ namespace Artel.Affordances.CodeGen
             {
                 if (variant.Owner == null || variant.Owner.Module != module)
                 {
-                    // Found in code the game reaches but does not hang on a GameObject. The scan
-                    // looks types up from the components it finds, so there is nothing to look this
-                    // up from.
+                    // 게임이 닿기는 하지만 GameObject 에 매달지 않는 코드에서 찾은 것. 스캔은 자기가 찾은 컴포넌트에서
+                    // 타입을 찾아 올라가는데, 이것은 찾아 올라갈 것이 없다.
                     result.Unattached++;
                     continue;
                 }
@@ -176,8 +170,8 @@ namespace Artel.Affordances.CodeGen
             {
                 var owner = byOwner[anchor];
 
-                // The anchor survives renaming, the name survives stripping. Both are written so
-                // that whichever of the two is left can still find this.
+                // anchor 는 이름 바꾸기를 견디고, 이름은 스트리핑을 견딘다. 둘 중 무엇이 남든 이것을 찾을 수 있도록
+                // 둘 다 쓴다.
                 var attribute = new CustomAttribute(constructor);
                 attribute.ConstructorArguments.Add(
                     new CustomAttributeArgument(integers, EvidenceJson.SchemaVersion));
@@ -192,9 +186,8 @@ namespace Artel.Affordances.CodeGen
             result.Anchored = byOwner.Count;
             result.ResourceBytes = EvidenceResource.Attach(module, blob.ToString());
 
-            // Written from every variant, including the ones that could not be anchored to a type.
-            // What to watch is a question about the assembly, and a static field on a class no
-            // GameObject carries is exactly the kind that decides a screen.
+            // anchor 를 타입에 붙이지 못한 것까지 포함해 모든 variant 에서 쓴다. 무엇을 감시할지는 어셈블리에 대한
+            // 물음이고, 어떤 GameObject 도 나르지 않는 클래스의 static 필드야말로 화면을 결정하는 그런 종류다.
             var watch = WatchListJson.Write(variants);
             result.Watched = watch.Watched;
             result.Unwatchable = watch.Unwatchable;
@@ -203,26 +196,23 @@ namespace Artel.Affordances.CodeGen
             return result;
         }
 
-        /// <summary>Takes off any evidence from an earlier pass over this assembly.</summary>
+        /// <summary>이 어셈블리에 대한 앞선 패스의 근거를 걷어낸다.</summary>
         /// <summary>
-        /// Who calls each method a record starts at, read from the whole assembly.
+        /// 기록이 시작하는 각 메서드를 누가 부르는가. 어셈블리 전체에서 읽는다.
         /// </summary>
         /// <remarks>
-        /// A record says what it calls. Nothing said what calls it, and the two are not the same
-        /// list read backwards: a record's calls are the ones inside the blocks that survived, and
-        /// a caller with no record of its own leaves no trace at all. Six of the sample game's
-        /// features sit behind that — a card is dealt from a turn state that is not a behaviour and
-        /// a drop zone is cleared from inside a coroutine, and neither caller is anywhere in the
-        /// document. Read from the assembly instead of from the records, both are there.
+        /// 기록은 자기가 무엇을 부르는지 말한다. 무엇이 자기를 부르는지는 아무도 말하지 않았고, 그 둘은 같은
+        /// 목록을 거꾸로 읽은 것이 아니다: 기록의 호출은 살아남은 블록 안의 것들이고, 제 기록이 없는 호출자는
+        /// 아무 자취도 남기지 않는다. 샘플 게임의 기능 여섯이 그 뒤에 앉아 있다 — 카드는 behaviour 가 아닌 턴
+        /// 상태에서 돌려지고 드롭 존은 코루틴 안에서 비워지는데, 두 호출자 어느 쪽도 문서 어디에도 없다.
+        /// 기록이 아니라 어셈블리에서 읽으면 둘 다 있다.
         ///
-        /// Only for methods a record starts at, because that is the question being answered: given
-        /// a record nobody can see how to reach, what reaches it. Every other edge is already
-        /// written where it is used.
+        /// 기록이 시작하는 메서드에 대해서만 한다. 답하려는 물음이 그것이기 때문이다: 어떻게 닿는지 아무도 볼
+        /// 수 없는 기록이 있을 때, 무엇이 거기 닿는가. 다른 모든 엣지는 이미 쓰이는 자리에 적혀 있다.
         ///
-        /// Names the caller and stops. Whether that caller is something a tester can do is the
-        /// reader's question, and a method that is only ever called from <c>MoveNext</c> is an
-        /// honest answer to it — better than the silence that had the same shape as "nothing calls
-        /// this".
+        /// 호출자의 이름을 대고 멈춘다. 그 호출자가 테스터가 할 수 있는 일인지는 독자의 물음이고,
+        /// <c>MoveNext</c> 에서만 불리는 메서드는 그에 대한 정직한 답이다 — "아무것도 이것을 부르지 않는다" 와
+        /// 같은 모양이던 침묵보다는 낫다.
         /// </remarks>
         private static Dictionary<string, List<string>> Callers(
             ModuleDefinition module, List<Variant> variants)
@@ -313,21 +303,19 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>
-        /// Where the assembly holding the attribute is on disk.
+        /// attribute 를 담은 어셈블리가 디스크의 어디에 있는가.
         /// </summary>
         /// <remarks>
-        /// A game's own code compiles into <c>Assembly-CSharp</c>, which references every
-        /// auto-referenced package and so lists this one. Code split into assembly definitions
-        /// references only what it declares, and a game team has no reason to declare this — the
-        /// whole promise is that they change nothing. Those assemblies used to be refused, which
-        /// meant the projects most likely to want this got the least: in the sample project one
-        /// assembly built 324 evidence cases and baked none of them.
+        /// 게임 자신의 코드는 <c>Assembly-CSharp</c> 으로 컴파일되고, 그것은 auto-reference 되는 모든 패키지를
+        /// 참조하므로 이것도 목록에 있다. assembly definition 으로 쪼갠 코드는 자기가 선언한 것만 참조하는데,
+        /// 게임 팀이 이것을 선언할 이유는 없다 — 약속 전체가 그들은 아무것도 바꾸지 않는다는 것이다. 예전에는
+        /// 그런 어셈블리를 거절했고, 그 결과 이것을 가장 원할 만한 프로젝트가 가장 적게 받았다: 샘플
+        /// 프로젝트에서 어셈블리 하나가 근거 324건을 만들고 그중 하나도 굽지 못했다.
         ///
-        /// So the reference list is asked first and the directories it names are searched second.
-        /// The identity written into the game assembly is read from the file that is found, never
-        /// composed from a name, which is what the earlier refusal was protecting against — a
-        /// reference to something that does not exist under that name fails as a type load error in
-        /// a built player rather than here.
+        /// 그래서 참조 목록을 먼저 묻고, 그것이 부르는 디렉터리들을 그다음에 뒤진다. 게임 어셈블리에 쓰이는
+        /// 정체는 찾아낸 파일에서 읽지 이름으로 지어내지 않으며, 앞선 거절이 막고 있던 것이 바로 그것이다 —
+        /// 그 이름으로 존재하지 않는 무언가에 대한 참조는 여기가 아니라 빌드된 플레이어에서 타입 로드 오류로
+        /// 실패한다.
         /// </remarks>
         private static string FindRuntimeAssembly(ICompiledAssembly compiledAssembly)
         {
@@ -361,8 +349,8 @@ namespace Artel.Affordances.CodeGen
                 }
             }
 
-            // Compiled output sits together, so the assembly this package builds is beside the ones
-            // the game was compiled against even when nothing pointed at it.
+            // 컴파일 산출물은 한자리에 모이므로, 아무것도 그것을 가리키지 않았을 때에도 이 패키지가 만드는
+            // 어셈블리는 게임이 대고 컴파일된 것들 옆에 있다.
             foreach (var folder in folders)
             {
                 var candidate = Path.Combine(folder, RuntimeAssembly + ".dll");
