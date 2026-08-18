@@ -4,16 +4,15 @@ using UnityEngine;
 namespace Artel.Affordances.Scan
 {
     /// <summary>
-    /// Names an object by where it sits.
+    /// 객체를 그것이 앉은 자리로 이름 붙인다.
     /// </summary>
     /// <remarks>
-    /// The identity a specification can act on. An instance id means nothing across a restart and a
-    /// bare name is rarely unique, but a path down the hierarchy is what a person reads in the
-    /// editor and what a test executor can look up again.
+    /// 명세가 작용할 수 있는 정체다. 인스턴스 id 는 재시작을 건너 아무 뜻도 없고 맨 이름은 유일한 일이 드물지만, 계층을
+    /// 따라 내려간 경로는 사람이 에디터에서 읽는 것이고 테스트 실행기가 다시 찾아볼 수 있는 것이다.
     /// </remarks>
     internal static class ScenePath
     {
-        /// <summary>How deep a hierarchy is followed before the path is left partial.</summary>
+        /// <summary>경로를 일부만 남기기 전까지 계층을 얼마나 깊이 따라가는지.</summary>
         private const int MaxDepth = 64;
 
         internal static string Of(Transform transform)
@@ -22,21 +21,19 @@ namespace Artel.Affordances.Scan
         }
 
         /// <summary>
-        /// The same walk, with each step saying which of its parent's children it is.
+        /// 같은 걷기인데, 각 걸음이 제 부모의 몇 번째 자식인지를 말하는 것.
         /// </summary>
         /// <remarks>
-        /// A name is not an identity when a game spawns things. Five enemies of one kind are five
-        /// objects at one path — <c>TurnBattleScene/RangedCat(Clone)</c> five times over in the
-        /// sample game — and a test told to click that has been told nothing. The place among its
-        /// siblings is what tells them apart, and it is a thing the executor can count for itself.
+        /// 게임이 무언가를 만들어낼 때 이름은 정체가 아니다. 한 종류의 적 다섯은 한 경로 위의 객체 다섯이고 — 샘플 게임에서
+        /// <c>TurnBattleScene/RangedCat(Clone)</c> 이 다섯 번 — 그것을 클릭하라고 들은 테스트는 아무것도 듣지 못한 것이다.
+        /// 형제들 사이의 자리가 그것들을 가르고, 그것은 실행기가 스스로 셀 수 있는 것이다.
         ///
-        /// Written beside the plain path rather than instead of it. The plain one is what a person
-        /// reads and what the rest of the report already joins on; this one is for whoever has to
-        /// pick one of five.
+        /// 맨 경로를 대신하지 않고 그 옆에 쓴다. 맨 경로는 사람이 읽는 것이고 리포트의 나머지가 이미 그것으로 잇는 것이다.
+        /// 이쪽은 다섯 중 하나를 골라야 하는 쪽을 위한 것이다.
         ///
-        /// It says where a thing was, not which thing it is. The order children sit in is fixed for
-        /// objects the scene was authored with; for ones the game made, it is the order they were
-        /// made in, which holds for as long as that run does. Nothing here claims more.
+        /// 이것은 그것이 어디 있었는지를 말하지 어느 것인지를 말하지 않는다. 자식이 앉는 순서는 씬이 작성될 때부터 있던 객체에
+        /// 대해서는 고정이고, 게임이 만든 것에 대해서는 만들어진 순서이며 그 실행이 지속되는 동안 유지된다. 여기서 그 이상은
+        /// 주장하지 않는다.
         /// </remarks>
         internal static string SelectorOf(Transform transform, int rootIndex)
         {
@@ -64,9 +61,8 @@ namespace Artel.Affordances.Scan
                 current = current.parent;
             }
 
-            // A root's place among the scene's roots is not its sibling index — Unity answers that
-            // one with zero however many roots there are, which is why five spawned enemies were
-            // all `[0]`. The walk is what knows the order, so it says.
+            // 루트가 씬의 루트들 사이에서 갖는 자리는 sibling index 가 아니다 — Unity 는 루트가 몇이든 그것을 0 으로
+            // 답하는데, 그래서 만들어진 적 다섯이 전부 `[0]` 이었다. 순서를 아는 것은 순회 쪽이므로 순회가 말한다.
             if (numbered && current == null && count > 0)
             {
                 parts[count - 1] = transform.root.name + "[" + rootIndex + "]";
@@ -74,8 +70,8 @@ namespace Artel.Affordances.Scan
 
             var path = new StringBuilder();
 
-            // A hierarchy deeper than the bound, or one a broken prefab has made circular, is said
-            // to be cut rather than reported as a root-level object it is not.
+            // 경계보다 깊은 계층이나, 망가진 프리팹이 순환하게 만든 계층은, 실제로는 아닌 루트 레벨 객체로 보고하는 대신
+            // 잘렸다고 말한다.
             if (current != null)
             {
                 path.Append(".../");

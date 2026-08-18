@@ -6,35 +6,30 @@ using UnityEngine;
 namespace Artel.Affordances.Live
 {
     /// <summary>
-    /// Whether an object is one a test could act on — the report's rule, asked ten times a second.
+    /// 테스트가 작용할 수 있는 객체인지 — 리포트의 규칙을, 초당 열 번 묻는다.
     /// </summary>
     /// <remarks>
-    /// The rule belongs to the scan and is copied here rather than reinvented: an object counts when
-    /// one of its components carries baked evidence, or has an inspector-wired call. That is what
-    /// makes the report's list forty-three objects instead of a thousand, and it is what puts
-    /// <c>Canvas/ExitButton</c> in it — a Button whose <c>onClick</c> points at a method.
+    /// 규칙은 스캔의 것이고 새로 만드는 대신 여기 복사한다: 객체는 그 컴포넌트 중 하나가 구워진 근거를 나르거나 인스펙터로
+    /// 연결된 호출을 가질 때 센다. 그것이 리포트의 목록을 천이 아니라 마흔셋으로 만드는 것이고, 거기에
+    /// <c>Canvas/ExitButton</c> 을 넣는 것이다 — <c>onClick</c> 이 메서드를 가리키는 Button.
     ///
-    /// It has to be the same rule. The specification was written from the report's own walk, so a
-    /// reading that draws the line anywhere else reports rows as uncheckable that the package could
-    /// answer, or fills every reading with scenery. There is one place the two are allowed to
-    /// differ, and it is in this direction only: an object holding a watched member is written even
-    /// if nothing else about it qualifies, because a value nobody can find is worse than a row of
-    /// scenery.
+    /// 같은 규칙이어야 한다. 명세는 리포트 자신의 순회에서 쓰였으므로, 선을 다른 데 긋는 판독은 패키지가 답할 수 있는 줄을
+    /// 확인 불가로 보고하거나 판독을 배경으로 가득 채운다. 둘이 달라도 되는 자리가 하나 있는데, 그것도 한 방향으로만이다:
+    /// 감시 대상 멤버를 쥔 객체는 다른 무엇도 자격이 없더라도 쓴다. 아무도 찾을 수 없는 값이 배경 한 줄보다 나쁘기
+    /// 때문이다.
     ///
-    /// Answered once per object and remembered. Reading a component's UnityEvent fields is
-    /// reflection, and the scan pays it once per scene where this would pay it on every beat.
-    /// Remembered against the object rather than its type: two Buttons of one type are wired
-    /// differently, and one of them may point at nothing.
+    /// 객체마다 한 번 답하고 기억한다. 컴포넌트의 UnityEvent 필드를 읽는 일은 리플렉션이고, 스캔은 씬마다 한 번 치르는
+    /// 값을 이쪽은 매 박자마다 치르게 된다. 타입이 아니라 객체에 대고 기억한다: 한 타입의 Button 둘은 서로 다르게
+    /// 연결돼 있고, 그중 하나는 아무것도 가리키지 않을 수 있다.
     /// </remarks>
     internal static class Worth
     {
         /// <summary>
-        /// How many answers are kept before the lot is dropped and worked out again.
+        /// 전부 버리고 다시 알아내기 전까지 답을 몇 개나 쥐고 있는지.
         /// </summary>
         /// <remarks>
-        /// A game that spawns and destroys for an hour would otherwise grow a row here for every
-        /// object it ever made. Dropping all of them costs one expensive walk and cannot give a
-        /// wrong answer, which is the trade to make when the alternative is a leak.
+        /// 한 시간 동안 만들고 부수는 게임은 그러지 않으면 여태 만든 객체마다 여기에 줄 하나씩을 늘린다. 전부 버리는 값은
+        /// 비싼 순회 한 번이고 틀린 답을 줄 수는 없는데, 대안이 누수일 때 택할 거래가 그것이다.
         /// </remarks>
         private const int MaxRemembered = 4096;
 
@@ -74,8 +69,7 @@ namespace Artel.Affordances.Live
             }
             catch (Exception)
             {
-                // The scan reports this as a gap against the scene. Here it is simply an object
-                // nothing can be said about.
+                // 스캔은 이것을 씬에 대한 공백으로 보고한다. 여기서는 그저 아무 말도 할 수 없는 객체일 뿐이다.
                 return false;
             }
 

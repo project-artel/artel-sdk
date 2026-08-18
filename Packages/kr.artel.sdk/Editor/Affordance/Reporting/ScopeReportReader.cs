@@ -7,17 +7,16 @@ using UnityEngine;
 namespace Artel.Affordances.Editor
 {
     /// <summary>
-    /// Says what the analysis did, in the console, where it can be seen.
+    /// 분석이 무엇을 했는지를, 볼 수 있는 자리인 콘솔에 말한다.
     /// </summary>
     /// <remarks>
-    /// The analysis runs during compilation in a process of its own and cannot talk to the console
-    /// from there. It leaves a file per assembly instead; this reads them once the reload that
-    /// follows compilation brings the editor back, and clears them so the next compilation starts
-    /// from nothing rather than repeating a stale answer.
+    /// 분석은 컴파일 도중 제 프로세스에서 돌고 거기서는 콘솔에 말을 걸 수 없다. 대신 어셈블리마다 파일 하나를 남긴다.
+    /// 이것은 컴파일 뒤의 리로드가 에디터를 되돌려 놓으면 그 파일들을 한 번 읽고, 다음 컴파일이 낡은 답을 되풀이하는
+    /// 대신 아무것도 없는 데서 시작하도록 그것들을 지운다.
     ///
-    /// Speaking up matters more here than it looks. The previous build of this package had an
-    /// analysis that silently did nothing, and the scan that followed reported no coverage gaps —
-    /// which read as a clean result and was in fact the absence of any result at all.
+    /// 여기서 소리 내어 말하는 일은 보이는 것보다 중요하다. 이 패키지의 이전 빌드에는 조용히 아무것도 하지 않는 분석이
+    /// 있었고, 뒤이은 스캔은 커버리지 공백이 없다고 보고했다 — 그것은 깨끗한 결과로 읽혔지만 실은 결과라는 것이 아예
+    /// 없었던 것이다.
     /// </remarks>
     internal static class ScopeReportReader
     {
@@ -59,8 +58,7 @@ namespace Artel.Affordances.Editor
                 }
                 catch (Exception)
                 {
-                    // A report that cannot be read is one assembly unaccounted for, not a reason to
-                    // drop the others.
+                    // 읽을 수 없는 리포트는 셈에 들지 못한 어셈블리 하나이지, 나머지를 버릴 이유가 아니다.
                     summary.Append('\n').Append(Path.GetFileNameWithoutExtension(report))
                         .Append(": report could not be read.");
                 }
