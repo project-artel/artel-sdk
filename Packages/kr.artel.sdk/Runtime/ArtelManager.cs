@@ -5,6 +5,7 @@ using Artel.Auth;
 using Artel.Capture;
 using Artel.Diagnostics;
 using Artel.Domain;
+using Artel.Evidence;
 using Artel.Protocol.Dto;
 using Artel.Protocol.Mapping;
 using Artel.Serialization;
@@ -15,7 +16,7 @@ using UnityEngine;
 
 namespace Artel
 {
-    public sealed class ArtelManager : MonoBehaviour
+    public sealed class ArtelManager : MonoBehaviour, IReadingChannel
     {
         private const float SceneScanIntervalSeconds = 1f;
         private const float PerformanceReportIntervalSeconds = 1f;
@@ -26,6 +27,25 @@ namespace Artel
         /// register it.
         /// </summary>
         private static ArtelManager instance;
+
+        /// <summary>
+        /// <c>GAME_STATE</c> 채널을 보내는가 (ARTEL-513). <b>기본은 끔이다.</b>
+        /// </summary>
+        /// <remarks>
+        /// <b>임시 스위치다.</b> 실제로 지우는 것은 ARTEL-400 이고, 그때 이 속성도 함께 사라진다.
+        ///
+        /// 목적은 채널을 덜어내는 것이지 선택지를 만드는 것이 아니다. 그래서 기본이 끔이다 — 켜 두고 누군가 끄기를
+        /// 기다리면 아무도 끄지 않고, 판독이 <c>GAME_STATE</c> 를 대신할 수 있는지는 영영 재지지 않는다. 둘이 함께
+        /// 오는 동안에는 어느 쪽이 무엇을 하고 있는지 가릴 방법이 없다.
+        ///
+        /// 그럼에도 지우지 않고 스위치로 둔 것은 <b>되돌릴 수 있어야 하기 때문</b>이다. 판독이 못 덮는 것이 실제
+        /// 게임에서 드러나면 코드를 되살리는 대신 이 값을 <c>true</c> 로 돌려 그 자리에서 복구한다.
+        ///
+        /// 프레임만 막지 않고 <see cref="sceneStatePoller"/> 앞에서 막는 것이 요점이다. ARTEL-400 이 지우려는 것은
+        /// 전송이 아니라 <b>씬 순회</b>(<c>SceneScanner</c>·<c>SceneStatePoller</c>)이므로, 그것이 돌지 않는 상태를
+        /// 재야 폐기 뒤를 예측할 수 있다.
+        /// </remarks>
+        public static bool SendsGameState { get; set; } = false;
 
         [SerializeField] private bool connectOnEnable;
         [SerializeField] private Server server = new Server();
@@ -48,6 +68,9 @@ namespace Artel
         /// <summary>Frame Timing Stats 경고를 한 번만 내기 위한 표시. 매 보고마다 찍으면 로그가 덮인다.</summary>
         private bool warnedFrameTimingUnavailable;
         private bool reportedDeviceContext;
+
+        /// <summary>지난 프레임의 전송 연결 상태. 새 연결이 열린 프레임을 집어내는 데만 쓴다.</summary>
+        private bool transportWasConnected;
         private ArtelStreamHost streamHost;
         private Coroutine webRtcPump;
 
@@ -157,7 +180,17 @@ namespace Artel
                     jsonCodec,
                     () => server,
                     ArtelSdkSession.LoadToken,
-                    ArtelSdkSession.LoadInstanceId));
+                    ArtelSdkSession.LoadInstanceId),
+                this,
+                // 순회가 씬을 하나씩 띄우는 그 자리에서 화면도 한 장씩 뜬다. 같은 capturer 를 쓰는 이유는 back buffer 를
+                // 읽는 경로가 하나뿐이어야 `capture_screen` 이 보는 것과 근거에 실리는 것이 갈라지지 않기 때문이다.
+                new WalkedEvidenceScan(new ScreenCapturer()),
+                // 캡처와 축이 다르다. 근거 문서는 살아 있는 인스턴스가 아니라 빌드에 붙으므로 gameBuildId 를 읽는다.
+                new EvidenceUploader(
+                    jsonCodec,
+                    () => server,
+                    ArtelSdkSession.LoadToken,
+                    ArtelSdkSession.LoadGameBuildId));
             sceneStatePoller = new SceneStatePoller(
                 scanner,
                 new SceneStateHashTracker(jsonCodec),
@@ -228,8 +261,11 @@ namespace Artel
 
                 if (webSocketTransport == null)
                 {
+                    transportWasConnected = false;
                     return;
                 }
+
+                NoticeNewConnection();
 
                 using (ArtelProfilerMarkers.ManagerHandleMessage.Auto())
                 {
@@ -249,6 +285,29 @@ namespace Artel
                     SendPerformanceReport();
                 }
             }
+        }
+
+        /// <summary>
+        /// 연결이 새로 열린 프레임에 씬 해시를 비운다.
+        /// </summary>
+        /// <remarks>
+        /// 재연결한 서버 세션은 이 SDK 가 무엇을 띄우고 있는지 모른다. SceneStatePoller 는 마지막으로
+        /// 보낸 씬의 해시를 들고 있어서, 씬이 그대로면 GAME_STATE 를 다시 보내지 않는다. 그러면
+        /// 소켓만 되살아나고 새 세션은 빈 채로 남아, 에이전트가 아무것도 보지 못한 채 액션을 고른다.
+        ///
+        /// 상승 edge 를 여기서 재는 이유는 전송 쪽 콜백이 Unity 메인 스레드가 아니기 때문이다.
+        /// Update 에서 상태를 읽으면 그 판정과 Reset 이 모두 메인 스레드에 남는다.
+        /// </remarks>
+        private void NoticeNewConnection()
+        {
+            var connected = webSocketTransport.IsConnected;
+
+            if (connected && !transportWasConnected)
+            {
+                sceneStatePoller.Reset(Time.unscaledTime);
+            }
+
+            transportWasConnected = connected;
         }
 
         public void StartTransport()
@@ -297,13 +356,93 @@ namespace Artel
                     "[Artel] WebSocket transport is owned by another component, " +
                     "so this game will not connect to the orchestration server. " +
                     "Remove ArtelTestPageManager from the scene to connect.");
+
+                // discovery 는 이미 따라가고 있다: 그 전송을 설치한 쪽은 SetWebSocketTransport 를 거쳤고 그것이 시작시킨다. 여기서
+                // 다시 시작하면 같은 연결에 대한 두 번째 주장이 되고, 둘 중 하나가 움직이는 순간 어긋난다.
                 return;
             }
 
             webSocketTransport.Start();
             sceneStatePoller.Reset(Time.unscaledTime);
-            Debug.Log("[Artel] WebSocket transport started.");
+            BeginDiscovery();
+            Debug.Log("[Artel] WebSocket transport started. GAME_STATE is "
+                      + (SendsGameState ? "on (restored, ARTEL-513)." : "off; read the pulse channel."));
         }
+
+        /// <summary>
+        /// 이제 지켜볼 누군가가 연결됐으므로 게임을 읽기 시작한다.
+        /// </summary>
+        /// <remarks>
+        /// 인스턴스를 연결하는 것이 동의다. 게임은 여러 이유로 이 SDK 를 나르고 그중 하나만이 QA 다 — 화면을 스트리밍하거나 프레임
+        /// 시간을 재는 프로젝트는 씬 로드마다 스캔되기를 청한 적도, 플레이어의 디스크에 리포트가 나타나기를 청한 적도 없다. 그저
+        /// 게임을 시작하는 것만으로 그 둘이 다 일어나곤 했다.
+        ///
+        /// 전송이 존재하게 되는 자리마다 불리고, 그것은 두 곳이다: <see cref="StartTransport"/> 가 제 것을 만들 때와,
+        /// <see cref="SetWebSocketTransport"/> 가 하나를 건네받을 때. 두 번째가 로컬 테스트 페이지가 연결하는 방식이고 그쪽은
+        /// StartTransport 에 아예 닿지 않는다 — 그래서 앞쪽에만 둔 시작은 테스트 페이지 경로 전체를 아무도 연결되지 않은 것으로
+        /// 읽는다.
+        ///
+        /// 완료된 핸드셰이크가 아니라 전송을 가지는 것이 방아쇠다. 소켓은 비동기로 열리고 테스트 페이지의 서버는 어떤 브라우저가
+        /// 붙기 전부터 듣고 있으므로, 반대쪽 끝을 기다리면 첫 스캔이 예측할 수 없는 순간에 도착하거나 아무도 열지 않는 페이지에
+        /// 대해서는 영영 오지 않는다. 연결을 청하는 것이 동의이고, 핸드셰이크는 배관이다.
+        /// </remarks>
+        private void BeginDiscovery()
+        {
+            Affordances.Scan.AffordanceBootstrap.Follow();
+        }
+
+        /// <summary>연결이 사라지면 게임 읽기를 멈춘다.</summary>
+        /// <remarks>
+        /// 여기서 시작시킨 것이 없는데도 판독도 여기서 멈춘다. 연결이 끊겨 끝나는 세션은 <see cref="StopReadings"/> 를 부를
+        /// 기회를 얻지 못하고, 돌게 남겨진 박자는 게임이 떠 있는 내내 아무도 읽지 않을 파일에 쓴다.
+        /// </remarks>
+        private void EndDiscovery()
+        {
+            Affordances.Scan.AffordanceBootstrap.StopFollowing();
+            StopReadings();
+        }
+
+        /// <summary>
+        /// 라이브 판독을 시작하고, 지금 돌고 있는지를 말한다.
+        /// </summary>
+        /// <remarks>
+        /// 연결로 함의되는 것이 아니라 청해지는 것이고, 그 분리가 이 메서드의 전부다. 연결은 도구가 봐도 된다고 말하고, 세션은
+        /// 실행이 시작됐다고 말하며, 그것이 언제인지는 실행을 모는 쪽만 안다.
+        ///
+        /// 그 값이 얼마인지 재기 전까지 둘은 같은 순간이었다. 모든 씬을 도는 순회도 연결에서 시작하고 그것은 아무도 걸어가지 않은
+        /// 화면을 방문한다 — 그래서 그 곁에서 찍은 판독은 플레이어가 본 적 없는 화면에 게임이 있다고 보고한다. 샘플 게임에서
+        /// 실측했다: 순회 동안 찍은 판독은 8초에 125,548 바이트였고 플레이어가 있은 적 없는 씬 셋을 서술했다. 순회 뒤에 시작한
+        /// 같은 채널은 4,369 바이트짜리 판독 하나를 쓰고 14초 동안 아무것도 쓰지 않았다.
+        ///
+        /// 독자가 걸러 낼 수 있는 잡음도 아니다. 판독은 자기가 순회 중이라고 말하지 않으므로 걸러 낼 근거가 그 안에 없다.
+        ///
+        /// 멱등이다: 이미 읽고 있는 동안의 두 번째 호출은 참으로 답하고 아무것도 바꾸지 않는다.
+        /// </remarks>
+        public bool StartReadings()
+        {
+            if (Affordances.Scan.AffordanceBootstrap.Watching)
+            {
+                return true;
+            }
+
+            // 연결이 있으면 판독은 그 소켓으로 나간다. 없으면 sink 를 건네지 않아 예전대로
+            // 파일로 떨어진다 — 아무도 듣고 있지 않을 때에도 채널을 지켜볼 수 있어야 한다는
+            // 것이 이 채널을 만들 때의 규율이고, 연결이 없다는 것이 그것을 거둘 이유는 아니다.
+            var sink = webSocketTransport == null
+                ? null
+                : new WebSocketPulseSink(() => webSocketTransport, () => nextMessageId++);
+
+            return Affordances.Scan.AffordanceBootstrap.WatchLiveState(sink);
+        }
+
+        /// <summary>라이브 판독을 끝낸다. 한 번도 시작하지 않았을 때 불러도 안전하다.</summary>
+        public void StopReadings()
+        {
+            Affordances.Scan.AffordanceBootstrap.StopWatching();
+        }
+
+        /// <summary>라이브 판독이 돌고 있는지.</summary>
+        internal bool Reading => Affordances.Scan.AffordanceBootstrap.Watching;
 
         public void StopTransport()
         {
@@ -323,6 +462,10 @@ namespace Artel
             // Ahead of the ownership checks: whoever owns the socket, a run that ends mid-drag must
             // not leave the game holding a button nobody will ever send the release for.
             ReleaseAgentInput();
+
+            // 게임 읽기가 그것을 청한 연결보다 오래 사는 것이 이 짝짓기가 피하려고 존재하는 값이다 — 아무도 없는데 씬 로드마다
+            // 스캔하고 파일이 자라는 것.
+            EndDiscovery();
 
             if (webSocketTransport == null)
             {
@@ -371,6 +514,10 @@ namespace Artel
             ReleaseAgentInput();
             webSocketTransport = null;
             ownsTransport = true;
+
+            // 읽기를 청한 연결이 사라졌으므로 읽기도 함께 간다 — 이 매니저가 스스로 만든 전송에 대해 StopTransport 가 지키는 것과
+            // 같은 짝짓기다.
+            EndDiscovery();
         }
 
         internal void SetWebSocketTransport(IArtelWebSocketTransport transport, bool takeOwnership)
@@ -383,6 +530,10 @@ namespace Artel
             webSocketTransport = transport ?? throw new ArgumentNullException(nameof(transport));
             ownsTransport = takeOwnership;
             sceneStatePoller.Reset(Time.unscaledTime);
+
+            // 주입된 전송도 다른 것과 마찬가지로 하나의 연결이다. 로컬 테스트 페이지는 여기로만 도착하고 — StartTransport 를 결코
+            // 부르지 않는다 — 그래서 그 실행이 게임을 읽겠다고 청하는 누군가로 인식될 수 있는 유일한 자리가 여기다.
+            BeginDiscovery();
         }
 
         public void SetServer(Server configuredServer)
@@ -548,6 +699,15 @@ namespace Artel
 
         private void ReplyWithGameState(ArtelWebSocketMessage request)
         {
+            // 조용히 무동작하지 않는다. 이것은 물어본 것에 대한 답이고, 답이 없으면 묻는 쪽은 화면이 비어 있는 것과
+            // 채널이 꺼진 것을 가릴 수 없다 — 그 둘은 다음 수가 다르다. 오류로 답하는 것은 SendGameState 와 다른데,
+            // 그쪽은 배치가 자기 몫으로 끼운 스캔이라 답을 기다리는 쪽이 없기 때문이다.
+            if (!SendsGameState)
+            {
+                SendError(request, "GAME_STATE is switched off on this build. Read the pulse channel instead.");
+                return;
+            }
+
             var poll = sceneStatePoller.ScanNow();
 
             request.Reply(SerializeGameState(poll.Scene));
@@ -556,6 +716,11 @@ namespace Artel
 
         private void SendGameState()
         {
+            if (!SendsGameState)
+            {
+                return;
+            }
+
             if (webSocketTransport == null)
             {
                 return;
@@ -754,6 +919,13 @@ namespace Artel
 
         private void PollSceneState()
         {
+            // 순회 앞에서 막는다. 여기서 나가는 것만 막으면 스캔 비용은 그대로 치르고, 그러면 이 스위치가
+            // 재려는 것을 재지 못한다.
+            if (!SendsGameState)
+            {
+                return;
+            }
+
             if (!webSocketTransport.IsConnected)
             {
                 return;

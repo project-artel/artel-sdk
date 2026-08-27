@@ -5,7 +5,8 @@
     "Artel.Attributes",
     "Artel.Runtime",
     "Artel.Tracking.Fixtures",
-    "Unity.TextMeshPro"
+    "Unity.TextMeshPro",
+    "Artel.Affordances.Scan"
   ],
   "includePlatforms": [
     "Editor"
@@ -14,7 +15,8 @@
   "allowUnsafeCode": false,
   "overrideReferences": true,
   "precompiledReferences": [
-    "Newtonsoft.Json.dll"
+    "Newtonsoft.Json.dll",
+    "websocket-sharp.dll"
   ],
   "autoReferenced": false,
   "defineConstraints": [],
