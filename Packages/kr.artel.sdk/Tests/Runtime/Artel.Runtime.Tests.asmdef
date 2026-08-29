@@ -4,6 +4,7 @@
   "references": [
     "Artel.Runtime",
     "Artel.Tracking.Fixtures",
+    "UnityEngine.UI",
     "Unity.TextMeshPro",
     "Artel.Affordances.Scan"
   ],

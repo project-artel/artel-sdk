@@ -73,6 +73,17 @@ namespace Artel.Affordances.Live
                 return false;
             }
 
+            // 글자를 띄우는 객체는 다른 무엇도 자격이 없어도 쓴다. 스캔의 규칙에서 한 방향으로 벗어나는 두 번째
+            // 자리이고, 첫 번째(감시 대상 멤버를 쥔 객체)와 같은 이유다 — 아무도 찾을 수 없는 값이 배경 한 줄보다
+            // 나쁘다. 라벨은 근거를 굽지도 인스펙터로 무엇을 부르지도 않아 셋 중 어느 조건에도 걸리지 않는데,
+            // 명세가 묻는 것은 그 라벨에 적힌 글자인 경우가 흔하다.
+            //
+            // 컴포넌트 순회보다 먼저 묻는 것은 이 답이 그 순회를 통째로 건너뛰게 하기 때문이다.
+            if (Legible.Carries(subject))
+            {
+                return true;
+            }
+
             var calls = new List<PersistentCall>();
 
             foreach (var component in components)
@@ -112,6 +123,7 @@ namespace Artel.Affordances.Live
         internal static void Forget()
         {
             Answered.Clear();
+            Legible.Forget();
         }
     }
 }
