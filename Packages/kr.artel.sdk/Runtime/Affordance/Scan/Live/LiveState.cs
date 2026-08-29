@@ -560,6 +560,8 @@ namespace Artel.Affordances.Live
 
             moved |= Tagged(text, transform, ledger, identity);
 
+            moved |= Said(text, transform, ledger, identity);
+
             moved |= Where(text, transform, ledger, identity);
 
             moved |= Offered(text, transform, ledger, identity);
@@ -972,6 +974,51 @@ namespace Artel.Affordances.Live
             var rendered = said.ToString();
 
             if (!ledger.Keep(identity + "|tag", rendered))
+            {
+                return false;
+            }
+
+            text.Append(rendered);
+            return true;
+        }
+
+        /// <summary>
+        /// 이 객체가 화면에 띄우고 있는 글자.
+        /// </summary>
+        /// <remarks>
+        /// 판독에 화면의 글자가 없어서 에이전트가 그림을 믿었다. 자세한 것은 <see cref="Legible"/> 에 있다.
+        ///
+        /// <c>tag</c> 와 같은 층이다. 게임별 지식이 아니라 <b>Unity 가 글자를 그리라고 준 타입</b>에서 읽으므로 어느
+        /// 프로젝트에서나 같은 뜻이고, 조건이 물었기 때문에 싣는 것이 아니다.
+        ///
+        /// <b>장부를 탄다는 것이 이 값의 절반이다.</b> 읽는 것만큼 변하는 것을 아는 게 중요하다 — 대사가 찍히는 중이면
+        /// 매 판독마다 이 키가 움직이고, 다 찍히면 멈춘다. 누른 뒤에 값이 바뀌면 넘어간 것이고, 그대로면 입력이 안 먹은
+        /// 것이다. 지금은 그 넷을 가릴 수단이 없어 <c>Space</c> 를 네 번 눌러 보는 것 말고 할 수 있는 일이 없다.
+        ///
+        /// 그래서 글자만 바뀐 판독은 <c>settled</c> 로 버려지지 않는다. <see cref="Pulse"/> 의 그 갈래는 아무것도
+        /// 기다리지 않고 판독 하나를 큐에 넣을지만 정하므로, 글자가 계속 움직여도 멈추는 것은 없다. 타자기가 도는
+        /// 1 초 동안 배치로 나가는 판독이 한둘에서 열 안팎으로 늘고, 애니메이션이 끝나면 되돌아간다.
+        ///
+        /// <b>아는 한계.</b> 상시 변하는 글자(타이머, 점수, FPS 표시)가 있는 씬은 <c>settled</c> 가 영영 뜨지 않는다.
+        /// 그 씬에서는 "화면이 멈췄다" 는 신호를 얻지 못한다.
+        /// </remarks>
+        private static bool Said(
+            StringBuilder text, Transform transform, Ledger ledger, string identity)
+        {
+            var said = Legible.Of(transform.gameObject);
+
+            if (said == null)
+            {
+                return false;
+            }
+
+            var wrote = new StringBuilder(64);
+            wrote.Append(',');
+            Json.Property(wrote, "text", said);
+
+            var rendered = wrote.ToString();
+
+            if (!ledger.Keep(identity + "|text", rendered))
             {
                 return false;
             }
