@@ -265,3 +265,32 @@ offset 을 그대로 나르므로, 한 술어를 두 자리에서 부르면 두 
   non-goal 로 두고, 샘플 게임에서 몇 건인지 세어 본 다음 따로 다룬다.
 - 테스트 어셈블리는 Unity 에디터가 디버그로 컴파일하므로 분기 모양이 지역 변수로 모인 형태만 검증된다.
   최적화된 모양은 WordVenture 스캔으로만 확인된다. 값 모양은 양쪽에서 같다.
+
+## Pull Request 112 Continuous Integration Repair
+
+Linux Unity 2022.3.34f1 EditMode 에서 375개 중 아래 한 테스트가 실패했다.
+
+```text
+NegatedCallArrivesWithTheOperatorFlipped
+expected: PredicateFixtures.hp <= 0
+actual:   this.Alive == 0
+```
+
+실패 출력과 현재 경로를 함께 보면 `VariantBuilder.Predicate` 가 branch producer를 direct `call` 또는
+`callvirt` 로만 받는 경계가 원인이다. Linux compiler가 `!Alive` 를 `call get_Alive; ldc.i4.0; ceq` 로
+표현하면 producer가 `ceq` 이므로 predicate 읽기가 멈추고, `ReadCondition` fallback이 호출 이름을 그대로
+적는다. Continuous integration artifact에는 compiled test assembly가 없어 이 IL 모양은 code path에서 한
+inference이며, Linux Unity continuous integration 재실행으로 확인한다.
+
+### Repair Checklist
+
+- [x] `VariantBuilder.Predicate` 에서 branch가 원하는 producer의 truth value를 먼저 계산한다.
+- [x] producer가 direct `call` 또는 `callvirt` 이면 지금 동작을 유지한다.
+- [x] producer가 리터럴 `0` 과 비교하는 `ceq` 이고 그 안쪽 producer가 direct `call` 또는 `callvirt` 일 때만
+  호출을 복구하고 원하는 truth value를 한 번 뒤집는다.
+- [x] 다른 wrapper와 읽지 못한 모양은 계속 fallback으로 보낸다. generic boolean expression normalizer,
+  새 `Condition` 종류, `PredicateConditions`, binding, cache는 바꾸지 않는다.
+- [x] 기존 positive call test가 `PredicateFixtures.hp > 0` 을 유지하고 negated call test가
+  `PredicateFixtures.hp <= 0` 을 내놓는지 확인한다.
+- [x] Windows Unity 2022.3.34f1에서 전체 EditMode 375개가 모두 통과하는지 확인한다.
+- [ ] Linux compiler 모양의 최종 확인은 Pull request check에서 한다.

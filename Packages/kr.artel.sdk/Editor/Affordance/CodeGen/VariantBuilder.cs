@@ -711,10 +711,11 @@ namespace Artel.Affordances.CodeGen
                 return null;
             }
 
-            var call = Producer(branch, decision);
+            var branched = ReferenceEquals(taken.First, branch.Operand as Instruction);
+            var wantTrue = onTrue ? branched : !branched;
+            var call = PredicateCall(Producer(branch, decision), decision, ref wantTrue);
 
-            if (call == null ||
-                (call.OpCode.Code != Code.Call && call.OpCode.Code != Code.Callvirt))
+            if (call == null)
             {
                 return null;
             }
@@ -726,8 +727,7 @@ namespace Artel.Affordances.CodeGen
                 return null;
             }
 
-            var branched = ReferenceEquals(taken.First, branch.Operand as Instruction);
-            var own = PredicateConditions.For(callee, onTrue ? branched : !branched);
+            var own = PredicateConditions.For(callee, wantTrue);
 
             if (own == null)
             {
@@ -749,6 +749,50 @@ namespace Artel.Affordances.CodeGen
             }
 
             return own.ReadFrom(CallSiteConditions.BindingAt(call, graph.Method, decision.First, callee));
+        }
+
+        /// <summary>분기가 검사하는 술어 호출과 그 호출에서 원하는 답.</summary>
+        /// <remarks>
+        /// compiler에 따라 <c>!predicate()</c> 는 호출 결과로 바로 분기하거나
+        /// <c>call; ldc.i4.0; ceq</c> 로 부정한 뒤 분기한다. 뒤의 모양은 술어가 내놓은 답과 분기가 검사하는
+        /// 값이 반대이므로 <paramref name="wantTrue"/> 를 한 번 뒤집는다. 그 한 모양 밖의 연산은 호출을
+        /// 그대로 남기는 fallback으로 보낸다.
+        /// </remarks>
+        private static Instruction PredicateCall(
+            Instruction producer, BasicBlock decision, ref bool wantTrue)
+        {
+            if (producer == null)
+            {
+                return null;
+            }
+
+            if (producer.OpCode.Code == Code.Call || producer.OpCode.Code == Code.Callvirt)
+            {
+                return producer;
+            }
+
+            if (producer.OpCode.Code != Code.Ceq)
+            {
+                return null;
+            }
+
+            var zero = Preceding(producer, decision);
+
+            if (!IlReading.TryConstant(zero, out var value) || value != 0)
+            {
+                return null;
+            }
+
+            var call = Preceding(zero, decision);
+
+            if (call == null ||
+                (call.OpCode.Code != Code.Call && call.OpCode.Code != Code.Callvirt))
+            {
+                return null;
+            }
+
+            wantTrue = !wantTrue;
+            return call;
         }
 
         /// <summary>
