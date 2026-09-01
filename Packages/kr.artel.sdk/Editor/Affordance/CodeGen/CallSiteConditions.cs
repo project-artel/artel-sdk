@@ -283,7 +283,7 @@ namespace Artel.Affordances.CodeGen
         }
 
         /// <summary>이 호출이 호출자 자신의 객체에 대고 이루어졌는지.</summary>
-        private static bool OnThis(
+        internal static bool OnThis(
             Mono.Cecil.Cil.Instruction call, MethodDefinition caller, Mono.Cecil.Cil.Instruction boundary)
         {
             var reference = call.Operand as MethodReference;
@@ -307,6 +307,24 @@ namespace Artel.Affordances.CodeGen
             // 걷기를 가둘 블록이 없으면 정직한 답이 없고, 답이 없을 때의 정직한 답은 아니오다.
             return boundary != null &&
                    IlReading.Receiver(reference, call, boundary, caller) == "this";
+        }
+
+        /// <summary>
+        /// 호출 지점 하나가 피호출자의 용어를 호출자의 것으로 옮기는 방법.
+        /// </summary>
+        /// <remarks>
+        /// 경로를 따라 나르는 <see cref="ReceivedAlong"/> 과 달리 호출 하나만 본다. 술어 안을 읽는 쪽이 쓰는데,
+        /// 그쪽은 경로가 아니라 분기가 검사하는 그 호출 하나를 손에 쥐고 있기 때문이다. 수신자와 인자를 읽는 일은
+        /// 이 클래스가 이미 하던 것이라 여기 둔다.
+        /// </remarks>
+        internal static Binding BindingAt(
+            Mono.Cecil.Cil.Instruction call, MethodDefinition caller, Mono.Cecil.Cil.Instruction boundary,
+            MethodDefinition callee)
+        {
+            var receiver = ReceiverAt(call, caller, boundary, out var standing);
+            var args = PassedAt(call, caller, boundary, out var whose);
+
+            return Binding.Of(callee, receiver, standing, args, whose);
         }
 
         /// <summary>수신자의 표현식. 그것이 호출자 자신의 것 중 하나일 때.</summary>
