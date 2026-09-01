@@ -122,6 +122,69 @@ namespace Artel.Tests
             Assert.That(Legible.Of(impostor), Is.Null);
         }
 
+        [Test]
+        public void 계기로_표시된_것은_판독에_안_넣는다()
+        {
+            // SDK 가 화면에 띄우는 것들이 게임인 척 섞여 들어왔다 (ARTEL-698). 스테이지 렌더에서
+            // `Artel Keyboard Status Canvas` 아래가 48줄로 1등이었고, 게임에서 가장 많은
+            // `Card(Clone)` 25줄의 두 배였다.
+            var overlay = Saying("PRESSED KEYS");
+            overlay.AddComponent<Instrument>();
+
+            Assert.That(
+                Worth.Writing(overlay, new Dictionary<Type, List<Watched>>()),
+                Is.False);
+        }
+
+        [Test]
+        public void 계기_아래에_있으면_표시가_없어도_안_넣는다()
+        {
+            // 표시는 캔버스에 하나 붙이고 그 아래 전부가 빠진다. 라벨마다 붙이게 하면 언젠가
+            // 하나를 빠뜨리고, 그날 그 라벨만 게임인 척 나온다.
+            var canvas = Object("Artel Keyboard Status Canvas");
+            canvas.AddComponent<Instrument>();
+
+            var label = Saying("(960, 374)");
+            label.transform.SetParent(canvas.transform, false);
+
+            Assert.That(
+                Worth.Writing(label, new Dictionary<Type, List<Watched>>()),
+                Is.False);
+        }
+
+        [Test]
+        public void 계기가_붙은_게임_오브젝트는_그대로_넣는다()
+        {
+            // `ArtelManager` 는 게임이 놓은 오브젝트에 컴포넌트로 붙고 캔버스를 그 자식으로 만든다.
+            // 그래서 표시를 부모가 아니라 캔버스에 단다 — 부모에 달면 게임 것까지 빠진다.
+            // 샘플 게임에서는 `StageDataSingleton` 이 그 오브젝트에 산다.
+            var host = Saying("게임이 놓은 것");
+            var canvas = Object("Artel Keyboard Status Canvas");
+            canvas.AddComponent<Instrument>();
+            canvas.transform.SetParent(host.transform, false);
+
+            Assert.That(
+                Worth.Writing(host, new Dictionary<Type, List<Watched>>()),
+                Is.True);
+        }
+
+        [Test]
+        public void 꺼진_계기도_계기다()
+        {
+            // `GetComponentInParent` 를 안 쓰는 이유다 — 그것은 꺼진 객체를 건너뛴다. 오버레이는
+            // 꺼져 있을 수 있고, 켜질 때 갑자기 게임으로 보고되면 그것이 더 나쁘다.
+            var canvas = Object("Artel Overlay Canvas");
+            canvas.AddComponent<Instrument>();
+            canvas.SetActive(false);
+
+            var label = Saying("숨어 있는 계기");
+            label.transform.SetParent(canvas.transform, false);
+
+            Assert.That(
+                Worth.Writing(label, new Dictionary<Type, List<Watched>>()),
+                Is.False);
+        }
+
         /// <summary>
         /// 이름만 같은 남. 속성으로 두는 것이 요점이다 — 필드로 두면 <c>GetProperty</c> 가 어차피 못 찾아,
         /// 이름 목록이 없어도 이 테스트가 통과한다.

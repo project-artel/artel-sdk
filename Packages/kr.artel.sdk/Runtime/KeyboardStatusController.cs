@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Artel.Affordances.Scan;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -158,6 +159,8 @@ namespace Artel
                 typeof(Canvas),
                 typeof(CanvasScaler));
             canvasObject.transform.SetParent(transform, false);
+            // 이 아래는 계기다. 사람이 보는 것이고 판독은 보고하지 않는다 (ARTEL-698).
+            canvasObject.AddComponent<Instrument>();
 
             var canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
