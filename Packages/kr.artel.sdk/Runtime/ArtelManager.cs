@@ -12,6 +12,7 @@ using Artel.Serialization;
 using Artel.Streaming;
 using Artel.Tracking;
 using Unity.WebRTC;
+using Artel.Affordances.Scan;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -134,7 +135,13 @@ namespace Artel
                 return;
             }
 
-            new GameObject("Artel").AddComponent<ArtelManager>();
+            // 우리가 만든 오브젝트라 통째로 계기다 (ARTEL-698). 사용자가 자기 씬 오브젝트에
+            // 매니저를 붙이는 경우(README 가 안내하는 쪽)에는 이 표시를 달 수 없다 — 그 오브젝트는
+            // 게임 것이고, 샘플 게임에서는 `StageDataSingleton` 이 거기 산다. 그래서 오버레이는
+            // 각자 자기 캔버스에 표시를 단다.
+            var host = new GameObject("Artel");
+            host.AddComponent<Instrument>();
+            host.AddComponent<ArtelManager>();
         }
 #endif
 

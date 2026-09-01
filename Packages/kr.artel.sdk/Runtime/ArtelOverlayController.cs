@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Artel.Auth;
 using Artel.Protocol.Dto;
 using Artel.Serialization;
+using Artel.Affordances.Scan;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -327,6 +328,8 @@ namespace Artel
             // never rebuild it. CursorController and KeyboardStatusController
             // already attach theirs the same way.
             canvasObject.transform.SetParent(transform, false);
+            // 이 아래는 계기다. 사람이 보는 것이고 판독은 보고하지 않는다 (ARTEL-698).
+            canvasObject.AddComponent<Instrument>();
             var canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = short.MaxValue - 1;
