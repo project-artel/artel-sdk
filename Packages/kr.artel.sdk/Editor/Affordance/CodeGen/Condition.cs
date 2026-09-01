@@ -295,6 +295,11 @@ namespace Artel.Affordances.CodeGen
                         Right = right,
                         Context = standing,
                         SubjectLost = standing == null ? Test.SubjectLost : null,
+
+                        // 갈아 끼우는 것은 수신자를 부르는 이름이고, 감시 대상은 선언 타입과 멤버 이름이다. 옮겨도
+                        // 같은 필드이므로 그대로 나른다. 여기서 빠뜨리는 동안, 호출 경로를 따라 옮겨진 조건은 전부
+                        // 되읽을 자리를 잃고 제 전제를 확인할 방법이 없는 규칙으로 도착했다.
+                        Watch = Test.Watch,
                         Offset = Test.Offset
                     });
                 }
