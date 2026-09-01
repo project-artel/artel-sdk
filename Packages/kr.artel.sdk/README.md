@@ -2,10 +2,20 @@
 
 ## Runtime connection
 
-Add `ArtelManager` and `ArtelOverlayController` to a scene object. Configure
-`secure`, `host`, and `port` on the manager's `Server` field. The server builds
-the matching HTTP and WebSocket base URLs (`http`/`ws` or `https`/`wss`). API
-clients own their endpoint paths.
+Install the package. Nothing else is required — in the editor and in
+development builds `ArtelManager` spawns itself after the first scene loads, and
+it adds `ArtelOverlayController`, `CursorController` and `KeyboardStatusController`
+on its own. It ships pointing at the Artel servers.
+
+Release builds carry none of this. The spawn and the scan are compiled out
+(`#if UNITY_EDITOR || DEVELOPMENT_BUILD`), so a game shipped to players holds no
+subscription and no callback of ours.
+
+Put `ArtelManager` on a scene object only to override where it connects —
+`secure`, `host`, and `port` on its `Server` field, plus `frontendOrigin` for the
+login relay page. A manager the scene carries keeps the spot: the spawn steps
+aside when one already exists. The server builds the matching HTTP and WebSocket
+base URLs (`http`/`ws` or `https`/`wss`). API clients own their endpoint paths.
 
 Registration is authenticated with an **instance key** issued by the Artel
 dashboard. Create a game instance there, copy its key, and paste it into the
