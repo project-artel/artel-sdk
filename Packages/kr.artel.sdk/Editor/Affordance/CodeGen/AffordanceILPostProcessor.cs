@@ -122,6 +122,9 @@ namespace Artel.Affordances.CodeGen
             // 프로퍼티의 이름은 어셈블리마다 다른 필드를 뜻하므로, 하나에서 배운 것을 다음으로 나를 수 없다.
             SimpleSetter.Forget();
 
+            // 술어의 조건도 마찬가지다. 쥐고 있는 열쇠가 그것을 읽은 모듈의 MethodDefinition 이다.
+            PredicateConditions.Forget();
+
             var carriedSymbols = HasSymbols(compiledAssembly);
             var readSymbols = carriedSymbols;
 

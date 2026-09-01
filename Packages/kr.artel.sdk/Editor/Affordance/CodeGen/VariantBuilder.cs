@@ -675,11 +675,124 @@ namespace Artel.Affordances.CodeGen
                 return incoming;
             }
 
+            var predicate = Predicate(decision, taken, graph);
+
+            if (predicate != null)
+            {
+                return predicate;
+            }
+
             var precondition = ReadCondition(decision, taken, graph.HasThis, graph.Method, out var unread);
 
             return precondition == null
                 ? Condition.Unreadable("condition", unread)
                 : Condition.FromTest(precondition);
+        }
+
+        /// <summary>
+        /// 결정이 검사하는 것이 게임 자신의 술어일 때, 그 술어가 하는 비교. 아니면 null.
+        /// </summary>
+        /// <remarks>
+        /// 호출을 불투명한 값으로 읽으면 <c>ChatWindowController.IsStreaming != 0</c> 이 나오는데, 그것은 규칙이
+        /// 아니라 호출의 이름이다. 테스터는 그것으로 아무것도 준비할 수 없고, 호출은 감시 대상이 아니므로 그 조건을
+        /// 확인할 방법도 없다. 술어 안에는 그 둘 다 있다.
+        ///
+        /// 옮기지 못하는 것은 전부 여기서 null 이 되고, 그러면 읽기는 지금까지 하던 것을 그대로 한다 — 호출의
+        /// 이름을 대고 <c>!= 0</c> 을 붙인다. 그것이 덜 말하지만 틀리지는 않는다.
+        /// </remarks>
+        private static Condition Predicate(BasicBlock decision, BasicBlock taken, ControlFlowGraph graph)
+        {
+            var branch = decision.Last;
+            var onTrue = branch.OpCode.Code == Code.Brtrue || branch.OpCode.Code == Code.Brtrue_S;
+            var onFalse = branch.OpCode.Code == Code.Brfalse || branch.OpCode.Code == Code.Brfalse_S;
+
+            if (!onTrue && !onFalse)
+            {
+                return null;
+            }
+
+            var branched = ReferenceEquals(taken.First, branch.Operand as Instruction);
+            var wantTrue = onTrue ? branched : !branched;
+            var call = PredicateCall(Producer(branch, decision), decision, ref wantTrue);
+
+            if (call == null)
+            {
+                return null;
+            }
+
+            var callee = CallGraph.CalleeAt(call, graph.Method.Module);
+
+            if (callee == null || ReferenceEquals(callee, graph.Method))
+            {
+                return null;
+            }
+
+            var own = PredicateConditions.For(callee, wantTrue);
+
+            if (own == null)
+            {
+                return null;
+            }
+
+            // 호출자가 제 객체에 대고 불렀으면 피호출자의 `this` 가 호출자의 `this` 이고, 그러면 피호출자의 용어가
+            // 이미 호출자의 객체를 서술한다. 갈아 끼울 것이 없다 — 그리고 갈아 끼우려 들면 `StoryController.field` 가
+            // `this.field` 가 되면서 리포트의 나머지가 쓰는 이름과 어긋난다.
+            //
+            // `Collect` 이 `sameObject` 에 대해 하는 것과 같은 규칙이다.
+            //
+            // 객체가 같다는 것이 매개변수까지 같다는 뜻은 아니다. `Over(int mark)` 안의 `mark > 0` 은 `this` 가 양
+            // 끝에서 같아도 호출자가 이름 댈 수 없는 것에 대한 문장이고, 그대로 내놓으면 리포트는 아무 데도 없는
+            // 변수를 마련하라고 청한다. `this` 와 static 에 대한 말만 그대로 넘어간다.
+            if (CallSiteConditions.OnThis(call, graph.Method, decision.First))
+            {
+                return own.AboutSelfOnly() ? own : null;
+            }
+
+            return own.ReadFrom(CallSiteConditions.BindingAt(call, graph.Method, decision.First, callee));
+        }
+
+        /// <summary>분기가 검사하는 술어 호출과 그 호출에서 원하는 답.</summary>
+        /// <remarks>
+        /// compiler에 따라 <c>!predicate()</c> 는 호출 결과로 바로 분기하거나
+        /// <c>call; ldc.i4.0; ceq</c> 로 부정한 뒤 분기한다. 뒤의 모양은 술어가 내놓은 답과 분기가 검사하는
+        /// 값이 반대이므로 <paramref name="wantTrue"/> 를 한 번 뒤집는다. 그 한 모양 밖의 연산은 호출을
+        /// 그대로 남기는 fallback으로 보낸다.
+        /// </remarks>
+        private static Instruction PredicateCall(
+            Instruction producer, BasicBlock decision, ref bool wantTrue)
+        {
+            if (producer == null)
+            {
+                return null;
+            }
+
+            if (producer.OpCode.Code == Code.Call || producer.OpCode.Code == Code.Callvirt)
+            {
+                return producer;
+            }
+
+            if (producer.OpCode.Code != Code.Ceq)
+            {
+                return null;
+            }
+
+            var zero = Preceding(producer, decision);
+
+            if (!IlReading.TryConstant(zero, out var value) || value != 0)
+            {
+                return null;
+            }
+
+            var call = Preceding(zero, decision);
+
+            if (call == null ||
+                (call.OpCode.Code != Code.Call && call.OpCode.Code != Code.Callvirt))
+            {
+                return null;
+            }
+
+            wantTrue = !wantTrue;
+            return call;
         }
 
         /// <summary>
@@ -1103,7 +1216,7 @@ namespace Artel.Affordances.CodeGen
         /// <c>a == b.Count</c> 가 <c>b == b.Count</c> 로 나왔다. 건너뛰기를 할 수 없는 자리에서는 왼쪽을 이름 없이 두고
         /// 조건을 읽지 못한 것으로 떨어뜨리는데, 그것이 늘 그랬던 바다.
         /// </remarks>
-        private static void Operands(
+        internal static void Operands(
             Instruction consumer,
             BasicBlock decision,
             bool hasThis,
@@ -1165,7 +1278,7 @@ namespace Artel.Affordances.CodeGen
         /// 그때 그것을 따라가면 검사되는 그 값이라고 할 수 없는 값의 이름을 대게 된다. 그것이 이 분석이 되도록 내놓지
         /// 않으려는 종류의 틀린 답이라, 대신 멈추고 조건을 읽지 못한 것으로 보고한다.
         /// </remarks>
-        private static Instruction Producer(Instruction consumer, BasicBlock within)
+        internal static Instruction Producer(Instruction consumer, BasicBlock within)
         {
             var value = Preceding(consumer, within);
 
@@ -1187,7 +1300,7 @@ namespace Artel.Affordances.CodeGen
             return IlReading.Preceding(instruction, within?.First);
         }
 
-        private static bool IsLoadLocal(Instruction instruction, out int slot)
+        internal static bool IsLoadLocal(Instruction instruction, out int slot)
         {
             slot = -1;
 
@@ -1210,7 +1323,7 @@ namespace Artel.Affordances.CodeGen
             }
         }
 
-        private static bool IsStoreLocal(Instruction instruction, out int slot)
+        internal static bool IsStoreLocal(Instruction instruction, out int slot)
         {
             slot = -1;
 
@@ -1241,7 +1354,7 @@ namespace Artel.Affordances.CodeGen
         /// <c>&gt;=</c> 와 <c>&lt;=</c> 는 제 명령어가 없어 그 반대의 부정으로 도착하므로 — <c>clt</c> 다음
         /// <c>ldc.i4.0 ceq</c> — 무언가를 0 과 비교하는 별개의 비교 둘로 보고하는 대신 여기서 부정을 풀어낸다.
         /// </remarks>
-        private static string ComparisonOperator(
+        internal static string ComparisonOperator(
             Instruction instruction, bool holds, BasicBlock within, out Instruction operands)
         {
             operands = instruction;
@@ -1274,12 +1387,24 @@ namespace Artel.Affordances.CodeGen
                     return holds ? "==" : "!=";
 
                 case Code.Clt:
-                case Code.Clt_Un:
                     return holds ? "<" : ">=";
 
                 case Code.Cgt:
-                case Code.Cgt_Un:
                     return holds ? ">" : "<=";
+
+                case Code.Clt_Un:
+                case Code.Cgt_Un:
+                    // 참조를 `null` 과 견주는 일을 컴파일러는 부호 없는 크기 비교로 쓴다. 그것을 곧이곧대로 읽으면
+                    // `streamingCoroutine > null` 이 나오는데, 참조에 크기 순서는 없으므로 그것은 아무도 마련할 수도
+                    // 확인할 수도 없는 규칙이다. 소스가 쓴 것은 `!=` 이고 그것이 리포트가 적어야 할 것이다.
+                    if (ComparesToNull(instruction, within))
+                    {
+                        return holds ? "!=" : "==";
+                    }
+
+                    return instruction.OpCode.Code == Code.Clt_Un
+                        ? (holds ? "<" : ">=")
+                        : (holds ? ">" : "<=");
 
                 case Code.Call:
                 case Code.Callvirt:
@@ -1288,6 +1413,20 @@ namespace Artel.Affordances.CodeGen
                 default:
                     return null;
             }
+        }
+
+        /// <summary>이 비교의 어느 한쪽이 리터럴 <c>null</c> 인지.</summary>
+        private static bool ComparesToNull(Instruction comparison, BasicBlock within)
+        {
+            var right = Preceding(comparison, within);
+
+            if (right == null)
+            {
+                return false;
+            }
+
+            return right.OpCode.Code == Code.Ldnull ||
+                   IlReading.Under(right, within?.First)?.OpCode.Code == Code.Ldnull;
         }
 
         /// <summary>
