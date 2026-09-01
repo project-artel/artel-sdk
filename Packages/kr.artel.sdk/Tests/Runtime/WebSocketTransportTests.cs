@@ -90,6 +90,23 @@ namespace Artel.Tests.Transport
 
         // 만료 시각을 비워 두면 세션 저장소가 만료로 보지 않는다. 테스트가 시계에 기대지
         // 않게 하는 가장 짧은 길이다.
+        /// <summary>
+        /// 주소를 세울 수 없는 서버. 요청을 보내기 전에 던지는 경로를 만드는 데 쓴다.
+        /// </summary>
+        /// <remarks>
+        /// 전에는 <c>new Server()</c> 가 이 노릇을 했다. 기본 <c>host</c> 가 비어 있어 URI 를
+        /// 만들다 던졌기 때문이다. 그 기본값이 실제 서버로 바뀌면서(ARTEL-703) 그 표현이 성립하지
+        /// 않게 됐고, 두 테스트가 요청을 실제로 보내려다 깨졌다.
+        ///
+        /// 이 테스트들이 보는 것은 기본값이 무엇인지가 아니라 <b>주소를 못 세웠을 때 무엇이
+        /// 남는가</b>다 — 세션과 게이트. 그 전제를 이름으로 세워 두면 기본값이 또 바뀌어도
+        /// 흔들리지 않는다.
+        /// </remarks>
+        private static Server Unreachable()
+        {
+            return new Server(true, string.Empty, 443);
+        }
+
         private static void SignIn(string projectId = null)
         {
             ArtelSdkSession.SaveToken("sdk-token", string.Empty, "octocat");
@@ -535,9 +552,10 @@ namespace Artel.Tests.Transport
             var viewModel = CreateViewModel();
             viewModel.Initialize();
 
-            // An unconfigured Server throws while the request is built, before anything is sent.
+            // 주소를 만들 수 없는 Server 는 요청을 보내기 전에 던진다. 예전에는 `new Server()`
+            // 가 그것이었지만 이제 기본값이 실제 서버라(ARTEL-703), 못 쓰는 서버를 직접 만든다.
             RunToCompletionWithoutWaiting(
-                viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
 
             Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.ChoosingProject));
             Assert.That(viewModel.ShowPanel, Is.True);
@@ -568,7 +586,7 @@ namespace Artel.Tests.Transport
             viewModel.Initialize();
 
             RunToCompletionWithoutWaiting(
-                viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
 
             Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.NeedsLogin));
             Assert.That(viewModel.HasError, Is.True);
@@ -669,10 +687,10 @@ namespace Artel.Tests.Transport
             var viewModel = CreateViewModel();
             viewModel.Initialize();
 
-            // 설정되지 않은 Server는 요청을 만드는 중에 던진다. 401이 아니므로 세션이
+            // 주소를 만들 수 없는 Server 는 요청을 만드는 중에 던진다. 401이 아니므로 세션이
             // 그대로 남는 실패 경로다.
             RunToCompletionWithoutWaiting(
-                viewModel.Register(new Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
 
             Assert.That(viewModel.HasToken, Is.True);
             Assert.That(viewModel.HasError, Is.True);
