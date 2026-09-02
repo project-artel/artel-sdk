@@ -113,6 +113,16 @@ namespace Artel
             presses.Clear();
         }
 
+        /// <summary>
+        /// 놓기는 누름보다 최소 한 프레임 뒤다. <c>VirtualMouseState.Release</c> 와 같은 규칙이고,
+        /// 이유도 같다 — 같은 프레임에 들어온 누름과 놓기가 눌린 프레임을 0개로 만들면 프레임마다
+        /// 폴링하는 쪽이 그 누름을 통째로 못 본다.
+        /// </summary>
+        /// <remarks>
+        /// 마우스에서 실제로 그 일이 났다(ARTEL-766). 키보드는 <c>key_click</c> 이 누른 채
+        /// 시간을 보내고 <c>key_down</c>/<c>key_up</c> 은 별개 메시지로 와서 지금 이 구멍을 밟는
+        /// 경로가 없지만, 두 곳의 규칙이 달라야 할 이유도 없다.
+        /// </remarks>
         private static void Release(KeyPressState state, int currentFrame)
         {
             if (state.ReleaseFrame.HasValue)
@@ -120,7 +130,9 @@ namespace Artel
                 return;
             }
 
-            state.ReleaseFrame = currentFrame + 1;
+            var earliest = state.StartFrame + 1;
+            var asked = currentFrame + 1;
+            state.ReleaseFrame = asked > earliest ? asked : earliest;
         }
 
         private bool TryGetState(KeyCode key, int frame, float time, out KeyPressState state)

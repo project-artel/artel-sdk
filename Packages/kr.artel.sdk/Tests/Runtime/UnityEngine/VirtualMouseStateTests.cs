@@ -167,13 +167,47 @@ namespace Artel.Tests.Input
             mouse.Press(0, 1);
             mouse.Release(0, 1);
 
+            // 누름은 2 에서 시작하고 놓기는 그보다 뒤여야 하므로 3 이다(ARTEL-766).
             // The release frame itself still has to report the up, so only later frames may drop it.
-            mouse.Refresh(2);
-            Assert.That(mouse.GetButtonUp(0, 2), Is.True);
-
             mouse.Refresh(3);
-            Assert.That(mouse.GetButtonUp(0, 3), Is.False);
-            Assert.That(mouse.GetButton(0, 3), Is.False);
+            Assert.That(mouse.GetButtonUp(0, 3), Is.True);
+
+            mouse.Refresh(4);
+            Assert.That(mouse.GetButtonUp(0, 4), Is.False);
+            Assert.That(mouse.GetButton(0, 4), Is.False);
+        }
+
+        [Test]
+        public void Release_OnThePressFrameStillLeavesOneHeldFrame()
+        {
+            // `click_at` 이 `mouse_down` 과 `mouse_up` 을 프레임 양보 없이 보내 둘이 같은
+            // 프레임에 처리된다. 놓기가 누름과 같은 프레임을 가리키면 눌린 프레임이 0개가 되고,
+            // 프레임마다 폴링하는 쪽 — `VirtualMouseMessenger` 와 `Input.GetMouseButtonDown` —
+            // 은 그 누름을 통째로 못 본다. 게임에 `OnMouseDown` 이 아예 안 갔다(ARTEL-766).
+            var mouse = new VirtualMouseState();
+            mouse.Press(0, 5);
+            mouse.Release(0, 5);
+
+            Assert.That(mouse.GetButtonDown(0, 6), Is.True, "the press has to be visible somewhere");
+            Assert.That(mouse.GetButton(0, 6), Is.True);
+            Assert.That(mouse.GetButtonUp(0, 6), Is.False, "up cannot land on the same frame as down");
+
+            Assert.That(mouse.GetButtonUp(0, 7), Is.True);
+            Assert.That(mouse.GetButton(0, 7), Is.False);
+        }
+
+        [Test]
+        public void Release_AfterHeldFramesKeepsTheFrameItAsked()
+        {
+            // 드래그다. 누름과 놓기 사이에 프레임이 지나갔으면 하한에 걸릴 일이 없고, 놓기는
+            // 요청한 프레임의 다음에 그대로 선다.
+            var mouse = new VirtualMouseState();
+            mouse.Press(0, 5);
+            mouse.Release(0, 20);
+
+            Assert.That(mouse.GetButton(0, 20), Is.True, "still down on the frame that asked");
+            Assert.That(mouse.GetButtonUp(0, 21), Is.True);
+            Assert.That(mouse.GetButton(0, 21), Is.False);
         }
     }
 }
