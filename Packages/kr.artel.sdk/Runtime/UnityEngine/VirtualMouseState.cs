@@ -184,6 +184,24 @@ namespace Artel
             HasPosition = false;
         }
 
+        /// <summary>
+        /// 놓기는 **누름보다 최소 한 프레임 뒤**다.
+        /// </summary>
+        /// <remarks>
+        /// 누름은 요청한 프레임의 다음에 시작한다(<see cref="Press"/>). 놓기가 같은 규칙만
+        /// 따르면, 한 프레임 안에 들어온 누름과 놓기가 같은 프레임을 가리켜 <c>GetButton</c> 의
+        /// <c>frame &lt; ReleaseFrame</c> 이 어디서도 참이 되지 않는다 — 눌린 프레임이 0개가 되고,
+        /// 프레임마다 폴링하는 쪽은 그 누름을 통째로 못 본다.
+        /// <para>
+        /// 실제로 <c>click_at</c> 이 그랬다. <c>mouse_down</c> 과 <c>mouse_up</c> 이 프레임을
+        /// 양보하지 않아 같은 프레임에 처리되고, <c>VirtualMouseMessenger</c> 가 매 프레임 받는
+        /// <c>buttonHeld</c> 가 한 번도 참이 아니어서 <c>OnMouseDown</c> 이 아예 안 나갔다.
+        /// 좌표는 맞았고 액션은 <c>ok</c> 를 돌려주었으므로 실패가 조용했다(ARTEL-766).
+        /// </para>
+        /// <para>
+        /// 눌린 채 프레임이 지나간 뒤의 놓기는 이 하한에 걸리지 않는다 — 드래그는 그대로다.
+        /// </para>
+        /// </remarks>
         private static void Release(ButtonPressState state, int currentFrame)
         {
             if (state == null || state.ReleaseFrame.HasValue)
@@ -191,7 +209,9 @@ namespace Artel
                 return;
             }
 
-            state.ReleaseFrame = currentFrame + 1;
+            var earliest = state.StartFrame + 1;
+            var asked = currentFrame + 1;
+            state.ReleaseFrame = asked > earliest ? asked : earliest;
         }
 
         private static bool IsHeldOn(ButtonPressState state, int frame)
