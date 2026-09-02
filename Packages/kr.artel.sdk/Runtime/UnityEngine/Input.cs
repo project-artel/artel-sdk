@@ -237,6 +237,20 @@ namespace Artel
             MouseMessenger.Clear();
         }
 
+        /// <summary>
+        /// 마지막 누름이 무엇에 닿았나. 닿은 것이 없거나 아직 프레임이 안 지났으면 빈 문자열이다.
+        /// </summary>
+        internal static string LastPressReceiver => MouseMessenger.LastPressReceiver;
+
+        /// <summary>누름이 메신저를 지나갔나. 안 지나갔으면 사람이 포인터를 도로 가져간 것이다.</summary>
+        internal static bool SawPress => MouseMessenger.SawPress;
+
+        /// <summary>다음 누름을 재기 전에 지난 것을 지운다.</summary>
+        internal static void ForgetLastPress()
+        {
+            MouseMessenger.ForgetLastPress();
+        }
+
         internal static void AdvanceFrame()
         {
             VirtualKeyboard.Refresh(Time.frameCount, Time.unscaledTime);

@@ -95,6 +95,58 @@ namespace Artel.Tests
         }
 
         /// <summary>
+        /// 누름이 무엇에 닿았는지를 결과가 말한다.
+        /// </summary>
+        /// <remarks>
+        /// 예전에는 `ok` 하나였고, 그래서 겨냥이 빗나간 것과 게임이 입력을 막고 있던 것과 사람이
+        /// 포인터를 도로 가져간 것이 모두 같아 보였다. 에이전트는 셋 다 성공으로 읽었다(ARTEL-769).
+        /// </remarks>
+        [UnityTest]
+        public IEnumerator MouseDown_SaysWhatItReached()
+        {
+            var manager = CreateManager();
+            var target = CreateColliderTarget();
+            yield return null;
+
+            yield return RunBatch(
+                manager,
+                NewAction(1, "move_mouse", ScreenTopLeft(CenterOfScreen)),
+                NewAction(2, "mouse_down", Params(0d)));
+            yield return null;
+
+            Assert.That(target.Messages, Does.Contain("down"), "먼저 실제로 닿아야 한다");
+            Assert.That(LastPressReceiver(), Does.Contain(target.gameObject.name));
+        }
+
+        /// <summary>
+        /// 빈 곳을 누르면 그렇게 말한다. 실패가 아니다 — 빈 곳을 누르는 것은 정당한 조작이고,
+        /// 그것이 무엇이었는지는 부르는 쪽이 판단한다.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator MouseDown_OnNothingSaysSo()
+        {
+            var manager = CreateManager();
+            CreateColliderTarget();
+            yield return null;
+
+            // 콜라이더에서 멀찍이. 화면 모서리에는 아무것도 없다.
+            yield return RunBatch(
+                manager,
+                NewAction(1, "move_mouse", ScreenTopLeft(new Vector2(2f, 2f))),
+                NewAction(2, "mouse_down", Params(0d)));
+            yield return null;
+
+            Assert.That(LastPressReceiver(), Is.Empty);
+        }
+
+        private static string LastPressReceiver()
+        {
+            var property = typeof(ArtelInput).GetProperty(
+                "LastPressReceiver", BindingFlags.Static | BindingFlags.NonPublic);
+            return (string)property.GetValue(null);
+        }
+
+        /// <summary>
         /// 포인터를 잡지 않은 클릭은 조용하다. 고를 자리가 없으니 엔진도 아무에게도 보내지 않는다.
         /// </summary>
         [UnityTest]
