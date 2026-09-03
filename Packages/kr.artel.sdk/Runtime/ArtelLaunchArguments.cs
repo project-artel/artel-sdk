@@ -12,8 +12,10 @@ namespace Artel
     /// </summary>
     /// <remarks>
     /// 무인 실행에는 오버레이를 누를 사람이 없다. 그래서 로그인·프로젝트 선택·로그아웃을
-    /// 프로세스가 뜰 때 인자로 받는다. <c>ArtelManager.SpawnInDevelopmentBuilds</c> 가
-    /// manager 를 만들기 전에 이 값을 읽어 세션에 넣는다.
+    /// 프로세스가 뜰 때 인자로 받는다. <c>ArtelManager.InstallLaunchSession</c> 이 첫 씬이
+    /// 열리기 전에, 그러니까 어떤 매니저의 <c>Awake</c> 보다도 먼저 이 값을 세션에 넣는다.
+    /// 서버 주소만 <c>ArtelManager.SpawnInDevelopmentBuilds</c> 가 자기가 띄우는 매니저에
+    /// 적용한다 — 씬이 들고 온 매니저는 자기 <c>Server</c> 설정이 이긴다.
     ///
     /// 토큰만 환경 변수로 받는다. 실행 인자는 같은 기계의 다른 사용자가 프로세스 목록에서
     /// 그대로 읽으므로, 명령행에 실은 토큰은 곧 새어 나간 토큰이다. 같은 이유로 잘못된 값을

@@ -1,6 +1,7 @@
 using System;
 using Artel.Auth;
 using Artel.Domain;
+using Artel.Serialization;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -300,6 +301,33 @@ namespace Artel.Tests
 
             Assert.That(ArtelSdkSession.TryLoadToken(out _), Is.False);
             Assert.That(ArtelSdkSession.TryLoadProjectId(out _), Is.False);
+        }
+
+        [Test]
+        public void 씬이_들고_온_매니저의_오버레이도_주입된_세션을_읽는다()
+        {
+            // BeforeSceneLoad 훅(`ArtelManager.InstallLaunchSession`)이 넣고 나면, 매니저가
+            // 어디서 왔든 오버레이는 이 view model 하나로 세션을 읽는다. 훅 자체는 에디터의
+            // 명령행을 읽으므로 테스트가 인자를 실을 수 없어, 같은 입구인 InstallSession 을
+            // 직접 부른다. 실제 매니저를 세우는 쪽은 PlayMode 의 LaunchSessionBootstrapTests 다.
+            ArtelLaunchArguments.Parse(new[] { "-artel-project", "42" }, "sdk-token-value")
+                .InstallSession();
+
+            var jsonCodec = new NewtonsoftJsonCodec();
+            var viewModel = new ArtelOverlayViewModel(
+                new ArtelSdkRegistrationClient(jsonCodec),
+                new ArtelSdkAuthClient(jsonCodec),
+                jsonCodec);
+
+            viewModel.Initialize();
+
+            Assert.That(viewModel.HasToken, Is.True);
+            Assert.That(viewModel.SelectedProjectId, Is.EqualTo("42"));
+
+            // 로그인도 프로젝트 선택도 물을 것이 없으므로 게이트를 띄우지 않고 바로 등록으로 간다.
+            Assert.That(viewModel.HasStoredSession, Is.True);
+            Assert.That(viewModel.ShowGate, Is.False);
+            Assert.That(viewModel.ShowPanel, Is.False);
         }
 
         [Test]
