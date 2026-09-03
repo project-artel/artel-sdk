@@ -127,13 +127,30 @@ namespace Artel
         /// loads so a manager the scene does carry — with its configured server —
         /// keeps the spot.
         /// </summary>
+        /// <remarks>
+        /// 실행 인자와 <c>ARTEL_SDK_TOKEN</c> 을 여기서 읽는다 (ARTEL-787). 무인 실행은 오버레이를
+        /// 누를 사람이 없으므로, 로그인·프로젝트 선택·로그아웃이 인자로 들어와야 한다. 인자가
+        /// 하나도 없으면 아무것도 쓰지 않으므로 지금까지의 동작이 그대로 남는다.
+        /// </remarks>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void SpawnInDevelopmentBuilds()
         {
             if (instance != null)
             {
+                // 씬이 매니저를 들고 있으면 인자도 읽지 않는다. 그 매니저는 Awake 를 마쳤고
+                // 오버레이도 세션을 한 번 읽은 뒤라, 이 자리에서 세션을 갈아 끼우면 화면과
+                // 저장소가 어긋난다. 인자로 로그인하는 실행은 씬에 매니저를 두지 않는다.
                 return;
             }
+
+            // 세션은 manager 보다 먼저 채운다. Awake 가 오버레이를 만들면서 저장된 토큰과
+            // 프로젝트를 읽으므로, 그 뒤에 넣으면 로그인부터 묻는 화면을 한 번 지나야 한다.
+            var launchArguments = ArtelLaunchArguments.ReadFromProcess();
+            launchArguments.LogErrors();
+            launchArguments.InstallSession();
+
+            var configuredServer = new Server();
+            launchArguments.ConfigureServer(configuredServer);
 
             // 우리가 만든 오브젝트라 통째로 계기다 (ARTEL-698). 사용자가 자기 씬 오브젝트에
             // 매니저를 붙이는 경우(README 가 안내하는 쪽)에는 이 표시를 달 수 없다 — 그 오브젝트는
@@ -141,7 +158,7 @@ namespace Artel
             // 각자 자기 캔버스에 표시를 단다.
             var host = new GameObject("Artel");
             host.AddComponent<Instrument>();
-            host.AddComponent<ArtelManager>();
+            host.AddComponent<ArtelManager>().SetServer(configuredServer);
         }
 #endif
 
