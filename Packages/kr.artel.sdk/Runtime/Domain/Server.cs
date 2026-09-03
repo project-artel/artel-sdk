@@ -58,6 +58,46 @@ namespace Artel.Domain
             }
         }
 
+        /// <summary>
+        /// 받은 값만 덮어쓰고 나머지는 그대로 둔다. <c>ArtelLaunchArguments</c> 가 실행 인자를
+        /// 여기로 넘긴다 (ARTEL-787).
+        /// </summary>
+        /// <remarks>
+        /// 생성자로는 이 자리를 채울 수 없다. <c>Server(bool, string, int)</c> 는 셋을 한꺼번에
+        /// 받으므로 <c>-artel-frontend</c> 하나만 준 실행에서도 host 와 port 를 호출 쪽이 다시
+        /// 적어야 하는데, 기본값을 읽을 방법이 없다 — 세 필드 모두 getter 가 없고 밖에서 보이는
+        /// 것은 <see cref="HttpBaseUri"/> 뿐이다. frontendOrigin 은 생성자가 아예 받지 못한다.
+        ///
+        /// <c>internal</c> 인 것은 게임 코드가 인스펙터 대신 이 길로 서버를 바꾸는 것을 막기
+        /// 위해서다. 씬에 매니저를 놓은 게임은 인스펙터가 유일한 입구로 남는다.
+        /// </remarks>
+        internal void OverrideEndpoints(
+            bool? overriddenSecure,
+            string overriddenHost,
+            int? overriddenPort,
+            string overriddenFrontendOrigin)
+        {
+            if (overriddenSecure.HasValue)
+            {
+                secure = overriddenSecure.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(overriddenHost))
+            {
+                host = overriddenHost.Trim();
+            }
+
+            if (overriddenPort.HasValue)
+            {
+                port = overriddenPort.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(overriddenFrontendOrigin))
+            {
+                frontendOrigin = overriddenFrontendOrigin.Trim();
+            }
+        }
+
         private Uri BuildBaseUri(string scheme)
         {
             if (string.IsNullOrWhiteSpace(host))

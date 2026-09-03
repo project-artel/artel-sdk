@@ -121,6 +121,58 @@ namespace Artel
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         /// <summary>
+        /// 실행 인자를 한 번만 읽어 둔 것 (ARTEL-787). <see cref="InstallLaunchSession"/> 이 먼저
+        /// 만들고 <see cref="SpawnInDevelopmentBuilds"/> 가 같은 것을 읽는다.
+        /// </summary>
+        /// <remarks>
+        /// 정적 필드에 두는 것이 안전한 이유는 두 훅이 한 프로세스에서 한 번씩만, 같은 스레드에서,
+        /// 어떤 <c>Awake</c> 보다도 먼저 돌기 때문이다 — 두 번째로 쓰는 사람도 경쟁하는 사람도 없다.
+        /// 두 번 파싱하지 않는 것이 요점이다. 인자를 다시 읽으면 오류 문구도 다시 나와, 무인 실행의
+        /// 로그에 같은 줄이 두 번 남고 어느 쪽이 무엇을 적용했는지 흐려진다.
+        /// </remarks>
+        private static ArtelLaunchArguments launchArguments;
+
+        private static ArtelLaunchArguments LaunchArguments
+        {
+            get { return launchArguments ?? (launchArguments = ArtelLaunchArguments.ReadFromProcess()); }
+        }
+
+        /// <summary>
+        /// 실행 인자와 <c>ARTEL_SDK_TOKEN</c> 이 실어 온 세션을 저장소에 넣는다 (ARTEL-787).
+        /// </summary>
+        /// <remarks>
+        /// 무인 실행에는 오버레이를 누를 사람이 없으므로 로그인·프로젝트 선택·로그아웃이 인자로
+        /// 들어와야 한다.
+        ///
+        /// <c>BeforeSceneLoad</c> 인 것이 요점이다. 어떤 매니저의 <c>Awake</c> 보다도 먼저 돌기
+        /// 때문에, 씬이 들고 온 매니저와 <see cref="SpawnInDevelopmentBuilds"/> 가 띄운 매니저가
+        /// 똑같이 주입된 토큰과 프로젝트를 본다. README 는 씬에 매니저를 놓으라고 안내하므로,
+        /// 이 자리가 <see cref="SpawnInDevelopmentBuilds"/> 안이었다면 안내를 따른 게임은
+        /// 명령행으로 로그인할 길이 아예 없었다.
+        ///
+        /// <c>-artel-logout</c> 이 토큰·프로젝트보다 먼저 처리되는 것은
+        /// <see cref="ArtelLaunchArguments.InstallSession"/> 안에서 지킨다. 셋 다 여기서 끝나므로
+        /// 매니저가 하나라도 생기기 전에 세션은 이미 제 모습이다.
+        ///
+        /// 인자가 하나도 없으면 아무것도 쓰지 않는다. 그래서 지금까지의 동작이 그대로 남는다.
+        /// </remarks>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void InstallLaunchSession()
+        {
+            LaunchArguments.LogErrors();
+            LaunchArguments.InstallSession();
+
+            // 지우러 온 것뿐인 실행은 여기서 끝난다. 씬을 띄우고 오버레이를 그려 봐야 할 일이
+            // 없고, 부르는 쪽은 프로세스가 끝나는 것으로 다 지워진 것을 안다. 계정을 바꾸러 온
+            // 실행(토큰이나 프로젝트를 함께 준 실행)은 그대로 게임을 이어 간다.
+            if (LaunchArguments.ClearsSessionOnly)
+            {
+                Debug.Log("[Artel] 저장된 세션을 지우고 종료합니다 (-artel-logout).");
+                Application.Quit(0);
+            }
+        }
+
+        /// <summary>
         /// Editor and development builds get a manager even when no scene carries one:
         /// a QA run has to be able to attach to a build nobody prepared for it. The
         /// whole method is compiled out of release builds. Runs after the first scene
@@ -132,8 +184,16 @@ namespace Artel
         {
             if (instance != null)
             {
+                // 세션은 InstallLaunchSession 이 이미 넣었으므로 이 매니저도 인자로 받은 토큰과
+                // 프로젝트를 쓴다. 닿지 않는 것은 -artel-server 하나다 — 씬이 들고 온 매니저는
+                // 자기 Server 를 직렬화해 갖고 있고, 그 설정이 이기는 것이 이 early return 의
+                // 목적이다. 그 게임을 다른 오케스트레이션으로 붙이려면 인스펙터의 Server 를
+                // 채워야 한다. 인자로 서버까지 정하려면 씬에서 매니저를 빼면 된다.
                 return;
             }
+
+            var configuredServer = new Server();
+            LaunchArguments.ConfigureServer(configuredServer);
 
             // 우리가 만든 오브젝트라 통째로 계기다 (ARTEL-698). 사용자가 자기 씬 오브젝트에
             // 매니저를 붙이는 경우(README 가 안내하는 쪽)에는 이 표시를 달 수 없다 — 그 오브젝트는
@@ -141,7 +201,7 @@ namespace Artel
             // 각자 자기 캔버스에 표시를 단다.
             var host = new GameObject("Artel");
             host.AddComponent<Instrument>();
-            host.AddComponent<ArtelManager>();
+            host.AddComponent<ArtelManager>().SetServer(configuredServer);
         }
 #endif
 
