@@ -35,6 +35,26 @@ namespace Artel
         private GameObject pressed;
 
         /// <summary>
+        /// 마지막 누름이 무엇에 닿았나. 닿은 것이 없으면 빈 문자열이다.
+        /// </summary>
+        /// <remarks>
+        /// 액션 결과가 "상태를 밀었다"가 아니라 "무엇이 받았다"를 말할 수 있게 하려고 남긴다.
+        /// 그 둘이 구분되지 않아, 겨냥이 빗나간 것과 게임이 입력을 막고 있는 것과 사람이
+        /// 포인터를 도로 가져간 것이 모두 같은 `ok` 로 보였다(ARTEL-769).
+        /// <para>
+        /// 새로 계산하는 값이 아니다. <see cref="Pick"/> 이 이미 고른 것을 안 버리는 것뿐이다.
+        /// </para>
+        /// </remarks>
+        internal string LastPressReceiver { get; private set; } = string.Empty;
+
+        /// <summary>
+        /// 누름이 메신저를 지나갔나. <see cref="LastPressReceiver"/> 가 비어 있을 때, 닿은 것이
+        /// 없었던 것인지 메신저가 아예 안 돌았던 것인지를 가른다 — 사람이 포인터를 도로 가져가면
+        /// <c>AdvanceFrame</c> 이 <see cref="Tick"/> 대신 <see cref="Clear"/> 를 부른다.
+        /// </summary>
+        internal bool SawPress { get; private set; }
+
+        /// <summary>
         /// One tick of what the engine does every frame: work out what the pointer is over, tell it
         /// so, and keep telling whatever is being dragged.
         /// </summary>
@@ -59,10 +79,16 @@ namespace Artel
                 return;
             }
 
-            if (buttonHeld && target != null)
+            if (buttonHeld)
             {
-                pressed = target;
-                Send(pressed, MouseDown);
+                SawPress = true;
+                LastPressReceiver = target == null ? string.Empty : Path(target);
+
+                if (target != null)
+                {
+                    pressed = target;
+                    Send(pressed, MouseDown);
+                }
             }
         }
 
@@ -153,6 +179,25 @@ namespace Artel
         /// The null check is Unity's, so an object destroyed while the pointer was on it is simply
         /// not told anything.
         /// </summary>
+        /// <summary>읽는 사람이 pulse 에서 본 이름과 맞출 수 있도록 계층 경로로 적는다.</summary>
+        private static string Path(GameObject target)
+        {
+            var name = target.name;
+            for (var parent = target.transform.parent; parent != null; parent = parent.parent)
+            {
+                name = parent.name + "/" + name;
+            }
+
+            return name;
+        }
+
+        /// <summary>다음 누름을 재기 전에 지난 것을 지운다.</summary>
+        internal void ForgetLastPress()
+        {
+            LastPressReceiver = string.Empty;
+            SawPress = false;
+        }
+
         private static void Send(GameObject target, string message)
         {
             if (target != null)

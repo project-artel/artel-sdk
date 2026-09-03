@@ -128,7 +128,7 @@ namespace Artel
                     yield break;
 
                 case "mouse_down":
-                    completed(ExecuteMouseButton(actionId, method, parameters, true));
+                    yield return ExecuteMousePress(actionId, method, parameters, completed);
                     yield break;
 
                 case "mouse_up":
@@ -286,6 +286,56 @@ namespace Artel
             yield return cursorController.MoveTo(
                 new Vector2(x, Screen.height - y), pointerMoved, glide: true);
             completed(ActionResultDto.Success(actionId));
+        }
+
+        /// <summary>
+        /// 누르고, 한 프레임 뒤에 **무엇이 받았는지** 말한다.
+        /// </summary>
+        /// <remarks>
+        /// 상태를 미는 것과 <c>OnMouseDown</c> 이 나가는 것은 같은 순간이 아니다. 미는 것은
+        /// 여기서, 보내는 것은 그 뒤 <c>Input.AdvanceFrame</c> 에서 메신저가 한다. 그래서 결과를
+        /// 바로 만들면 아직 아무것도 모르는 채로 <c>ok</c> 만 적게 된다.
+        /// <para>
+        /// 그 <c>ok</c> 때문에 세 가지가 구분되지 않았다 — 겨냥이 빗나간 것, 닿았는데 게임이
+        /// 입력을 막고 있던 것, 사람이 포인터를 도로 가져가 메신저가 아예 안 돈 것. 에이전트는
+        /// 셋 다 성공으로 읽고 다음 단계로 갔다(ARTEL-769).
+        /// </para>
+        /// <para>
+        /// 닿은 것이 없어도 실패로 만들지 않는다. 빈 곳을 누르는 것은 정당한 조작이고, 그것이
+        /// 무엇이었는지는 부르는 쪽이 판단할 일이다.
+        /// </para>
+        /// </remarks>
+        private IEnumerator ExecuteMousePress(
+            int actionId, string method, List<object> parameters, Action<ActionResultDto> completed)
+        {
+            if (!TryReadMouseButton(parameters, out var button))
+            {
+                completed(ActionResultDto.Failure(
+                    actionId,
+                    method + " requires params [] or [button], where button is 0, 1, or 2."));
+                yield break;
+            }
+
+            ArtelInput.ForgetLastPress();
+            SetButton(button, true);
+
+            yield return null;
+
+            completed(ActionResultDto.Success(actionId, ReceiverNote()));
+        }
+
+        /// <summary>부르는 쪽이 그대로 읽을 한 줄. pulse 에서 본 이름과 맞출 수 있게 경로로 적는다.</summary>
+        private static string ReceiverNote()
+        {
+            if (!ArtelInput.SawPress)
+            {
+                return "포인터를 사람이 쥐고 있어 누름이 전해지지 않았다";
+            }
+
+            var receiver = ArtelInput.LastPressReceiver;
+            return string.IsNullOrEmpty(receiver)
+                ? "닿은 것 없음"
+                : "OnMouseDown → " + receiver;
         }
 
         private ActionResultDto ExecuteMouseButton(
