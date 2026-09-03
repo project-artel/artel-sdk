@@ -235,6 +235,31 @@ namespace Artel
             }
         }
 
+        /// <summary>
+        /// 이 실행이 세션을 인자로 받아 왔는가. 곧 오버레이를 누를 사람이 없다는 뜻이다 (ARTEL-797).
+        /// </summary>
+        /// <remarks>
+        /// <c>ArtelManager</c> 가 이 값을 읽어 WebSocket 재연결 정책을 고른다. 참이면 연결이
+        /// 끊겨도 포기하지 않는다 — 무인 실행에서 포기는 그 게임과 그 위의 QA run 이 함께 끝나는
+        /// 것이고, 되살릴 사람이 없다.
+        ///
+        /// 새 인자를 만들지 않았다. 토큰이나 프로젝트를 명령행으로 건넸다는 사실 자체가 사람이
+        /// 아니라 launcher 가 이 프로세스를 띄웠다는 증거다. <c>-artel-server</c> 만 준 실행은
+        /// 여기 들지 않는다 — 그것은 개발자가 다른 서버를 보려고 직접 띄운 실행이고, 오버레이
+        /// 앞에 사람이 앉아 있다.
+        ///
+        /// <see cref="InstallSession"/> 이 실제로 저장했는지가 아니라 인자가 실어 왔는지로 판정한다.
+        /// 저장 여부로 재면 이미 같은 값이 저장돼 있던 실행이 사람이 띄운 것으로 읽힌다.
+        /// </remarks>
+        public bool CarriesSession
+        {
+            get
+            {
+                return !string.IsNullOrWhiteSpace(Token)
+                    || !string.IsNullOrWhiteSpace(ProjectId);
+            }
+        }
+
         /// <summary>받은 값만 <paramref name="server"/> 에 덮어쓴다. 나머지는 기본값이 남는다.</summary>
         public void ConfigureServer(Server server)
         {

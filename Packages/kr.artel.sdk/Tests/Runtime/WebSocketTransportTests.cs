@@ -287,7 +287,8 @@ namespace Artel.Tests.Transport
         {
             TimeSpan delay;
 
-            var retries = ArtelWebSocketClient.TryReconnectDelay(4001, 0, out delay);
+            var retries = ArtelWebSocketClient.TryReconnectDelay(
+                4001, 0, ArtelReconnectPolicy.Attended, out delay);
 
             Assert.That(retries, Is.False);
         }
@@ -298,7 +299,8 @@ namespace Artel.Tests.Transport
         {
             TimeSpan delay;
 
-            var retries = ArtelWebSocketClient.TryReconnectDelay(4002, 0, out delay);
+            var retries = ArtelWebSocketClient.TryReconnectDelay(
+                4002, 0, ArtelReconnectPolicy.Attended, out delay);
 
             Assert.That(retries, Is.True);
             Assert.That(delay, Is.EqualTo(TimeSpan.FromSeconds(1)));
@@ -314,7 +316,8 @@ namespace Artel.Tests.Transport
             {
                 TimeSpan delay;
 
-                var retries = ArtelWebSocketClient.TryReconnectDelay(1005, attempt, out delay);
+                var retries = ArtelWebSocketClient.TryReconnectDelay(
+                    1005, attempt, ArtelReconnectPolicy.Attended, out delay);
 
                 Assert.That(retries, Is.True, "attempt " + attempt);
                 Assert.That(delay.TotalSeconds, Is.EqualTo(expected[attempt]), "attempt " + attempt);
@@ -327,9 +330,97 @@ namespace Artel.Tests.Transport
         {
             TimeSpan delay;
 
-            var retries = ArtelWebSocketClient.TryReconnectDelay(1005, 8, out delay);
+            var retries = ArtelWebSocketClient.TryReconnectDelay(
+                1005, 8, ArtelReconnectPolicy.Attended, out delay);
 
             Assert.That(retries, Is.False);
+        }
+
+        // 인자로 로그인한 게임에는 오버레이를 누를 사람이 없다. 여덟 번째에서 멈추면 그 게임과
+        // 그 위의 QA run 이 함께 끝나고 되살릴 사람이 없다 (ARTEL-797).
+        [Test]
+        public void ReconnectDelay_NeverGivesUpForLaunchArgumentSession()
+        {
+            foreach (var attempt in new[] { 8, 9, 100, 5000 })
+            {
+                TimeSpan delay;
+
+                var retries = ArtelWebSocketClient.TryReconnectDelay(
+                    1005, attempt, ArtelReconnectPolicy.Unattended, out delay);
+
+                Assert.That(retries, Is.True, "attempt " + attempt);
+                Assert.That(delay.TotalSeconds, Is.EqualTo(30d), "attempt " + attempt);
+            }
+        }
+
+        // 간격 수열은 두 정책에서 같다. 포기하지 않는 것과 30초보다 자주 두드리는 것은 다르다.
+        [Test]
+        public void ReconnectDelay_HoldsSameCeilingForLaunchArgumentSession()
+        {
+            var expected = new[] { 1d, 2d, 4d, 8d, 16d, 30d, 30d, 30d };
+
+            for (var attempt = 0; attempt < expected.Length; attempt++)
+            {
+                TimeSpan delay;
+
+                var retries = ArtelWebSocketClient.TryReconnectDelay(
+                    1005, attempt, ArtelReconnectPolicy.Unattended, out delay);
+
+                Assert.That(retries, Is.True, "attempt " + attempt);
+                Assert.That(delay.TotalSeconds, Is.EqualTo(expected[attempt]), "attempt " + attempt);
+            }
+        }
+
+        // 4001 은 정책과 무관하다. 무인 실행이 같은 URL 을 다시 걸어도 같은 4001 이 돌아온다.
+        [Test]
+        public void ReconnectDelay_StillRefusesCredentialsRejectionWhenUnattended()
+        {
+            TimeSpan delay;
+
+            var retries = ArtelWebSocketClient.TryReconnectDelay(
+                4001, 0, ArtelReconnectPolicy.Unattended, out delay);
+
+            Assert.That(retries, Is.False);
+        }
+
+        // 30초마다 네 줄이 하루에 만 줄 넘게 쌓이면, 무인 실행의 유일한 단서인 그 로그를 읽을 수
+        // 없게 된다. 간격이 자라는 동안과 상한에 처음 닿은 시도는 적고, 그 뒤로는 20번에 한 번이다.
+        [Test]
+        public void ReconnectLog_QuietsDownOnceUnattendedRunHitsTheCeiling()
+        {
+            Assert.That(Announces(ArtelReconnectPolicy.Unattended, 0, 1d), Is.True);
+            Assert.That(Announces(ArtelReconnectPolicy.Unattended, 4, 16d), Is.True);
+
+            // 상한에 처음 닿는 시도다. 이 줄이 "이제부터 30초마다 계속 시도한다" 를 말한다.
+            Assert.That(Announces(ArtelReconnectPolicy.Unattended, 5, 30d), Is.True);
+
+            Assert.That(Announces(ArtelReconnectPolicy.Unattended, 6, 30d), Is.False);
+            Assert.That(Announces(ArtelReconnectPolicy.Unattended, 24, 30d), Is.False);
+
+            // 20번마다 한 번. 30초 간격이므로 10분에 한 줄이다.
+            Assert.That(Announces(ArtelReconnectPolicy.Unattended, 25, 30d), Is.True);
+            Assert.That(Announces(ArtelReconnectPolicy.Unattended, 45, 30d), Is.True);
+        }
+
+        // 여덟 번이 전부인 실행은 줄일 것이 없다. 줄이면 지금 보이던 줄이 이유 없이 사라진다.
+        [Test]
+        public void ReconnectLog_KeepsEveryLineForOverlaySession()
+        {
+            var delays = new[] { 1d, 2d, 4d, 8d, 16d, 30d, 30d, 30d };
+
+            for (var attempt = 0; attempt < delays.Length; attempt++)
+            {
+                Assert.That(
+                    Announces(ArtelReconnectPolicy.Attended, attempt, delays[attempt]),
+                    Is.True,
+                    "attempt " + attempt);
+            }
+        }
+
+        private static bool Announces(ArtelReconnectPolicy policy, int attempt, double delaySeconds)
+        {
+            return ArtelWebSocketClient.AnnouncesReconnect(
+                policy, attempt, TimeSpan.FromSeconds(delaySeconds));
         }
 
         // Start가 "client가 null이 아니면 물러선다"로 판정하면, 끊긴 소켓이 그 자리를 영원히

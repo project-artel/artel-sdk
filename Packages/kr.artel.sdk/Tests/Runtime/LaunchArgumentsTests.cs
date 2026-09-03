@@ -378,5 +378,42 @@ namespace Artel.Tests
 
             Assert.That(parsed.ClearsSessionOnly, Is.False);
         }
+
+        // 인자가 세션을 실어 왔다는 것이 곧 오버레이를 누를 사람이 없다는 뜻이다 (ARTEL-797).
+        [Test]
+        public void 토큰을_실어_온_실행은_세션을_받아_온_실행이다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(new[] { "game.exe" }, "a-token");
+
+            Assert.That(parsed.CarriesSession, Is.True);
+        }
+
+        [Test]
+        public void 프로젝트만_실어_온_실행도_세션을_받아_온_실행이다()
+        {
+            // 토큰은 앞선 실행이 저장해 둔 것을 쓰고 프로젝트만 바꿔 띄우는 launcher 가 있다.
+            var parsed = ArtelLaunchArguments.Parse(
+                new[] { "game.exe", "-artel-project", "42" }, null);
+
+            Assert.That(parsed.CarriesSession, Is.True);
+        }
+
+        [Test]
+        public void 서버만_준_실행은_세션을_받아_온_실행이_아니다()
+        {
+            // 개발자가 다른 서버를 보려고 직접 띄운 실행이다. 오버레이 앞에 사람이 앉아 있다.
+            var parsed = ArtelLaunchArguments.Parse(
+                new[] { "game.exe", "-artel-server", "localhost:8080" }, null);
+
+            Assert.That(parsed.CarriesSession, Is.False);
+        }
+
+        [Test]
+        public void 인자가_없으면_세션을_받아_온_실행이_아니다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(new[] { "game.exe" }, null);
+
+            Assert.That(parsed.CarriesSession, Is.False);
+        }
 }
 }

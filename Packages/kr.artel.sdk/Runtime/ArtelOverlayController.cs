@@ -138,7 +138,14 @@ namespace Artel
             }
         }
 
-        private void RegisterInstance()
+        /// <summary>
+        /// 인스턴스를 등록한다. 이미 돌고 있으면 아무것도 하지 않는다.
+        /// </summary>
+        /// <remarks>
+        /// <c>internal</c> 인 것은 <c>ArtelManager</c> 가 다시 붙은 뒤 여기를 부르기 때문이다
+        /// (ARTEL-797). 이유는 <c>ArtelManager.RegisterAfterReconnect</c> 에 적었다.
+        /// </remarks>
+        internal void RegisterInstance()
         {
             // viewModel은 스캔이 끝나고 Register에 들어가야 Registering이 된다. 그때까지
             // 프로젝트 버튼이 살아 있으므로, 이 가드가 없으면 연타한 만큼 씬 워크가 겹쳐 돈다.

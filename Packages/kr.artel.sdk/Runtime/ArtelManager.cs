@@ -78,6 +78,11 @@ namespace Artel
 
         /// <summary>지난 프레임의 전송 연결 상태. 새 연결이 열린 프레임을 집어내는 데만 쓴다.</summary>
         private bool transportWasConnected;
+
+        /// <summary>
+        /// 이 전송이 한 번이라도 열린 적이 있는가. 첫 연결과 다시 붙은 연결을 가른다 (ARTEL-797).
+        /// </summary>
+        private bool transportHasConnected;
         private ArtelStreamHost streamHost;
         private Coroutine webRtcPump;
 
@@ -204,6 +209,30 @@ namespace Artel
             host.AddComponent<ArtelManager>().SetServer(configuredServer);
         }
 #endif
+
+        /// <summary>
+        /// 이 프로세스의 세션을 실행 인자가 실어 왔는가 (ARTEL-797).
+        /// </summary>
+        /// <remarks>
+        /// <c>#if</c> 를 이 한 자리에 가둔다. 실행 인자를 읽는 코드 전체가 에디터와 개발 빌드에만
+        /// 컴파일되므로, 릴리스 빌드에는 인자로 로그인하는 길이 아예 없고 따라서 언제나 사람이 보고
+        /// 있는 실행이다. 읽는 쪽마다 <c>#if</c> 를 흩어 두면 그 사실이 여러 곳에 반복된다.
+        ///
+        /// <see cref="LaunchArguments"/> 는 <see cref="InstallLaunchSession"/> 이 이미 만들어 둔
+        /// 그 객체다. 에디터에서 플레이할 때는 에디터의 명령행에 <c>-artel-</c> 인자가 없으므로
+        /// 거짓이고, 그래서 사람이 오버레이로 로그인한 실행의 동작이 그대로 남는다.
+        /// </remarks>
+        private static bool RanFromLaunchArguments
+        {
+            get
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                return LaunchArguments.CarriesSession;
+#else
+                return false;
+#endif
+            }
+        }
 
         private void Awake()
         {
@@ -386,6 +415,7 @@ namespace Artel
                 if (webSocketTransport == null)
                 {
                     transportWasConnected = false;
+                    transportHasConnected = false;
                     return;
                 }
 
@@ -429,9 +459,42 @@ namespace Artel
             if (connected && !transportWasConnected)
             {
                 sceneStatePoller.Reset(Time.unscaledTime);
+
+                if (transportHasConnected && RanFromLaunchArguments)
+                {
+                    RegisterAfterReconnect();
+                }
+
+                transportHasConnected = true;
             }
 
             transportWasConnected = connected;
+        }
+
+        /// <summary>
+        /// 다시 붙은 뒤 인스턴스를 서버에 다시 등록한다 (ARTEL-797).
+        /// </summary>
+        /// <remarks>
+        /// 등록은 <c>lastConnectedAt</c> 과 <c>lastGameBuildId</c> 를 갱신하고, 그래야 QA run 이
+        /// 이 인스턴스를 계속 쓸 수 있다. 서버 쪽 등록은 (project, sdkUuid) 로 찾아 갱신하므로
+        /// 같은 instanceId 가 돌아온다 — 지금 열려 있는 소켓이 실어 둔 instanceId 와 어긋나지 않는다.
+        ///
+        /// 등록 경로를 새로 만들지 않고 오버레이가 쓰는 그 경로를 부른다. 토큰 재발급과 씬 스캔
+        /// 캐시가 거기 있고, 두 번째 등록 경로를 만들면 둘 중 하나만 고쳐지는 날이 온다. 대신
+        /// 등록이 도는 동안 오버레이 덮개가 잠깐 뜬다.
+        ///
+        /// 사람이 보고 있는 실행에서는 부르지 않는다. 그쪽은 여덟 번 뒤에 멈추고 사람이 오버레이의
+        /// 연결 버튼을 누르며, 그 버튼이 이미 같은 등록을 거친다.
+        /// </remarks>
+        private void RegisterAfterReconnect()
+        {
+            var overlay = GetComponent<ArtelOverlayController>();
+            if (overlay == null)
+            {
+                return;
+            }
+
+            overlay.RegisterInstance();
         }
 
         public void StartTransport()
@@ -446,7 +509,15 @@ namespace Artel
                     return;
                 }
 
-                webSocketTransport = new ArtelWebSocketClient(server, token, instanceId);
+                // 재연결 정책은 여기서 정해 넘긴다. 소켓이 실행 인자를 직접 읽지 않는 이유는
+                // ArtelReconnectPolicy 에 적었다.
+                webSocketTransport = new ArtelWebSocketClient(
+                    server,
+                    token,
+                    instanceId,
+                    RanFromLaunchArguments
+                        ? ArtelReconnectPolicy.Unattended
+                        : ArtelReconnectPolicy.Attended);
                 ownsTransport = true;
 
                 // This is the host game's own Player Setting, and the SDK ships inside customer
