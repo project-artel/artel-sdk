@@ -321,21 +321,30 @@ namespace Artel
 
             yield return null;
 
-            completed(ActionResultDto.Success(actionId, ReceiverNote()));
+            completed(ActionResultDto.Success(actionId, PressOutcome()));
         }
 
-        /// <summary>부르는 쪽이 그대로 읽을 한 줄. pulse 에서 본 이름과 맞출 수 있게 경로로 적는다.</summary>
-        private static string ReceiverNote()
+        /// <summary>
+        /// 누름이 무엇에 닿았나. **문장이 아니라 데이터로 싣는다.**
+        /// </summary>
+        /// <remarks>
+        /// 처음에는 사람이 읽을 한국어 문장을 실었다. 두 가지가 잘못이었다 — 받는 쪽 계약이
+        /// <c>returnValue</c> 를 객체로 타이핑해 두어 문자열이 파싱을 깨뜨렸고(프레임 하나가
+        /// 통째로 버려졌다), 표현은 프로토콜이 아니라 읽는 쪽이 정할 일이다(ARTEL-777).
+        /// <para>
+        /// <c>reached</c> 가 닿은 것의 경로다. 아무것도 없었으면 null 이고, 그때
+        /// <c>pointerHeldByPerson</c> 이 "빈 곳이었다"와 "사람이 포인터를 도로 가져가 메신저가
+        /// 아예 안 돌았다"를 가른다.
+        /// </para>
+        /// </remarks>
+        private static Dictionary<string, object> PressOutcome()
         {
-            if (!ArtelInput.SawPress)
+            var reached = ArtelInput.LastPressReceiver;
+            return new Dictionary<string, object>
             {
-                return "포인터를 사람이 쥐고 있어 누름이 전해지지 않았다";
-            }
-
-            var receiver = ArtelInput.LastPressReceiver;
-            return string.IsNullOrEmpty(receiver)
-                ? "닿은 것 없음"
-                : "OnMouseDown → " + receiver;
+                { "reached", string.IsNullOrEmpty(reached) ? null : reached },
+                { "pointerHeldByPerson", !ArtelInput.SawPress }
+            };
         }
 
         private ActionResultDto ExecuteMouseButton(
