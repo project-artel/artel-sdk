@@ -343,5 +343,40 @@ namespace Artel.Tests
             Assert.That(ArtelSdkSession.DisplayName, Is.EqualTo("octocat"));
             Assert.That(ArtelSdkSession.TryLoadProjectId(out _), Is.True);
         }
-    }
+    
+        [Test]
+        public void logout_만_준_실행은_지우기만_하는_실행이다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(new[] { "game.exe", "-artel-logout" }, null);
+
+            Assert.That(parsed.ClearsSession, Is.True);
+            Assert.That(parsed.ClearsSessionOnly, Is.True);
+        }
+
+        [Test]
+        public void logout_에_토큰이_함께_오면_계정을_바꾸는_실행이다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(new[] { "game.exe", "-artel-logout" }, "a-token");
+
+            Assert.That(parsed.ClearsSession, Is.True);
+            Assert.That(parsed.ClearsSessionOnly, Is.False);
+        }
+
+        [Test]
+        public void logout_에_프로젝트가_함께_오면_계정을_바꾸는_실행이다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(
+                new[] { "game.exe", "-artel-logout", "-artel-project", "42" }, null);
+
+            Assert.That(parsed.ClearsSessionOnly, Is.False);
+        }
+
+        [Test]
+        public void logout_이_없으면_지우기만_하는_실행이_아니다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(new[] { "game.exe" }, null);
+
+            Assert.That(parsed.ClearsSessionOnly, Is.False);
+        }
+}
 }

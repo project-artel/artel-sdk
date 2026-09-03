@@ -215,6 +215,26 @@ namespace Artel
             }
         }
 
+        /// <summary>
+        /// 이 실행이 세션을 지우러 온 것뿐인가. 지우기만 하고 새 세션을 넣지 않을 때 참이다.
+        /// </summary>
+        /// <remarks>
+        /// 참이면 게임은 지운 뒤 스스로 끝나야 한다. 그것이 <c>-artel-logout</c> 하나만 준
+        /// 실행이 요구하는 전부이고, 끝나지 않으면 부르는 쪽은 게임이 언제 다 지웠는지 알 수 없다 —
+        /// 로그아웃이 지워졌는지 아닌지 모르는 채로 시간이 다 가기를 기다리게 된다.
+        ///
+        /// 토큰이나 프로젝트가 함께 온 실행은 계정을 바꾸러 온 것이므로 끝내지 않는다.
+        /// </remarks>
+        public bool ClearsSessionOnly
+        {
+            get
+            {
+                return ClearsSession
+                    && string.IsNullOrWhiteSpace(Token)
+                    && string.IsNullOrWhiteSpace(ProjectId);
+            }
+        }
+
         /// <summary>받은 값만 <paramref name="server"/> 에 덮어쓴다. 나머지는 기본값이 남는다.</summary>
         public void ConfigureServer(Server server)
         {

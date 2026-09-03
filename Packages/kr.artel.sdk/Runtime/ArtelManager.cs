@@ -161,6 +161,15 @@ namespace Artel
         {
             LaunchArguments.LogErrors();
             LaunchArguments.InstallSession();
+
+            // 지우러 온 것뿐인 실행은 여기서 끝난다. 씬을 띄우고 오버레이를 그려 봐야 할 일이
+            // 없고, 부르는 쪽은 프로세스가 끝나는 것으로 다 지워진 것을 안다. 계정을 바꾸러 온
+            // 실행(토큰이나 프로젝트를 함께 준 실행)은 그대로 게임을 이어 간다.
+            if (LaunchArguments.ClearsSessionOnly)
+            {
+                Debug.Log("[Artel] 저장된 세션을 지우고 종료합니다 (-artel-logout).");
+                Application.Quit(0);
+            }
         }
 
         /// <summary>
