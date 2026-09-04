@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Artel.Affordances.Scan;
 using Artel.Auth;
 using NUnit.Framework;
 using UnityEngine;
@@ -39,6 +40,8 @@ namespace Artel.Tests
             ClearSession();
             PlayerPrefs.DeleteKey(DarkThemePlayerPrefsKey);
             displacedInstance = ArtelManagerSlot.Clear();
+            // -artel-window-label 을 실은 실행이 있었는지가 다음 테스트로 새면 안 된다.
+            ArtelWindowLabel.Value = null;
         }
 
         [TearDown]
@@ -54,6 +57,7 @@ namespace Artel.Tests
             PlayerPrefs.DeleteKey(DarkThemePlayerPrefsKey);
             PlayerPrefs.Save();
             ArtelSecretStore.Current = null;
+            ArtelWindowLabel.Value = null;
         }
 
         [UnityTest]
@@ -96,6 +100,77 @@ namespace Artel.Tests
             Assert.That(smoothCursorToggle.isOn, Is.False);
             Assert.That(Array.Find(toggles, toggle => toggle.name == "다크 모드 Toggle"), Is.Not.Null);
             Assert.That(canvas.GetComponentsInChildren<ArtelLogoGraphic>(true), Has.Length.EqualTo(3));
+        }
+
+        [UnityTest]
+        public IEnumerator ArtelManager_DrawsWindowLabelTopLeft_WhenArgumentGiven()
+        {
+            ArtelWindowLabel.Value = "TC 9139";
+
+            host = new GameObject("Artel overlay test");
+            host.AddComponent<ArtelManager>();
+
+            // GUI는 컨트롤러의 Start가 만들고, Start는 다음 프레임에 돈다.
+            yield return null;
+
+            var canvas = host.transform.Find("Artel Overlay Canvas");
+            Assert.That(canvas, Is.Not.Null);
+
+            var label = canvas.Find("Artel Window Label");
+            Assert.That(label, Is.Not.Null);
+            Assert.That(label.GetComponent<Instrument>(), Is.Not.Null);
+            Assert.That(label.GetComponentInChildren<Text>(true).text, Is.EqualTo("TC 9139"));
+
+            var labelRect = label.GetComponent<RectTransform>();
+            Assert.That(labelRect.anchorMin, Is.EqualTo(new Vector2(0f, 1f)));
+            Assert.That(labelRect.anchorMax, Is.EqualTo(new Vector2(0f, 1f)));
+            Assert.That(labelRect.pivot, Is.EqualTo(new Vector2(0f, 1f)));
+        }
+
+        /// <summary>
+        /// `artel qa matrix` 가 창마다 만드는 문구를 그대로 넣어, 판이 그 길이를 담는지 본다.
+        /// 판이 고정 폭이면 이 문구는 뒤가 잘리고, 잘린 라벨은 어느 조합의 창인지 말해 주지
+        /// 못한다.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArtelManager_FitsWindowLabelPlateToText_ForMatrixLabel()
+        {
+            const string MatrixLabel = "slot 0 testRun=1 contentMap=off knowledge=server default";
+            ArtelWindowLabel.Value = MatrixLabel;
+
+            host = new GameObject("Artel overlay test");
+            host.AddComponent<ArtelManager>();
+
+            yield return null;
+
+            var label = host.transform.Find("Artel Overlay Canvas/Artel Window Label");
+            Assert.That(label, Is.Not.Null);
+
+            var text = label.GetComponentInChildren<Text>(true);
+            Assert.That(text.text, Is.EqualTo(MatrixLabel));
+            Assert.That(text.horizontalOverflow, Is.EqualTo(HorizontalWrapMode.Overflow));
+            Assert.That(
+                label.GetComponent<RectTransform>().sizeDelta.x,
+                Is.GreaterThanOrEqualTo(text.preferredWidth));
+
+            // 세로로 여백을 두면 남는 높이가 줄 높이보다 낮아지고, Truncate 가 줄을 통째로
+            // 지워 판만 까맣게 남는다. 여백 0 과 Overflow 둘 다 그것을 막는다.
+            Assert.That(text.verticalOverflow, Is.EqualTo(VerticalWrapMode.Overflow));
+            Assert.That(text.rectTransform.offsetMin.y, Is.EqualTo(0f));
+            Assert.That(text.rectTransform.offsetMax.y, Is.EqualTo(0f));
+        }
+
+        [UnityTest]
+        public IEnumerator ArtelManager_DoesNotDrawWindowLabel_WhenArgumentMissing()
+        {
+            host = new GameObject("Artel overlay test");
+            host.AddComponent<ArtelManager>();
+
+            yield return null;
+
+            var canvas = host.transform.Find("Artel Overlay Canvas");
+            Assert.That(canvas, Is.Not.Null);
+            Assert.That(canvas.Find("Artel Window Label"), Is.Null);
         }
 
         private static void ClearSession()

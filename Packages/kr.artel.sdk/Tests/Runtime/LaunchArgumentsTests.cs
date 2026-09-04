@@ -378,5 +378,34 @@ namespace Artel.Tests
 
             Assert.That(parsed.ClearsSessionOnly, Is.False);
         }
+
+        [Test]
+        public void window_label_인자를_받는다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(
+                new[] { "-artel-window-label", "TC 9139" }, null);
+
+            Assert.That(parsed.WindowLabel, Is.EqualTo("TC 9139"));
+            Assert.That(parsed.Errors, Is.Empty);
+        }
+
+        [Test]
+        public void window_label_에_값이_없으면_오류를_남기고_비워_둔다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(
+                new[] { "-artel-window-label", "-batchmode" }, null);
+
+            Assert.That(parsed.WindowLabel, Is.Null);
+            Assert.That(parsed.Errors.Count, Is.EqualTo(1));
+            Assert.That(parsed.Errors[0], Does.Contain("-artel-window-label").And.Contains("값이 없습니다"));
+        }
+
+        [Test]
+        public void window_label_인자가_없으면_비어_있다()
+        {
+            var parsed = ArtelLaunchArguments.Parse(new[] { "game.exe" }, null);
+
+            Assert.That(parsed.WindowLabel, Is.Null);
+        }
 }
 }
