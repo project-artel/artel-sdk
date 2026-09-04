@@ -29,6 +29,14 @@ namespace Artel
         private const float MinWindowLabelTextWidth = 120f;
         private const float MaxWindowLabelTextWidth = 900f;
 
+        // 라벨 판 바로 아래, 더 작은 글자로 지금 이 창에서 무엇이 도는지 그린다 (ARTEL-835).
+        // 치수를 정하는 규칙은 라벨 판과 같다 — 세로 여백을 두지 않고 글꼴의 줄 높이보다
+        // 넉넉한 판 높이를 고정으로 쓴다. 라벨 판은 16pt 에 40 을 썼으니(2.5배) 13pt 에는
+        // 그 비율을 지켜 32 를 쓴다.
+        private const int RunStatusFontSize = 13;
+        private const float RunStatusHeight = 32f;
+        private const float RunStatusGap = 4f;
+
         private const string LoginMessage = "Artel 계정으로 로그인하면 연결됩니다.";
         private const string ChooseProjectMessage = "이 게임을 연결할 프로젝트를 선택해 주세요.";
 
@@ -73,6 +81,7 @@ namespace Artel
         private Text coverMessageText;
         private Text coverStatusText;
         private Text coverProgressText;
+        private Text runStatusText;
         private bool appliedShowPanel;
         private bool registrationRunning;
         private bool loginRunning;
@@ -91,12 +100,22 @@ namespace Artel
         private SceneScanReportDto cachedSceneScan;
         private ArtelOverlayViewModel viewModel;
 
+        // 가장 최근에 받은 RUN_STATUS (ARTEL-835). 아직 없으면 null 이고, CreateRunStatusLine
+        // 은 이 값으로 시작 문구를 정한다 — 다크 모드 토글로 CreateGui 가 다시 도는 동안에도
+        // run 이 계속 돌고 있었을 수 있어, 새로 그리는 줄이 지난 값을 잊으면 안 된다.
+        private RunStatusMessageDto latestRunStatus;
+
         private void Awake()
         {
             if (artelManager == null)
             {
                 artelManager = GetComponent<ArtelManager>();
             }
+
+            // CreateGui 는 다크 모드 토글마다 다시 돌지만 이 컨트롤러 자체는 한 번만
+            // 만들어지므로, 구독도 여기서 한 번만 건다. CreateWindowLabel 안에서 걸면
+            // 토글마다 겹쳐 걸려 한 통에 여러 번 반응한다.
+            artelManager.RunStatusReceived += OnRunStatusReceived;
 
             var jsonCodec = new NewtonsoftJsonCodec();
             viewModel = new ArtelOverlayViewModel(
@@ -143,6 +162,25 @@ namespace Artel
             if (viewModel != null)
             {
                 viewModel.Changed -= RefreshView;
+            }
+
+            if (artelManager != null)
+            {
+                artelManager.RunStatusReceived -= OnRunStatusReceived;
+            }
+        }
+
+        /// <summary>
+        /// HandleMessage 가 이미 메인 스레드에서 부르므로 여기서 곧장 Text 를 만져도 된다
+        /// (ARTEL-835). 줄이 아직 없으면(라벨이 없어 CreateRunStatusLine 을 건너뛴 경우) 값만
+        /// 적어 두고, 나중에 줄이 생기면(다크 모드 토글) 그 값으로 시작한다.
+        /// </summary>
+        private void OnRunStatusReceived(RunStatusMessageDto message)
+        {
+            latestRunStatus = message;
+            if (runStatusText != null)
+            {
+                runStatusText.text = RunStatusLine.Describe(message);
             }
         }
 
@@ -461,6 +499,49 @@ namespace Artel
             labelRect.sizeDelta = new Vector2(textWidth + WindowLabelPadding * 2f, WindowLabelHeight);
 
             ArtelWindowTitle.Apply(label);
+
+            CreateRunStatusLine();
+        }
+
+        // 라벨 판 바로 아래에 더 작은 글자로 그린다. 라벨이 없으면 이 메서드 자체가 불리지
+        // 않는다 — CreateWindowLabel 의 이른 반환을 그대로 물려받으므로, 라벨 없는 화면은
+        // 지금과 똑같이 남는다. RUN_STATUS 가 아직 한 번도 오지 않았으면 빈 줄 대신
+        // RunStatusLine.NoRunYet 을 써서, 그리다가 실패한 빈 줄과 가려지게 두지 않는다
+        // (ARTEL-835).
+        private void CreateRunStatusLine()
+        {
+            var statusObject = new GameObject("Artel Run Status", typeof(RectTransform), typeof(Image));
+            statusObject.transform.SetParent(canvasObject.transform, false);
+            // 라벨 판과 같은 이유로 계기다. content map 과 pulse 는 이 줄도 보고하지 않는다
+            // (ARTEL-698).
+            statusObject.AddComponent<Instrument>();
+
+            var statusRect = statusObject.GetComponent<RectTransform>();
+            AnchorTopLeft(statusRect, new Vector2(24f, -(24f + WindowLabelHeight + RunStatusGap)));
+            statusObject.GetComponent<Image>().color = bgSurface;
+
+            var text = CreateText(
+                statusObject.transform,
+                RunStatusLine.Describe(latestRunStatus),
+                RunStatusFontSize,
+                TextAnchor.MiddleLeft,
+                textSecondary);
+            // 라벨 판이 잡았던 버그를 여기서 되풀이하지 않는다 — CreateText 의 기본은
+            // Wrap + Truncate 라, 판보다 긴 문구는 두 줄로 접힌 뒤 판 높이를 넘긴 줄이
+            // 통째로 사라진다. 세로 여백도 두지 않는다: 위아래로 빼면 남는 높이가 13pt 글자의
+            // 줄 높이보다 낮아질 수 있고, 그러면 라벨 판과 같은 방식으로 줄이 사라진다.
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+            var textRect = text.rectTransform;
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(WindowLabelPadding, 0f);
+            textRect.offsetMax = new Vector2(-WindowLabelPadding, 0f);
+
+            var textWidth = Mathf.Clamp(text.preferredWidth, MinWindowLabelTextWidth, MaxWindowLabelTextWidth);
+            statusRect.sizeDelta = new Vector2(textWidth + WindowLabelPadding * 2f, RunStatusHeight);
+
+            runStatusText = text;
         }
 
         private void CreateProgressContent()
