@@ -33,6 +33,7 @@ namespace Artel
         public const string FrontendArgument = "-artel-frontend";
         public const string ProjectArgument = "-artel-project";
         public const string LogoutArgument = "-artel-logout";
+        public const string WindowLabelArgument = "-artel-window-label";
 
         /// <summary>
         /// 실행 인자로 받은 토큰의 만료 시각으로 저장하는 값. 빈 문자열이다.
@@ -86,6 +87,9 @@ namespace Artel
 
         /// <summary><c>-artel-frontend</c> 가 정한 로그인 중계 페이지 주소. 없으면 null.</summary>
         public string FrontendOrigin { get; private set; }
+
+        /// <summary><c>-artel-window-label</c> 이 정한 값. 없으면 null.</summary>
+        public string WindowLabel { get; private set; }
 
         /// <summary>잘못된 값에 대해 남길 문구. 인자가 모두 성했으면 비어 있다.</summary>
         public IReadOnlyList<string> Errors
@@ -168,6 +172,16 @@ namespace Artel
                     if (parsed.TryTakeValue(commandLineArguments, ProjectArgument, ref index, out var value))
                     {
                         parsed.ProjectId = value;
+                    }
+
+                    continue;
+                }
+
+                if (Matches(argument, WindowLabelArgument))
+                {
+                    if (parsed.TryTakeValue(commandLineArguments, WindowLabelArgument, ref index, out var value))
+                    {
+                        parsed.WindowLabel = value;
                     }
                 }
             }

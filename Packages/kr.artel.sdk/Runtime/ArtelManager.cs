@@ -162,6 +162,11 @@ namespace Artel
             LaunchArguments.LogErrors();
             LaunchArguments.InstallSession();
 
+            // -artel-window-label 은 세션이 아니라 이번 실행 하나만의 값이므로
+            // ArtelSdkSession 을 거치지 않고 ArtelWindowLabel 에 직접 둔다. 오버레이는
+            // 자기 CreateGui 에서 이 값을 읽는다 (ARTEL-826).
+            ArtelWindowLabel.Value = LaunchArguments.WindowLabel;
+
             // 지우러 온 것뿐인 실행은 여기서 끝난다. 씬을 띄우고 오버레이를 그려 봐야 할 일이
             // 없고, 부르는 쪽은 프로세스가 끝나는 것으로 다 지워진 것을 안다. 계정을 바꾸러 온
             // 실행(토큰이나 프로젝트를 함께 준 실행)은 그대로 게임을 이어 간다.

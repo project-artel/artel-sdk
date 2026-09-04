@@ -21,6 +21,14 @@ namespace Artel
         private const int MaxListedProjects = 4;
         private const float ProjectRowHeight = 60f;
 
+        // -artel-window-label 판의 치수. 폭만 문구를 따라가고 높이는 한 줄로 고정이다
+        // (CreateWindowLabel 참조).
+        private const int WindowLabelFontSize = 16;
+        private const float WindowLabelPadding = 12f;
+        private const float WindowLabelHeight = 40f;
+        private const float MinWindowLabelTextWidth = 120f;
+        private const float MaxWindowLabelTextWidth = 900f;
+
         private const string LoginMessage = "Artel 계정으로 로그인하면 연결됩니다.";
         private const string ChooseProjectMessage = "이 게임을 연결할 프로젝트를 선택해 주세요.";
 
@@ -374,6 +382,7 @@ namespace Artel
 
             CreateAdvancedSection();
             CreateCover();
+            CreateWindowLabel();
 
             appliedShowPanel = viewModel.ShowPanel;
             panelObject.SetActive(appliedShowPanel);
@@ -400,6 +409,58 @@ namespace Artel
             CreateGateContent();
 
             coverObject.SetActive(false);
+        }
+
+        // -artel-window-label 이 없으면 아무것도 만들지 않는다 (ARTEL-826). CreateCover
+        // 다음, 그러니까 캔버스의 마지막 자식으로 붙이는 것이 요점이다. 형제는 나중에 올수록
+        // 위에 그려지므로, 패널이 접히든 게이트 덮개가 뜨든 이 라벨만은 그 위에 계속 보인다.
+        // 창 제목도 여기서 같이 정한다 — 화면과 제목 둘 다 같은 값을 보여 줄 자리라는 뜻이다.
+        private void CreateWindowLabel()
+        {
+            var label = ArtelWindowLabel.Value;
+            if (string.IsNullOrEmpty(label))
+            {
+                return;
+            }
+
+            var labelObject = new GameObject("Artel Window Label", typeof(RectTransform), typeof(Image));
+            labelObject.transform.SetParent(canvasObject.transform, false);
+            // 이 아래도 계기다. canvasObject 를 통해 조상만으로도 이미 표시가 걸리지만, 이
+            // 객체 스스로도 달아 둔다 — canvasObject 와 같은 표시를 쓴다 (ARTEL-698).
+            labelObject.AddComponent<Instrument>();
+
+            var labelRect = labelObject.GetComponent<RectTransform>();
+            AnchorTopLeft(labelRect, new Vector2(24f, -24f));
+            // 게임 화면 위에 얹히므로 읽을 수 있는 바탕이 있어야 한다.
+            labelObject.GetComponent<Image>().color = bgSurface;
+
+            var text = CreateText(labelObject.transform, label, WindowLabelFontSize, TextAnchor.MiddleLeft, textPrimary);
+            // 한 줄로 둔다. CreateText 의 기본은 Wrap + Truncate 라, 판보다 긴 문구는 두 줄로
+            // 접힌 뒤 판 높이를 넘긴 줄이 통째로 사라진다. `artel qa matrix` 가 만드는 문구는
+            // `slot 0 testRun=1 contentMap=off knowledge=server default` 처럼 50자가 넘으므로
+            // 그대로 두면 어느 조합의 창인지가 잘려 나간다.
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            // 세로로는 여백을 두지 않고 판 높이를 그대로 쓴다. 위아래로 12 씩 빼면 40 짜리
+            // 판에 16 만 남는데, 그것은 16pt 글자의 줄 높이(약 18)보다 낮다. CreateText 의
+            // 기본이 Truncate 라 들어가지 못한 줄은 잘리는 것이 아니라 통째로 사라지고,
+            // 화면에는 까만 판만 남는다 — 2026-09-04 실제 빌드에서 그렇게 떴다.
+            // verticalOverflow 도 함께 풀어, 더 큰 글꼴로 바꾸는 날 같은 방식으로 사라지지
+            // 않게 한다.
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+            var textRect = text.rectTransform;
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(WindowLabelPadding, 0f);
+            textRect.offsetMax = new Vector2(-WindowLabelPadding, 0f);
+
+            // 판을 문구에 맞춘다. preferredWidth 는 캔버스 배치를 기다리지 않고 이 자리에서
+            // 바로 나오지만, 폰트를 아직 못 읽은 경우 0 이 나올 수 있어 아래를 받쳐 둔다.
+            // 위쪽 상한은 1920 기준 폭의 절반 아래다 — 이보다 긴 문구는 판 밖으로 흘러 나가되
+            // 잘리지는 않는다. 잘린 라벨은 창을 구분해 주지 못하므로 없느니만 못하다.
+            var textWidth = Mathf.Clamp(text.preferredWidth, MinWindowLabelTextWidth, MaxWindowLabelTextWidth);
+            labelRect.sizeDelta = new Vector2(textWidth + WindowLabelPadding * 2f, WindowLabelHeight);
+
+            ArtelWindowTitle.Apply(label);
         }
 
         private void CreateProgressContent()
@@ -821,6 +882,14 @@ namespace Artel
             rectTransform.anchorMin = new Vector2(1f, 1f);
             rectTransform.anchorMax = new Vector2(1f, 1f);
             rectTransform.pivot = new Vector2(1f, 1f);
+            rectTransform.anchoredPosition = position;
+        }
+
+        private static void AnchorTopLeft(RectTransform rectTransform, Vector2 position)
+        {
+            rectTransform.anchorMin = new Vector2(0f, 1f);
+            rectTransform.anchorMax = new Vector2(0f, 1f);
+            rectTransform.pivot = new Vector2(0f, 1f);
             rectTransform.anchoredPosition = position;
         }
 
