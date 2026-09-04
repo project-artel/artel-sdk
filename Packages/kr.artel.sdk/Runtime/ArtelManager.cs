@@ -100,6 +100,13 @@ namespace Artel
         /// <summary>Separates the first connection, which is Start's, from a later re-enable.</summary>
         private bool hasStarted;
 
+        /// <summary>
+        /// <c>RUN_STATUS</c> 가 도착할 때마다 올린다 (ARTEL-835). <c>HandleMessage</c> 가 이미
+        /// Unity 메인 스레드(Update 의 메시지 드레인)에서 도므로, 구독자는 그대로 UI 를
+        /// 만져도 된다 — 스레드를 넘기는 장치가 따로 필요하지 않다.
+        /// </summary>
+        internal event Action<RunStatusMessageDto> RunStatusReceived;
+
         public string SdkId { get; private set; }
         public string GameVersion { get; private set; }
 
@@ -720,6 +727,12 @@ namespace Artel
                     return;
                 }
 
+                if (request.Type == "RUN_STATUS")
+                {
+                    HandleRunStatus(message.Text);
+                    return;
+                }
+
                 if (streamHost.TryHandleMessage(request.Type, message.Text, Time.unscaledTime))
                 {
                     return;
@@ -745,6 +758,26 @@ namespace Artel
             if (!processingActions)
             {
                 StartCoroutine(ProcessActions());
+            }
+        }
+
+        /// <summary>
+        /// <c>RUN_STATUS</c> 는 답을 기다리는 요청이 아니라 통지다. 창이 지금 무엇을 하고
+        /// 있는지 그리는 것은 오버레이의 몫이므로, 여기서는 파싱만 하고 구독자에게 넘긴다
+        /// (ARTEL-835).
+        /// </summary>
+        private void HandleRunStatus(string json)
+        {
+            var runStatus = jsonCodec.Deserialize<RunStatusMessageDto>(json);
+            if (runStatus == null)
+            {
+                return;
+            }
+
+            var handler = RunStatusReceived;
+            if (handler != null)
+            {
+                handler(runStatus);
             }
         }
 

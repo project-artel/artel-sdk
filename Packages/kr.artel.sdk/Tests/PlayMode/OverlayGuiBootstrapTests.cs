@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Reflection;
 using Artel.Affordances.Scan;
 using Artel.Auth;
 using NUnit.Framework;
@@ -171,6 +172,78 @@ namespace Artel.Tests
             var canvas = host.transform.Find("Artel Overlay Canvas");
             Assert.That(canvas, Is.Not.Null);
             Assert.That(canvas.Find("Artel Window Label"), Is.Null);
+        }
+
+        /// <summary>
+        /// 라벨이 있으면 그 아래에 상태 줄도 뜬다. 아직 RUN_STATUS 를 받은 적이 없으므로
+        /// 문구는 RunStatusLine.NoRunYet 이어야 한다 — 빈 문자열이면 그리다가 실패한 줄과
+        /// 가려지지 않는다 (ARTEL-835).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArtelManager_DrawsRunStatusLineBelowLabel_WhenLabelPresent()
+        {
+            ArtelWindowLabel.Value = "TC 9139";
+
+            host = new GameObject("Artel overlay test");
+            host.AddComponent<ArtelManager>();
+
+            yield return null;
+
+            var canvas = host.transform.Find("Artel Overlay Canvas");
+            var statusLine = canvas.Find("Artel Run Status");
+            Assert.That(statusLine, Is.Not.Null);
+            Assert.That(statusLine.GetComponent<Instrument>(), Is.Not.Null);
+            Assert.That(
+                statusLine.GetComponentInChildren<Text>(true).text,
+                Is.EqualTo(RunStatusLine.NoRunYet));
+        }
+
+        /// <summary>
+        /// 라벨이 없으면 화면은 지금과 똑같이 남는다 — 상태 줄의 픽셀도 모든 화면 캡처에
+        /// 실리므로, 이 줄이 라벨 없이 켜지면 라벨 없이 뜨는 모든 QA 런의 화면이 달라진다
+        /// (ARTEL-835).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArtelManager_DoesNotDrawRunStatusLine_WhenLabelMissing()
+        {
+            host = new GameObject("Artel overlay test");
+            host.AddComponent<ArtelManager>();
+
+            yield return null;
+
+            var canvas = host.transform.Find("Artel Overlay Canvas");
+            Assert.That(canvas.Find("Artel Run Status"), Is.Null);
+        }
+
+        /// <summary>
+        /// RUN_STATUS 가 도착하면 그 자리에서 문구가 바뀐다. HandleMessage 는 private 이라
+        /// GameStateSwitchTests 와 같은 방법으로 리플렉션을 거쳐 부른다.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator ArtelManager_UpdatesRunStatusLine_WhenRunStatusArrives()
+        {
+            ArtelWindowLabel.Value = "TC 9139";
+
+            host = new GameObject("Artel overlay test");
+            var manager = host.AddComponent<ArtelManager>();
+
+            yield return null;
+
+            const string RunStatusJson =
+                "{\"type\":\"RUN_STATUS\",\"state\":\"WAITING_AGENT\",\"projectName\":\"WordVenture\"," +
+                "\"testRunName\":\"타이틀에서 전투까지\",\"qaRunId\":41,\"qaTryId\":77," +
+                "\"label\":null,\"outcome\":null,\"at\":\"2026-09-04T16:30:00Z\"}";
+            var message = new ArtelWebSocketMessage(RunStatusJson, _ => { });
+
+            typeof(ArtelManager)
+                .GetMethod("HandleMessage", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(manager, new object[] { message });
+
+            var statusLine = host.transform.Find("Artel Overlay Canvas/Artel Run Status");
+            var text = statusLine.GetComponentInChildren<Text>(true);
+            Assert.That(
+                text.text,
+                Is.EqualTo("project WordVenture · test run 타이틀에서 전투까지 · agent session 기다리는 중"));
         }
 
         private static void ClearSession()
