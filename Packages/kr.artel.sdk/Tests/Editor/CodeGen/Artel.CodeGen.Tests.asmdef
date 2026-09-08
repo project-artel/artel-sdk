@@ -1,0 +1,25 @@
+{
+  "name": "Artel.CodeGen.Tests",
+  "rootNamespace": "Artel.CodeGen.Tests",
+  "references": [
+    "Unity.Artel.CodeGen",
+    "Artel.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "Mono.Cecil.dll",
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
