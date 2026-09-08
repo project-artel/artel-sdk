@@ -831,6 +831,44 @@ namespace Artel.Tests.Transport
             Assert.That(viewModel.HasError, Is.False);
         }
 
+        // 소켓은 멀쩡한데 등록만 실패한 자리. 게이트가 살아 있는 연결 위에 서고, 무인 런에는
+        // 그것을 내릴 사람이 없다. 소켓이 그대로 열려 있다는 사실이 그 화면을 물러나게 한다.
+        [Test]
+        public void OverlayViewModel_LowersTheGateWhenTheSocketIsStillOpen()
+        {
+            var viewModel = ConnectableViewModel();
+            viewModel.Connect(() => true);
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+
+            // 주소를 만들 수 없는 Server 는 401 도 404 도 아닌 실패다. 세션은 그대로 남고
+            // 화면만 프로젝트 선택으로 간다.
+            RunToCompletionWithoutWaiting(
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
+            Assert.That(viewModel.ShowGate, Is.True);
+
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+
+            Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.Connected));
+            Assert.That(viewModel.ShowGate, Is.False);
+        }
+
+        // 401 로 세션을 지운 뒤에는 소켓이 아직 열려 있어도 사람이 할 일은 재로그인이다.
+        // 그 화면까지 연결이 밀어내면 다음에 눌러야 할 것이 사라진다.
+        [Test]
+        public void OverlayViewModel_KeepsTheLoginScreenWhenTheSessionIsGone()
+        {
+            var viewModel = ConnectableViewModel();
+            viewModel.Connect(() => true);
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+
+            viewModel.LogOut();
+
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+
+            Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.NeedsLogin));
+            Assert.That(viewModel.ShowGate, Is.True);
+        }
+
         // NoticeTransport 는 프레임마다 불린다. 상태가 그대로일 때도 Changed 를 올리면
         // 오버레이가 매 프레임 다시 그려진다.
         [Test]

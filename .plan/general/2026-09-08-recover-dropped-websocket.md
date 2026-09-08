@@ -159,6 +159,26 @@
 비차단 지적 둘도 받아들였다: `Math.Pow` 지수의 clamp 는 `Math.Min` 이 이미 무한대를 상한으로
 접으므로 지웠고, `Connect` 가 `noticedPhase` 를 직접 쓰는 이유를 주석으로 남겼다.
 
+2회차는 1~2 를 통과시키고 3 이 반쪽이라고 했다. 맞는 지적이었다.
+
+5. **should-fix — 3 의 promotion 이 phase 가 움직였을 때만 닿았다.** 중복 제거 guard 가
+   `DrawsTransport` 보다 앞이라, 소켓이 `Connected` 를 떠난 적 없이 등록만 실패한 자리에서는
+   다시 볼 상태 변화가 없어 게이트가 그대로 남았다. guard 를 `phase == noticedPhase &&
+   StateShows(phase)` 로 바꿔, 전송이 그대로여도 화면이 다른 곳으로 갔으면 다시 그린다.
+6. **should-fix — 그 branch 의 테스트.** 등록 실패로 올라간 게이트가 열린 소켓 앞에서 물러나는
+   것과, 세션이 지워진 뒤에는 물러나지 않는 것을 EditMode 로 덮었다.
+
+**받아들이지 않은 것 하나.** `State == Registering` 에서 promotion 이 일어나지 않는 것을 덮는
+테스트는 넣지 않았다. 그 상태를 붙잡으려면 코루틴을 살아 있는 `UnityWebRequest` 위에 세워
+둬야 해서 테스트가 소켓에 기대게 되고, 그 branch 가 가르는 것은 등록이 도는 몇 프레임 동안
+어느 상태 문구가 이기느냐뿐이다.
+
+2회차의 비차단 지적 중 하나(`ArtelManager` 주석이 실제보다 강하다)는 문구를 고쳤다. 나머지
+셋(빈 스냅샷 막기, `AbandonStalledHandshake` 와 `HandleClose` 가 함께 예약할 때 시도 횟수가 두 번
+오르는 것, 버린 소켓을 `Dispose` 하지 않는 것)은 그대로 둔다. 빈 스냅샷은 4001 을 한 번 더 받는
+대신 "걸 자격증명이 없다"는 로그를 남기는 쪽이 낫고, 나머지 둘은 다음 지연이 한 번 두 배가 되는
+것과 close 가 스트림을 놓는다는 사실이 전부다.
+
 ## Open Questions
 
 - 없음.

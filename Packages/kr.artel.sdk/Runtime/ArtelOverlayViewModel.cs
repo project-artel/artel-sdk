@@ -559,7 +559,10 @@ namespace Artel
         /// </remarks>
         public void NoticeTransport(ArtelTransportPhase phase)
         {
-            if (phase == noticedPhase)
+            // 전송이 그대로여도 화면이 그 사이에 다른 곳으로 갔으면 다시 그린다. 전송만 보고
+            // 물러서면 위의 예외가 닿지 않는다 — 소켓이 Connected 를 떠난 적이 없는데 등록이
+            // 실패해 게이트가 올라간 자리에서는 다시 볼 상태 변화 자체가 없기 때문이다.
+            if (phase == noticedPhase && StateShows(phase))
             {
                 return;
             }
@@ -595,6 +598,14 @@ namespace Artel
             // 버튼을 가리킨다.
             HasError = true;
             SetStatus("실시간 서버와 연결되어 있지 않습니다. 연결을 눌러 다시 시도해 주세요.");
+        }
+
+        /// <summary>화면이 이미 이 전송 상태를 그리고 있는지.</summary>
+        private bool StateShows(ArtelTransportPhase phase)
+        {
+            return phase == ArtelTransportPhase.Connected
+                ? State == ArtelConnectionState.Connected
+                : State == ArtelConnectionState.Connecting;
         }
 
         /// <summary>

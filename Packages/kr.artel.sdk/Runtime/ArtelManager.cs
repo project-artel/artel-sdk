@@ -529,8 +529,9 @@ namespace Artel
         /// <c>Clear</c> 가 세션을 지우며, macOS 의 비밀 저장소는 <c>/usr/bin/security</c> 를 최대
         /// 15초 기다린다 — 그동안 전송의 자물쇠가 잡혀 있어 <see cref="StopTransport"/> 까지 멈춘다.
         ///
-        /// 프레임마다 뜨지 않고 여기서만 뜨는 것으로 충분하다. 토큰과 instanceId 가 달라지는 자리는
-        /// 로그인과 등록 둘뿐이고, 그 둘은 끝에서 반드시 <see cref="StartTransport"/> 를 부른다.
+        /// 프레임마다 뜨지 않고 여기서만 뜨는 것으로 충분하다. 토큰이나 instanceId 가 달라진 뒤에
+        /// dial 이 일어나는 길은 전부 <see cref="StartTransport"/> 를 지난다 — 등록이 끝나면
+        /// 오버레이가 그것을 부르고, 재연결은 이 스냅샷을 그대로 다시 쓴다.
         /// </remarks>
         private void RefreshTransportCredentials()
         {
