@@ -56,6 +56,7 @@ namespace Artel
 
         private GameObject canvasObject;
         private GameObject createdEventSystem;
+        private GameObject toggleObject;
         private GameObject panelObject;
         private GameObject advancedObject;
         private GameObject coverObject;
@@ -144,6 +145,51 @@ namespace Artel
             {
                 viewModel.Changed -= RefreshView;
             }
+        }
+
+        /// <summary>
+        /// 우상단 Artel 버튼은 사람이 마우스를 쥐고 있을 때만 있다. 에이전트가 게임을 모는
+        /// 동안 이 버튼은 사람이 누를 것도 아니고, 에이전트가 눌러야 할 것도 아니다.
+        /// 버튼이 사라질 때 열려 있던 패널도 함께 닫는다 — 패널을 여닫는 길이 이 버튼
+        /// 하나뿐이라, 버튼 없이 남은 패널은 게임 화면을 440x300 만큼 가린 채 닫히지 않는다.
+        /// </summary>
+        /// <remarks>
+        /// 프레임마다 보는 이유는 소유가 프레임마다 바뀌기 때문이다 — 사람이 실제 마우스를
+        /// 4px 움직이면 <see cref="ArtelInput.AdvanceFrame"/> 이 그 프레임에 에이전트의
+        /// 포인터 소유를 놓는다(<c>VirtualMouseState.OwnsPointer</c>). RefreshView 는
+        /// viewModel 이 바뀔 때만 도므로 이 신호를 실을 자리가 없다.
+        /// </remarks>
+        private void Update()
+        {
+            if (toggleObject == null)
+            {
+                return;
+            }
+
+            var humanHoldsMouse = HumanHoldsMouse;
+            if (toggleObject.activeSelf == humanHoldsMouse)
+            {
+                return;
+            }
+
+            toggleObject.SetActive(humanHoldsMouse);
+
+            // 마우스가 사람에게 돌아와도 패널을 도로 열지는 않는다. 몇 분 전에 열어 둔
+            // 패널이 혼자 돌아오는 것보다, 버튼을 한 번 더 누르는 편이 덜 놀랍다.
+            // appliedShowPanel 은 건드리지 않는다 — 그것은 viewModel.ShowPanel 의 전이를
+            // 재는 값이고, 여기서 내리면 다음 Changed 에 RefreshView 가 패널을 다시 연다.
+            if (!humanHoldsMouse && panelObject != null)
+            {
+                panelObject.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// 에이전트가 포인터를 옮긴 적이 없거나, 옮긴 뒤 사람이 실제 마우스를 도로 가져갔나.
+        /// </summary>
+        private static bool HumanHoldsMouse
+        {
+            get { return !ArtelInput.HasVirtualMousePosition; }
         }
 
         private void RegisterInstance()
@@ -357,6 +403,10 @@ namespace Artel
             CreateLogo(toggleButton.transform, Vector2.zero, 36f);
             AnchorTopRight(toggleButton.GetComponent<RectTransform>(), new Vector2(-24f, -24f));
             toggleButton.onClick.AddListener(() => panelObject.SetActive(!panelObject.activeSelf));
+            // 다크 모드 토글로 이 GUI 가 다시 만들어질 때도 지금 포인터를 쥔 쪽에 맞춰
+            // 시작해야, 에이전트가 모는 중에 버튼이 한 프레임 깜박이지 않는다.
+            toggleObject = toggleButton.gameObject;
+            toggleObject.SetActive(HumanHoldsMouse);
 
             panelObject = new GameObject("Artel Panel", typeof(RectTransform), typeof(Image));
             panelObject.transform.SetParent(canvasObject.transform, false);
