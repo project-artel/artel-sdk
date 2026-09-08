@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using Artel.Domain;
@@ -15,7 +14,6 @@ using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEngine.TestTools;
 using UnityEngine.UI;
 
 namespace Artel.Tests
@@ -137,18 +135,16 @@ namespace Artel.Tests
         }
 
         /// <summary>
-        /// 보고서가 Build Settings의 씬을 그대로 싣고, 그 씬을 실제로 스캔하는지 본다.
+        /// 보고서가 Build Settings의 씬을 그 순서 그대로 싣는지 본다. 서버는 0번을 게임의
+        /// 입구로 읽으므로 순서가 내용이다.
         /// </summary>
         /// <remarks>
         /// 전제 조건을 테스트가 직접 만든다. 호스트 프로젝트의 Build Settings를 빌려 쓰면 씬을
         /// 하나도 등록하지 않은 프로젝트 — 패키지 테스트를 돌리는 빈 프로젝트가 늘 그렇다 —
         /// 에서는 빈 보고서를 받고 실패한다.
-        ///
-        /// 이미 열려 있는 씬을 등록하는 이유는 EditMode에서 <c>SceneManager.LoadSceneAsync</c>가
-        /// 돌지 않기 때문이다. 열려 있는 씬은 <see cref="AllSceneScanner"/>가 그 자리에서 스캔한다.
         /// </remarks>
-        [UnityTest]
-        public IEnumerator CreateReport_ListsBuildScenesAndScansThem()
+        [Test]
+        public void CreateReport_ListsBuildScenesInOrder()
         {
             var originalBuildScenes = EditorBuildSettings.scenes;
             var activeScene = SceneManager.GetActiveScene();
@@ -171,16 +167,9 @@ namespace Artel.Tests
 
                 EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(scenePath, true) };
 
-                SceneScanReportDto report = null;
-                yield return SceneScanReporter.CreateReport(result => report = result);
+                var report = SceneScanReporter.CreateReport();
 
-                Assert.That(report, Is.Not.Null);
                 Assert.That(report.ScenesInBuild, Is.EqualTo(new[] { scenePath }));
-                Assert.That(report.ScannedScenes, Is.Not.Empty);
-                Assert.That(
-                    report.ScannedScenes.Any(scene =>
-                        scene.Children.Any(child => child.Name == gameObject.name)),
-                    Is.True);
             }
             finally
             {
