@@ -38,7 +38,23 @@ namespace Artel.Affordances.Live
         /// </remarks>
         private const int MaxRemembered = 4096;
 
+        /// <summary>
+        /// "아니오" 를 몇 초 만에 다시 묻는지.
+        /// </summary>
+        /// <remarks>
+        /// 컴포넌트는 런타임에 붙는다. 붙기 전에 물어 받은 "아니오" 를 영원히 쥐면 그 객체는 무엇을
+        /// 달든 판독에 못 들어온다 — 대사창이 그것으로 빠졌다(ARTEL-840). 그래서 부정만 만료시킨다.
+        ///
+        /// 박자가 0.1 초이니 열 박자에 한 번 다시 묻는다. 그 사이에는 최대 이만큼 늦게 들어온다.
+        /// </remarks>
+        private const float StaleDenial = 1f;
+
+        /// <summary>
+        /// 언제 답했는지와 함께 기억한다. 긍정에는 시각이 필요 없다.
+        /// </summary>
         private static readonly Dictionary<int, bool> Answered = new Dictionary<int, bool>();
+
+        private static readonly Dictionary<int, float> Denied = new Dictionary<int, float>();
 
         internal static bool Writing(GameObject subject, Dictionary<Type, List<Watched>> byOwner)
         {
@@ -51,16 +67,38 @@ namespace Artel.Affordances.Live
 
             if (Answered.TryGetValue(id, out var already))
             {
-                return already;
+                // 긍정은 그대로 쥔다. 뒤집어서 객체를 판독에서 빼면 `LiveState.Gone` 이 그것을
+                // 사라졌다고 보고한다 — 읽는 쪽은 살아 있는 객체를 지운다. 볼 것이 없어진 객체를
+                // 계속 보는 값은 그것보다 싸다.
+                if (already)
+                {
+                    return true;
+                }
+
+                if (Denied.TryGetValue(id, out var when) && Time.unscaledTime - when < StaleDenial)
+                {
+                    return false;
+                }
             }
 
             if (Answered.Count >= MaxRemembered)
             {
                 Answered.Clear();
+                Denied.Clear();
             }
 
             var answer = Ask(subject, byOwner);
             Answered[id] = answer;
+
+            if (answer)
+            {
+                Denied.Remove(id);
+            }
+            else
+            {
+                Denied[id] = Time.unscaledTime;
+            }
+
             return answer;
         }
 
@@ -141,6 +179,7 @@ namespace Artel.Affordances.Live
         internal static void Forget()
         {
             Answered.Clear();
+            Denied.Clear();
             Legible.Forget();
         }
     }
