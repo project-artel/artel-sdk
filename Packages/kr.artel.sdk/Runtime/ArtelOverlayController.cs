@@ -145,19 +145,26 @@ namespace Artel
         }
 
         /// <summary>
-        /// 우상단 Artel 버튼은 사람이 마우스를 쥐고 있을 때만 있다. 에이전트가 게임을 모는
-        /// 동안 이 버튼은 사람이 누를 것도 아니고, 에이전트가 눌러야 할 것도 아니다.
-        /// 버튼이 사라질 때 열려 있던 패널도 함께 닫는다 — 패널을 여닫는 길이 이 버튼
-        /// 하나뿐이라, 버튼 없이 남은 패널은 게임 화면을 440x300 만큼 가린 채 닫히지 않는다.
+        /// 전송의 상태를 화면으로 옮기고, 우상단 Artel 버튼을 사람이 마우스를 쥔 동안만 띄운다.
         /// </summary>
         /// <remarks>
-        /// 프레임마다 보는 이유는 소유가 프레임마다 바뀌기 때문이다 — 사람이 실제 마우스를
-        /// 4px 움직이면 <see cref="ArtelInput.AdvanceFrame"/> 이 그 프레임에 에이전트의
-        /// 포인터 소유를 놓는다(<c>VirtualMouseState.OwnsPointer</c>). RefreshView 는
-        /// viewModel 이 바뀔 때만 도므로 이 신호를 실을 자리가 없다.
+        /// 프레임마다 보는 이유가 둘 다 있다. 전송은 스스로 알려줄 수 없다 — 소켓의 닫힘과 열림은
+        /// websocket-sharp 수신 스레드에서 오고, 그 자리에서는 Unity API 를 만질 수 없다. 여기서
+        /// 읽으면 판정과 그리기가 모두 메인 스레드에 남는다. 값이 달라졌을 때만
+        /// <see cref="ArtelOverlayViewModel.NoticeTransport"/> 가 Changed 를 올린다.
+        /// 포인터 소유도 프레임마다 바뀐다 — 사람이 실제 마우스를 4px 움직이면
+        /// <see cref="ArtelInput.AdvanceFrame"/> 이 그 프레임에 에이전트의 포인터 소유를
+        /// 놓는다(<c>VirtualMouseState.OwnsPointer</c>). RefreshView 는 viewModel 이 바뀔 때만
+        /// 도므로 이 신호를 실을 자리가 없다.
         /// </remarks>
         private void Update()
         {
+            viewModel.NoticeTransport(artelManager.TransportPhase);
+
+            // 우상단 Artel 버튼은 사람이 마우스를 쥐고 있을 때만 있다. 에이전트가 게임을 모는
+            // 동안 이 버튼은 사람이 누를 것도 아니고, 에이전트가 눌러야 할 것도 아니다.
+            // 버튼이 사라질 때 열려 있던 패널도 함께 닫는다 — 패널을 여닫는 길이 이 버튼
+            // 하나뿐이라, 버튼 없이 남은 패널은 게임 화면을 440x300 만큼 가린 채 닫히지 않는다.
             if (toggleObject == null)
             {
                 return;
@@ -316,9 +323,49 @@ namespace Artel
         // 연결이 있는 이유는 로그인을 버리지 않고 재시도할 길을 남기는 것이다.
         private void ConnectWebSocket()
         {
+            if (registrationRunning || loginRunning)
+            {
+                return;
+            }
+
             gateDismissed = false;
-            viewModel.Connect(artelManager.StartTransport);
+            StartCoroutine(RegisterThenConnect());
+        }
+
+        /// <summary>
+        /// 연결 버튼이 도는 길. 등록부터 다시 하고 그 끝에서 소켓을 건다.
+        /// </summary>
+        /// <remarks>
+        /// 소켓만 다시 거는 것으로는 자격증명이 거절된 끊김(닫힘 코드 4001)에서 벗어날 수 없다.
+        /// 같은 토큰과 같은 instanceId 로 걸어 같은 대답을 받을 뿐이다. 등록은 만료된 토큰을
+        /// refresh 로 바꾸고 instanceId 를 다시 받아 오므로, 그 두 값이 새로워진 뒤에야 다시 거는
+        /// 일에 뜻이 생긴다. 등록은 (프로젝트, sdkUuid) 로 idempotent 하니 돌고 있는 런의
+        /// instanceId 도 그대로다(ARTEL-842).
+        ///
+        /// 씬 워크는 건너뛴다. 캐시가 비어 있더라도 여기서 걷는 것은 돌고 있는 게임의 씬을
+        /// 내렸다 올리는 일이고, 서버는 sceneScan 이 없는 등록에서 저장된 스캔을 지우지 않는다.
+        /// 그래서 <see cref="ScanScenesThenRegister"/> 를 부르지 않고 등록만 따로 돈다.
+        /// </remarks>
+        private IEnumerator RegisterThenConnect()
+        {
+            registrationRunning = true;
+            ShowCoverMessage("실시간 서버에 다시 연결하는 중입니다.");
             RefreshView();
+            try
+            {
+                yield return viewModel.Register(
+                    artelManager.Server,
+                    artelManager.SdkId,
+                    artelManager.InstanceName,
+                    artelManager.GameVersion,
+                    artelManager.StartTransport,
+                    cachedSceneScan);
+            }
+            finally
+            {
+                registrationRunning = false;
+                RefreshView();
+            }
         }
 
         private void LogOut()

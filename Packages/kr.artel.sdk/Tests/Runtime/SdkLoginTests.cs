@@ -250,7 +250,7 @@ namespace Artel.Tests.Auth
             viewModel.Initialize();
 
             Drive(viewModel.Register(
-                new Artel.Domain.Server(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
+                new Artel.Domain.Server(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
 
             // refresh 토큰이 남아 있어야 다음 시도가 브라우저 없이 재발급으로 이어진다.
             Assert.That(ArtelSdkSession.TryLoadRefreshToken(out _), Is.True);

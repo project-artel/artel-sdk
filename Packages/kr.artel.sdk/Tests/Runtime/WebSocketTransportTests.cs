@@ -3,6 +3,7 @@ using System.Collections;
 using System.Reflection;
 using System.Security.Authentication;
 using System.Text;
+using System.Text.RegularExpressions;
 using Artel.Auth;
 using Artel.Domain;
 using Artel.Protocol.Dto;
@@ -321,15 +322,21 @@ namespace Artel.Tests.Transport
             }
         }
 
-        // 무한히 두드리지 않는다. 여기서 멈춘 뒤에는 오버레이의 연결 버튼이 수동 경로로 남는다.
+        // 시도 횟수에 상한을 두면 재시도 창이 통틀어 약 121초였다. 그보다 오래 걸리는 배포나
+        // 네트워크 장애 하나가 QA 런을 끝냈다. 사람이 창을 보고 있지 않은 실행에는 스스로
+        // 돌아오는 것 말고 다른 회복 수단이 없다.
         [Test]
-        public void ReconnectDelay_GivesUpAfterEightAttempts()
+        [TestCase(8)]
+        [TestCase(100)]
+        [TestCase(100000)]
+        public void ReconnectDelay_KeepsRetryingAtTheCeiling(int attempt)
         {
             TimeSpan delay;
 
-            var retries = ArtelWebSocketClient.TryReconnectDelay(1005, 8, out delay);
+            var retries = ArtelWebSocketClient.TryReconnectDelay(1005, attempt, out delay);
 
-            Assert.That(retries, Is.False);
+            Assert.That(retries, Is.True);
+            Assert.That(delay.TotalSeconds, Is.EqualTo(30d));
         }
 
         // Start가 "client가 null이 아니면 물러선다"로 판정하면, 끊긴 소켓이 그 자리를 영원히
@@ -350,6 +357,54 @@ namespace Artel.Tests.Transport
         public void LiveSocket_ExcludesMissingSocket()
         {
             Assert.That(ArtelWebSocketClient.IsLive(null), Is.False);
+        }
+
+        // 자격증명 검사가 생성자에서 dial 시점으로 옮겨 갔다. 걸 값이 없으면 재시도가 만들어 낼
+        // 수 있는 것이 아니므로 그 자리에서 멈추고, 회복은 오버레이의 연결 버튼이 하는 재등록이다.
+        [Test]
+        public void WebSocketClient_RefusesToDialWithoutCredentials()
+        {
+            LogAssert.Expect(LogType.Error, new Regex("no credentials to dial with"));
+            var client = new ArtelWebSocketClient(
+                new Server(false, "127.0.0.1", 8080),
+                () => string.Empty,
+                () => "7");
+
+            try
+            {
+                Assert.That(client.Phase, Is.EqualTo(ArtelTransportPhase.Idle));
+
+                client.Start();
+
+                Assert.That(client.Phase, Is.EqualTo(ArtelTransportPhase.Refused));
+                Assert.That(client.IsConnected, Is.False);
+            }
+            finally
+            {
+                client.Dispose();
+            }
+        }
+
+        // 세션이나 인스턴스가 없으면 dial 을 시작할 수 없다. 그때 true 를 내면 오버레이가 그것을
+        // 성공으로 적고, 사람은 아무것도 연결되지 않은 화면에서 성공 문구를 읽는다.
+        [Test]
+        public void Manager_ReportsThatItCouldNotStartWithoutASession()
+        {
+            var host = new GameObject("Artel transport start test");
+
+            try
+            {
+                var manager = host.AddComponent<ArtelManager>();
+
+                LogAssert.Expect(LogType.Warning, new Regex("needs a signed-in session"));
+
+                Assert.That(manager.StartTransport(), Is.False);
+                Assert.That(manager.TransportPhase, Is.EqualTo(ArtelTransportPhase.Idle));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(host);
+            }
         }
 
         [Test]
@@ -555,7 +610,7 @@ namespace Artel.Tests.Transport
             // 주소를 만들 수 없는 Server 는 요청을 보내기 전에 던진다. 예전에는 `new Server()`
             // 가 그것이었지만 이제 기본값이 실제 서버라(ARTEL-703), 못 쓰는 서버를 직접 만든다.
             RunToCompletionWithoutWaiting(
-                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
 
             Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.ChoosingProject));
             Assert.That(viewModel.ShowPanel, Is.True);
@@ -586,7 +641,7 @@ namespace Artel.Tests.Transport
             viewModel.Initialize();
 
             RunToCompletionWithoutWaiting(
-                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
 
             Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.NeedsLogin));
             Assert.That(viewModel.HasError, Is.True);
@@ -690,13 +745,108 @@ namespace Artel.Tests.Transport
             // 주소를 만들 수 없는 Server 는 요청을 만드는 중에 던진다. 401이 아니므로 세션이
             // 그대로 남는 실패 경로다.
             RunToCompletionWithoutWaiting(
-                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => { }));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
 
             Assert.That(viewModel.HasToken, Is.True);
             Assert.That(viewModel.HasError, Is.True);
 
             // 이것이 없으면 사용자는 우상단 작은 패널을 스스로 발견해야 한다.
             Assert.That(viewModel.ShowGate, Is.True);
+        }
+
+        // 연결 버튼이 무엇을 했는지 화면에 그대로 적는다. 시작하지도 못한 dial 을 성공으로
+        // 적으면, 사람은 아무것도 연결되지 않은 화면에서 초록색 성공 문구를 읽는다.
+        [Test]
+        public void OverlayViewModel_ReportsAConnectThatNeverStarted()
+        {
+            var viewModel = ConnectableViewModel();
+
+            viewModel.Connect(() => false);
+
+            Assert.That(viewModel.HasError, Is.True);
+            Assert.That(viewModel.State, Is.Not.EqualTo(ArtelConnectionState.Connected));
+        }
+
+        // dial 은 비동기다. 건 것과 붙은 것을 같은 상태로 적으면 화면이 소켓보다 먼저
+        // 연결됐다고 말한다. Connected 로 올리는 것은 전송을 본 NoticeTransport 하나뿐이다.
+        [Test]
+        public void OverlayViewModel_WaitsForTheSocketBeforeSayingConnected()
+        {
+            var viewModel = ConnectableViewModel();
+
+            viewModel.Connect(() => true);
+
+            Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.Connecting));
+            Assert.That(viewModel.HasError, Is.False);
+
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+
+            Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.Connected));
+            Assert.That(viewModel.HasError, Is.False);
+        }
+
+        // 다시 걸고 있는 동안은 사람이 할 일이 없다. 실패 색으로 적지 않는다.
+        [Test]
+        public void OverlayViewModel_ShowsADroppedConnection()
+        {
+            var viewModel = ConnectableViewModel();
+            viewModel.Connect(() => true);
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+
+            viewModel.NoticeTransport(ArtelTransportPhase.Connecting);
+
+            Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.Connecting));
+            Assert.That(viewModel.Status, Does.Contain("끊겼습니다"));
+            Assert.That(viewModel.HasError, Is.False);
+        }
+
+        // 전송이 스스로 다시 걸지 않는 자리다. 남은 길은 연결 버튼뿐이므로 그것을 가리킨다.
+        [Test]
+        public void OverlayViewModel_PointsAtTheConnectButtonWhenTheTransportGaveUp()
+        {
+            var viewModel = ConnectableViewModel();
+            viewModel.Connect(() => true);
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+
+            viewModel.NoticeTransport(ArtelTransportPhase.Refused);
+
+            Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.Connecting));
+            Assert.That(viewModel.HasError, Is.True);
+            Assert.That(viewModel.Status, Does.Contain("연결을 눌러"));
+        }
+
+        // 로그인·프로젝트 선택 화면은 소켓과 무관하다. 그 위에 연결 문구를 덮으면 다음에
+        // 눌러야 할 것이 가려진다.
+        [Test]
+        public void OverlayViewModel_LeavesTheLoginScreenAlone()
+        {
+            var viewModel = CreateViewModel();
+            viewModel.Initialize();
+            var status = viewModel.Status;
+
+            viewModel.NoticeTransport(ArtelTransportPhase.Refused);
+
+            Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.NeedsLogin));
+            Assert.That(viewModel.Status, Is.EqualTo(status));
+            Assert.That(viewModel.HasError, Is.False);
+        }
+
+        // NoticeTransport 는 프레임마다 불린다. 상태가 그대로일 때도 Changed 를 올리면
+        // 오버레이가 매 프레임 다시 그려진다.
+        [Test]
+        public void OverlayViewModel_RaisesChangedOnlyWhenThePhaseMoves()
+        {
+            var viewModel = ConnectableViewModel();
+            viewModel.Connect(() => true);
+
+            var changes = 0;
+            viewModel.Changed += () => changes++;
+
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+            viewModel.NoticeTransport(ArtelTransportPhase.Connected);
+
+            Assert.That(changes, Is.EqualTo(1));
         }
 
         [Test]
@@ -984,6 +1134,19 @@ namespace Artel.Tests.Transport
                     (routine.Current == null ? "다음 프레임" : routine.Current.ToString()) +
                     "을(를) 기다렸습니다.");
             }
+        }
+
+        /// <summary>
+        /// 등록까지 끝난 세션을 깔고 만든 view model. <c>CanConnect</c> 가 참이라 연결 버튼의
+        /// 경로를 그대로 밟을 수 있다.
+        /// </summary>
+        private static ArtelOverlayViewModel ConnectableViewModel()
+        {
+            SignIn("1");
+            ArtelSdkSession.SaveInstanceId("7");
+            var viewModel = CreateViewModel();
+            viewModel.Initialize();
+            return viewModel;
         }
 
         private static ArtelOverlayViewModel CreateViewModel()
