@@ -42,11 +42,13 @@ namespace Artel.Auth
             return value.Length > 0;
         }
 
+        /// <remarks>
+        /// 파일을 직접 열어 덮어쓰지 않고 <see cref="SecretFile"/> 를 거친다. 이 경로는 사용자
+        /// 단위로 하나뿐이라 같은 사람이 띄운 다른 게임 인스턴스가 같은 순간에 쓰고 있을 수 있다.
+        /// </remarks>
         public void Save(string key, string value)
         {
-            var path = ResolvePath(key);
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-            File.WriteAllBytes(path, Transform(Encoding.UTF8.GetBytes(value), false));
+            SecretFile.Replace(ResolvePath(key), Transform(Encoding.UTF8.GetBytes(value), false));
         }
 
         public void Delete(string key)
