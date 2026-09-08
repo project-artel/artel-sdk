@@ -342,9 +342,8 @@ namespace Artel
         /// 일에 뜻이 생긴다. 등록은 (프로젝트, sdkUuid) 로 idempotent 하니 돌고 있는 런의
         /// instanceId 도 그대로다(ARTEL-842).
         ///
-        /// 씬 워크는 건너뛴다. 캐시가 비어 있더라도 여기서 걷는 것은 돌고 있는 게임의 씬을
-        /// 내렸다 올리는 일이고, 서버는 sceneScan 이 없는 등록에서 저장된 스캔을 지우지 않는다.
-        /// 그래서 <see cref="ScanScenesThenRegister"/> 를 부르지 않고 등록만 따로 돈다.
+        /// sceneScan 은 <see cref="SendRegistration"/> 과 똑같이 그 자리에서 만들어 보낸다.
+        /// CreateReport 는 Build Settings 목록만 읽으므로, 돌고 있는 게임의 씬을 건드리지 않는다.
         /// </remarks>
         private IEnumerator RegisterThenConnect()
         {
@@ -359,7 +358,7 @@ namespace Artel
                     artelManager.InstanceName,
                     artelManager.GameVersion,
                     artelManager.StartTransport,
-                    cachedSceneScan);
+                    SceneScanReporter.CreateReport());
             }
             finally
             {
