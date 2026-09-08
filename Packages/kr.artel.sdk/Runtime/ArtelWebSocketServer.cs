@@ -39,6 +39,19 @@ namespace Artel
             get { return server != null; }
         }
 
+        /// <summary>
+        /// 이쪽은 받는 자리다. 걸다 마는 중간 상태가 없어 서 있거나 아니거나 둘 중 하나다.
+        /// </summary>
+        public ArtelTransportPhase Phase
+        {
+            get
+            {
+                return server == null
+                    ? ArtelTransportPhase.Idle
+                    : ArtelTransportPhase.Connected;
+            }
+        }
+
         public void Start()
         {
             if (server != null)

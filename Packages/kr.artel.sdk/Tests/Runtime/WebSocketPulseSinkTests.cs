@@ -22,6 +22,16 @@ namespace Artel.Tests
 
             public bool IsConnected { get { return Connected; } }
 
+            public ArtelTransportPhase Phase
+            {
+                get
+                {
+                    return Connected
+                        ? ArtelTransportPhase.Connected
+                        : ArtelTransportPhase.Idle;
+                }
+            }
+
             public void Start() { }
 
             public void Stop() { }

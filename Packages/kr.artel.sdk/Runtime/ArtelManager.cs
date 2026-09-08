@@ -78,6 +78,13 @@ namespace Artel
 
         /// <summary>지난 프레임의 전송 연결 상태. 새 연결이 열린 프레임을 집어내는 데만 쓴다.</summary>
         private bool transportWasConnected;
+
+        /// <summary>
+        /// 전송이 dial 에 쓰는 자격증명. 쓰는 곳은 <see cref="RefreshTransportCredentials"/> 하나이고
+        /// 그것은 언제나 Unity 메인 스레드에서 돈다. 읽는 쪽은 재연결 타이머 스레드다.
+        /// </summary>
+        private volatile string transportToken = string.Empty;
+        private volatile string transportInstanceId = string.Empty;
         private ArtelStreamHost streamHost;
         private Coroutine webRtcPump;
 
@@ -439,19 +446,31 @@ namespace Artel
             transportWasConnected = connected;
         }
 
-        public void StartTransport()
+        /// <summary>
+        /// 실시간 서버로 연결을 건다. dial 을 시작했으면 true.
+        /// </summary>
+        /// <remarks>
+        /// 거짓말하지 않는 것이 이 반환값의 일이다. 아래 두 경로는 경고만 남기고 돌아서는데,
+        /// 그것을 부르는 쪽에서 성공과 구분할 수 없으면 오버레이는 아무것도 연결되지 않은 화면에
+        /// 초록색 "연결을 시작했습니다"를 적는다(ARTEL-842).
+        /// </remarks>
+        public bool StartTransport()
         {
             if (webSocketTransport == null)
             {
-                if (!ArtelSdkSession.TryLoadToken(out var token) ||
-                    !ArtelSdkSession.TryLoadInstanceId(out var instanceId))
+                if (!ArtelSdkSession.TryLoadToken(out _) ||
+                    !ArtelSdkSession.TryLoadInstanceId(out _))
                 {
                     Debug.LogWarning(
                         "[Artel] WebSocket transport needs a signed-in session and a registered instance.");
-                    return;
+                    return false;
                 }
 
-                webSocketTransport = new ArtelWebSocketClient(server, token, instanceId);
+                // 값이 아니라 읽는 방법을 넘긴다. 재연결은 dial 마다 다시 읽으므로, 토큰을 refresh
+                // 하거나 인스턴스를 다시 등록한 뒤의 재연결이 새 값으로 간다. 읽는 것은
+                // ArtelSdkSession 이 아니라 아래 스냅샷이다 — 그 이유는 RefreshTransportCredentials 참고.
+                webSocketTransport = new ArtelWebSocketClient(
+                    server, () => transportToken, () => transportInstanceId);
                 ownsTransport = true;
 
                 // This is the host game's own Player Setting, and the SDK ships inside customer
@@ -488,14 +507,49 @@ namespace Artel
 
                 // discovery 는 이미 따라가고 있다: 그 전송을 설치한 쪽은 SetWebSocketTransport 를 거쳤고 그것이 시작시킨다. 여기서
                 // 다시 시작하면 같은 연결에 대한 두 번째 주장이 되고, 둘 중 하나가 움직이는 순간 어긋난다.
-                return;
+                return false;
             }
 
+            RefreshTransportCredentials();
             webSocketTransport.Start();
             sceneStatePoller.Reset(Time.unscaledTime);
             BeginDiscovery();
             Debug.Log("[Artel] WebSocket transport started. GAME_STATE is "
                       + (SendsGameState ? "on (restored, ARTEL-513)." : "off; read the pulse channel."));
+            return true;
+        }
+
+        /// <summary>
+        /// 전송이 dial 에 쓸 자격증명을 지금 값으로 새로 뜬다.
+        /// </summary>
+        /// <remarks>
+        /// 스냅샷을 두는 이유는 저장소를 읽는 자리가 Unity 메인 스레드여야 하기 때문이다.
+        /// <see cref="ArtelSdkSession"/> 을 재연결 타이머 안에서 바로 읽게 두면 세 가지가 한꺼번에
+        /// 어긋난다: <c>PlayerPrefs</c> 를 메인 스레드 밖에서 만지고, 만료된 토큰을 만나면 그 자리에서
+        /// <c>Clear</c> 가 세션을 지우며, macOS 의 비밀 저장소는 <c>/usr/bin/security</c> 를 최대
+        /// 15초 기다린다 — 그동안 전송의 자물쇠가 잡혀 있어 <see cref="StopTransport"/> 까지 멈춘다.
+        ///
+        /// 프레임마다 뜨지 않고 여기서만 뜨는 것으로 충분하다. 토큰이나 instanceId 가 달라진 뒤에
+        /// dial 이 일어나는 길은 전부 <see cref="StartTransport"/> 를 지난다 — 등록이 끝나면
+        /// 오버레이가 그것을 부르고, 재연결은 이 스냅샷을 그대로 다시 쓴다.
+        /// </remarks>
+        private void RefreshTransportCredentials()
+        {
+            transportToken = ArtelSdkSession.LoadToken();
+            transportInstanceId = ArtelSdkSession.LoadInstanceId();
+        }
+
+        /// <summary>
+        /// 전송이 지금 어디에 있는지. 오버레이가 프레임마다 읽는다.
+        /// </summary>
+        internal ArtelTransportPhase TransportPhase
+        {
+            get
+            {
+                return webSocketTransport == null
+                    ? ArtelTransportPhase.Idle
+                    : webSocketTransport.Phase;
+            }
         }
 
         /// <summary>

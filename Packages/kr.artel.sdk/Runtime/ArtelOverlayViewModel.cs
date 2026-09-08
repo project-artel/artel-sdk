@@ -21,6 +21,10 @@ namespace Artel
         private readonly IJsonCodec jsonCodec;
         private readonly List<SdkProjectDto> projects = new List<SdkProjectDto>();
 
+        // 마지막으로 화면에 옮긴 전송 상태. NoticeTransport 는 프레임마다 불리므로, 달라졌을 때만
+        // Changed 를 올려야 오버레이가 매 프레임 다시 그려지지 않는다.
+        private ArtelTransportPhase noticedPhase = ArtelTransportPhase.Idle;
+
         public ArtelOverlayViewModel(
             ArtelSdkRegistrationClient registrationClient,
             ArtelSdkAuthClient authClient,
@@ -359,7 +363,7 @@ namespace Artel
             string sdkUuid,
             string instanceName,
             string gameVersion,
-            Action connect,
+            Func<bool> connect,
             SceneScanReportDto sceneScan = null)
         {
             if (State == ArtelConnectionState.Registering)
@@ -490,7 +494,16 @@ namespace Artel
             Connect(connect);
         }
 
-        public void Connect(Action connect)
+        /// <summary>
+        /// 실시간 서버로 연결을 건다. <paramref name="connect"/> 는 dial 을 시작했는지를 낸다.
+        /// </summary>
+        /// <remarks>
+        /// 여기서 올라가는 상태는 <see cref="ArtelConnectionState.Connecting"/> 까지다. dial 은
+        /// 비동기라, 이 자리에서는 소켓이 열렸는지 알 수 없다. Connected 로 올리는 것은 전송이
+        /// 실제로 열린 것을 본 <see cref="NoticeTransport"/> 하나뿐이다 — 여기서 올려 두었기에
+        /// 아무것도 연결되지 않은 화면에 초록색 "연결을 시작했습니다"가 남았다(ARTEL-842).
+        /// </remarks>
+        public void Connect(Func<bool> connect)
         {
             if (connect == null)
             {
@@ -499,23 +512,120 @@ namespace Artel
 
             if (!CanConnect)
             {
+                Fail("연결할 수 없습니다. 로그인과 프로젝트 등록을 먼저 마쳐 주세요.");
                 return;
             }
 
+            bool started;
             try
             {
-                connect();
-                State = ArtelConnectionState.Connected;
-                HasError = false;
-                SetStatus("실시간 서버 연결을 시작했습니다.");
+                started = connect();
             }
             catch (Exception exception)
             {
-                State = ArtelConnectionState.NeedsLogin;
-                ShowPanel = true;
-                HasError = true;
-                SetStatus("연결 실패: " + exception.Message);
+                Fail("연결 실패: " + exception.Message);
+                return;
             }
+
+            if (!started)
+            {
+                Fail("연결을 시작하지 못했습니다. Unity 콘솔의 [Artel] 경고를 확인해 주세요.");
+                return;
+            }
+
+            State = ArtelConnectionState.Connecting;
+            HasError = false;
+            // 방금 사람이 누른 연결이다. 이 자리를 지나지 않으면 다음 프레임의 NoticeTransport 가
+            // 직전 상태를 Connected 로 읽고 "연결이 끊겼습니다"를 적는다 — 끊긴 적이 없는데도.
+            noticedPhase = ArtelTransportPhase.Connecting;
+            SetStatus("실시간 서버에 연결하는 중...");
+        }
+
+        /// <summary>
+        /// 전송의 실제 상태를 화면에 옮긴다. 오버레이가 프레임마다 부른다.
+        /// </summary>
+        /// <remarks>
+        /// 등록을 마친 뒤에만 쓴다. 로그인과 프로젝트 선택 화면은 소켓과 무관하고, 그 위에 연결
+        /// 문구를 덮으면 다음에 눌러야 할 것이 가려진다.
+        ///
+        /// 예외가 하나 있다. 소켓이 실제로 열려 있고 로그인 세션도 그대로면, 프로젝트 선택 화면은
+        /// 지난 실패가 남긴 자국일 뿐이므로 물러나야 한다. 그러지 않으면 등록이 한 번 실패해
+        /// 게이트가 올라간 뒤, 전송이 스스로 다시 붙어도 그 전체 화면 덮개가 돌고 있는 게임을
+        /// 영영 가린다. 세션이 남아 있는지를 함께 보는 이유는 401 로 세션을 지운 뒤에는 소켓이
+        /// 아직 열려 있어도 사람이 해야 할 일이 재로그인이기 때문이다.
+        ///
+        /// 끊김은 게이트를 올리지 않는다. 돌고 있는 게임 위에 전체 화면 덮개를 씌우는 것보다,
+        /// 패널의 문구와 색으로 알리고 사람이 연결 버튼을 찾게 하는 편이 낫다.
+        /// </remarks>
+        public void NoticeTransport(ArtelTransportPhase phase)
+        {
+            // 전송이 그대로여도 화면이 그 사이에 다른 곳으로 갔으면 다시 그린다. 전송만 보고
+            // 물러서면 위의 예외가 닿지 않는다 — 소켓이 Connected 를 떠난 적이 없는데 등록이
+            // 실패해 게이트가 올라간 자리에서는 다시 볼 상태 변화 자체가 없기 때문이다.
+            if (phase == noticedPhase && StateShows(phase))
+            {
+                return;
+            }
+
+            if (!DrawsTransport(phase))
+            {
+                return;
+            }
+
+            var wasConnected = noticedPhase == ArtelTransportPhase.Connected;
+            noticedPhase = phase;
+
+            if (phase == ArtelTransportPhase.Connected)
+            {
+                State = ArtelConnectionState.Connected;
+                HasError = false;
+                SetStatus("실시간 서버에 연결되었습니다.");
+                return;
+            }
+
+            State = ArtelConnectionState.Connecting;
+
+            if (phase == ArtelTransportPhase.Connecting)
+            {
+                HasError = false;
+                SetStatus(wasConnected
+                    ? "연결이 끊겼습니다. 다시 연결하는 중..."
+                    : "실시간 서버에 연결하는 중...");
+                return;
+            }
+
+            // Idle 과 Refused. 둘 다 전송이 스스로 다시 걸지 않는 자리이므로, 남은 길인 연결
+            // 버튼을 가리킨다.
+            HasError = true;
+            SetStatus("실시간 서버와 연결되어 있지 않습니다. 연결을 눌러 다시 시도해 주세요.");
+        }
+
+        /// <summary>화면이 이미 이 전송 상태를 그리고 있는지.</summary>
+        private bool StateShows(ArtelTransportPhase phase)
+        {
+            return phase == ArtelTransportPhase.Connected
+                ? State == ArtelConnectionState.Connected
+                : State == ArtelConnectionState.Connecting;
+        }
+
+        /// <summary>
+        /// 지금 화면이 전송의 상태를 그릴 자리인지. <see cref="NoticeTransport"/> 의 주석 참고.
+        /// </summary>
+        private bool DrawsTransport(ArtelTransportPhase phase)
+        {
+            if (State == ArtelConnectionState.Connecting || State == ArtelConnectionState.Connected)
+            {
+                return true;
+            }
+
+            // 로그인과 등록이 도는 중에는 그 화면이 이긴다. 그 코루틴들이 State 로 자기 진행을
+            // 적고 있어서, 여기서 덮으면 진행 중인 절차의 다음 걸음이 화면에서 사라진다.
+            if (State == ArtelConnectionState.LoggingIn || State == ArtelConnectionState.Registering)
+            {
+                return false;
+            }
+
+            return phase == ArtelTransportPhase.Connected && HasStoredSession;
         }
 
         public void LogOut()
