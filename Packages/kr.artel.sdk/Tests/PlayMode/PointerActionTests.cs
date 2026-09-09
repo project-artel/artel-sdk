@@ -2,11 +2,14 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Artel.Affordances.Scan;
+using Artel.Domain;
 using Artel.Protocol.Dto;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
@@ -310,23 +313,157 @@ namespace Artel.Tests
             Assert.That(ArtelInput.GetKey(KeyCode.Space), Is.False);
         }
 
+        /// <summary>
+        /// 소수부가 남은 숫자 하나는 move_mouse 가 받는 세 형태 중 어느 것과도 안 맞는다: 숫자 둘이면
+        /// 좌표, 정수 하나면 instance id, 문자열 하나면 selector 인데 이건 그 중 아무것도 아니다.
+        /// </summary>
         [UnityTest]
-        public IEnumerator MoveMouse_RefusesCoordinatesItCannotRead()
+        public IEnumerator MoveMouse_RefusesParamsThatMatchNoneOfTheThreeForms()
         {
             var transport = new RecordingTransport();
             var manager = CreateManager(transport);
 
             yield return RunBatch(
                 manager,
-                NewAction(1, "move_mouse", Params(10d)),
+                NewAction(1, "move_mouse", Params(10.5d)),
                 NewAction(2, "mouse_down", Params(9d)));
 
             // Not Sent[0]: a live manager also pushes GAME_STATE from its poller.
             var results = transport.FirstActionResult()["results"];
             Assert.That((bool)results[0]["success"], Is.False);
-            Assert.That((string)results[0]["error"], Does.Contain("move_mouse requires params [x, y]."));
+            Assert.That(
+                (string)results[0]["error"],
+                Does.Contain("move_mouse requires params [x, y], [instanceId], or [selector]."));
             Assert.That((bool)results[1]["success"], Is.False);
             Assert.That((string)results[1]["error"], Does.Contain("mouse_down requires params"));
+        }
+
+        [UnityTest]
+        public IEnumerator MoveMouse_ByInstanceId_LandsOnThePixelTheScanReportedForThatObject()
+        {
+            var manager = CreateManager(new RecordingTransport());
+            yield return null;
+            var target = CreateDragTarget("aim target", UnityPointOf(new Vector2(250f, 140f)));
+            yield return null;
+            IsolateFixtureRaycaster();
+
+            var scannedScene = new SceneScanner().Scan().Scene;
+            var block = FindBlockByName(scannedScene.Children, "aim target");
+            Assert.That(block, Is.Not.Null, "the scan did not report the fixture at all");
+            var reportedCenter = block.Transform.ScreenRect.center;
+
+            yield return RunBatch(manager, NewAction(1, "move_mouse", Coordinates(reportedCenter)));
+            var landedByCoordinate = (Vector2)ArtelInput.mousePosition;
+
+            yield return RunBatch(manager, NewAction(2, "move_mouse", Params((long)block.Id)));
+            var landedById = (Vector2)ArtelInput.mousePosition;
+
+            AssertSamePixel(landedById, landedByCoordinate);
+        }
+
+        /// <summary>
+        /// 이름이 같은 형제가 여럿일 수 있다 — 생성된 적, 목록의 행 — 그때 구분하는 것은 sibling index
+        /// 뿐이다. selector 는 그 중 하나를 정확히 가리키고, 예전 스캔에서 읽은 id 는 그러지 못한다.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator MoveMouse_BySelector_ResolvesTheRightSiblingAmongSameNamedSiblings()
+        {
+            var manager = CreateManager(new RecordingTransport());
+            yield return null;
+            CreateDragTarget("clone", UnityPointOf(new Vector2(120f, 90f)));
+            var middleSibling = CreateDragTarget("clone", UnityPointOf(new Vector2(260f, 90f)));
+            CreateDragTarget("clone", UnityPointOf(new Vector2(400f, 90f)));
+            yield return null;
+            IsolateFixtureRaycaster();
+
+            var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+            var rootIndex = System.Array.IndexOf(roots, canvasObject);
+            Assert.That(rootIndex, Is.GreaterThanOrEqualTo(0), "the fixture canvas is not a scene root");
+            var selector = ScenePath.SelectorOf(middleSibling.transform, rootIndex);
+
+            yield return RunBatch(manager, NewAction(1, "move_mouse", Params(selector)));
+
+            AssertSamePixel((Vector2)ArtelInput.mousePosition, UnityPointOf(new Vector2(260f, 90f)));
+        }
+
+        [UnityTest]
+        public IEnumerator MoveMouse_UnknownInstanceId_FailsNamingTheId()
+        {
+            var temporary = new GameObject("temporary, destroyed before use");
+            // 스캔이 내보낸 적 있는 id 여야 한다. `ObjectIds` 는 제가 내보낸 것만 되찾아 주므로,
+            // 아무 수나 넣으면 "관측한 뒤 사라진 대상"이 아니라 애초에 없던 id 를 보게 된다.
+            var missingId = ObjectIds.Of(temporary);
+            Object.DestroyImmediate(temporary);
+
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+
+            yield return RunBatch(manager, NewAction(1, "move_mouse", Params((long)missingId)));
+
+            var results = transport.FirstActionResult()["results"];
+            Assert.That((bool)results[0]["success"], Is.False);
+            Assert.That((string)results[0]["error"], Does.Contain("Unknown target id: " + missingId));
+        }
+
+        [UnityTest]
+        public IEnumerator MoveMouse_UnmatchedSelector_FailsNamingTheSelector()
+        {
+            const string selector = "No Such Root[999]/Nothing[0]";
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+
+            yield return RunBatch(manager, NewAction(1, "move_mouse", Params(selector)));
+
+            var results = transport.FirstActionResult()["results"];
+            Assert.That((bool)results[0]["success"], Is.False);
+            Assert.That((string)results[0]["error"], Does.Contain("Nothing at selector: " + selector));
+        }
+
+        [UnityTest]
+        public IEnumerator MoveMouse_TargetOffScreen_FailsSayingItHasNoUsablePosition()
+        {
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            yield return null;
+            // 화면 너비의 두 배만큼 왼쪽으로 밀어, 프레임과 겹치는 부분이 전혀 없게 한다.
+            var target = CreateDragTarget("offscreen target", new Vector2(-2f * Screen.width, 0f));
+            yield return null;
+
+            var targetId = ObjectIds.Of(target.gameObject);
+
+            yield return RunBatch(manager, NewAction(1, "move_mouse", Params((long)targetId)));
+
+            var results = transport.FirstActionResult()["results"];
+            Assert.That((bool)results[0]["success"], Is.False);
+            Assert.That(
+                (string)results[0]["error"],
+                Does.Contain("Target has no usable position on screen: " + targetId));
+        }
+
+        private static void AssertSamePixel(Vector2 actual, Vector2 expected)
+        {
+            const float tolerance = 0.01f;
+            Assert.That(actual.x, Is.EqualTo(expected.x).Within(tolerance));
+            Assert.That(actual.y, Is.EqualTo(expected.y).Within(tolerance));
+        }
+
+        private static SceneBlock FindBlockByName(IReadOnlyList<SceneBlock> blocks, string name)
+        {
+            foreach (var block in blocks)
+            {
+                if (block.Name == name)
+                {
+                    return block;
+                }
+
+                var match = FindBlockByName(block.Children, name);
+                if (match != null)
+                {
+                    return match;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
