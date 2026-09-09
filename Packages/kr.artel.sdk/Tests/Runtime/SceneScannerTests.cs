@@ -129,8 +129,8 @@ namespace Artel.Tests
             var result = scanner.Scan();
             var block = result.Scene.Children.Single(child => child.Name == gameObject.name);
 
-            Assert.That(result.Scene.Id, Is.EqualTo(SceneManager.GetActiveScene().handle));
-            Assert.That(block.Id, Is.EqualTo(gameObject.GetInstanceID()));
+            Assert.That(result.Scene.Id, Is.EqualTo(SceneManager.GetActiveScene().handle.GetHashCode()));
+            Assert.That(block.Id, Is.EqualTo(ObjectIds.Of(gameObject)));
             Assert.That(scanner.TryGetTarget(block.Id, out _), Is.True);
         }
 
@@ -380,7 +380,7 @@ namespace Artel.Tests
             var scanner = new SceneScanner();
 
             // Scan() 을 부르지 않는다.
-            Assert.That(scanner.TryGetTarget(target.GetInstanceID(), out var scanned), Is.True);
+            Assert.That(scanner.TryGetTarget(ObjectIds.Of(target), out var scanned), Is.True);
             Assert.That(scanned.CanClick, Is.True);
         }
 
@@ -404,7 +404,7 @@ namespace Artel.Tests
         public void TryGetTarget_FailsForADestroyedObject()
         {
             var target = Spawn("button that goes away", typeof(Button));
-            var id = target.GetInstanceID();
+            var id = ObjectIds.Of(target);
             var scanner = new SceneScanner();
             Assert.That(scanner.TryGetTarget(id, out _), Is.True);
 
@@ -424,7 +424,7 @@ namespace Artel.Tests
             button.onClick.AddListener(() => clicked = true);
             var scanner = new SceneScanner();
             scanner.Scan();
-            Assert.That(scanner.TryGetTarget(target.GetInstanceID(), out var scanned), Is.True);
+            Assert.That(scanner.TryGetTarget(ObjectIds.Of(target), out var scanned), Is.True);
 
             button.interactable = false;
 

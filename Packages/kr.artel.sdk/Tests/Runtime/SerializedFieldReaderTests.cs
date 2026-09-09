@@ -67,7 +67,7 @@ namespace Artel.Tests
                 var stub = Read("Prefab") as Dictionary<string, object>;
 
                 Assert.That(stub, Is.Not.Null);
-                Assert.That(stub["instanceId"], Is.EqualTo(referenced.GetInstanceID()));
+                Assert.That(stub["instanceId"], Is.EqualTo(ObjectIds.Of(referenced)));
                 Assert.That(stub["name"], Is.EqualTo("referenced prefab"));
                 Assert.That(stub["type"], Is.EqualTo(typeof(GameObject).FullName));
                 Assert.That(stub.ContainsKey("children"), Is.False);

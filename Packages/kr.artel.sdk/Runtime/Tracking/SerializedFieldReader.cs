@@ -222,7 +222,7 @@ namespace Artel.Tracking
             // scene back into the payload.
             return new Dictionary<string, object>
             {
-                { "instanceId", unityObject.GetInstanceID() },
+                { "instanceId", ObjectIds.Of(unityObject) },
                 { "name", unityObject.name },
                 { "type", unityObject.GetType().FullName }
             };

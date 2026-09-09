@@ -162,7 +162,7 @@ namespace Artel.Affordances.Scan
                 Field = field,
                 Type = value.GetType().FullName,
                 Name = value.name,
-                Id = value.GetInstanceID(),
+                Id = ObjectIds.Of(value),
                 Held = value
             };
 
@@ -217,7 +217,7 @@ namespace Artel.Affordances.Scan
         private static void Follow(
             UnityEngine.Object value, string ownerType, string field, int depth, HashSet<int> seen)
         {
-            if (value == null || seen.Count >= MaxTraced || !seen.Add(value.GetInstanceID()))
+            if (value == null || seen.Count >= MaxTraced || !seen.Add(ObjectIds.Of(value)))
             {
                 return;
             }
@@ -238,7 +238,7 @@ namespace Artel.Affordances.Scan
                     foreach (var carried in CarriedBy(unread))
                     {
                         AffordanceReport.CreatesCut(
-                            carried, ownerType, field, unread.name, unread.GetInstanceID(), "depth");
+                            carried, ownerType, field, unread.name, ObjectIds.Of(unread), "depth");
                     }
                 }
 
@@ -257,7 +257,7 @@ namespace Artel.Affordances.Scan
 
                 foreach (var carried in CarriedBy(subject))
                 {
-                    AffordanceReport.Creates(carried, ownerType, field, subject.name, subject.GetInstanceID());
+                    AffordanceReport.Creates(carried, ownerType, field, subject.name, ObjectIds.Of(subject));
                 }
 
                 // 프리팹 자신의 컴포넌트가 또 다른 프리팹을 쥘 수 있다 — 자기가 만들어낼 것을 쥔 풀.
@@ -394,7 +394,7 @@ namespace Artel.Affordances.Scan
         /// </remarks>
         private static List<string> CarriedBy(GameObject prefab)
         {
-            var id = prefab.GetInstanceID();
+            var id = ObjectIds.Of(prefab);
 
             if (CarriedByPrefab.TryGetValue(id, out var already))
             {

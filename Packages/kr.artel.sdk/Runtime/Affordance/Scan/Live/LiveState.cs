@@ -535,7 +535,7 @@ namespace Artel.Affordances.Live
                 text.Append(',');
             }
 
-            text.Append("\"id\":").Append(transform.gameObject.GetInstanceID());
+            text.Append("\"id\":").Append(ObjectIds.Of(transform.gameObject));
             text.Append(',');
             Json.Property(text, "path", ScenePath.Of(transform));
             text.Append(',');
@@ -1127,7 +1127,7 @@ namespace Artel.Affordances.Live
         private static bool Offered(
             StringBuilder text, Transform transform, Ledger ledger, string identity)
         {
-            var id = transform.gameObject.GetInstanceID();
+            var id = ObjectIds.Of(transform.gameObject);
 
             if (Offers.TryGetValue(id, out var remembered))
             {
