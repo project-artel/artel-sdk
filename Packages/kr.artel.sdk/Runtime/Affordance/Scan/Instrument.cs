@@ -29,6 +29,10 @@ namespace Artel.Affordances.Scan
     /// 말하는 것이므로 우연히 겹칠 일이 없다.
     ///
     /// <b>화면에서는 그대로 보인다.</b> 이것은 보고의 문제이지 렌더링의 문제가 아니다 — 사람이 보라고 띄운 것들이다.
+    ///
+    /// 예외가 하나 있다. <see cref="KeyboardStatusController"/> 는 화면 캡처가 잡는 프레임에서만 자기 패널을 끈다
+    /// (ARTEL-881). 글자로 나가는 보고는 이 표시를 보고 거르지만, back buffer 를 통째로 읽는 캡처에는 거를 자리가
+    /// 없어 안 그리는 것이 이미지에서 빼는 유일한 방법이다. 나머지 계기는 캡처에도 그대로 찍힌다.
     /// </remarks>
     [DisallowMultipleComponent]
     public sealed class Instrument : MonoBehaviour
