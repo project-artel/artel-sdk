@@ -63,7 +63,7 @@ namespace Artel.Affordances.Live
                 return false;
             }
 
-            var id = subject.GetInstanceID();
+            var id = ObjectIds.KeyOf(subject);
 
             if (Answered.TryGetValue(id, out var already))
             {

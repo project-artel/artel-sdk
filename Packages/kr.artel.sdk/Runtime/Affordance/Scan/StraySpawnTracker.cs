@@ -26,7 +26,7 @@ namespace Artel.Affordances.Scan
             {
                 foreach (var root in scene.GetRootGameObjects())
                 {
-                    preexisting.Add(root.GetInstanceID());
+                    preexisting.Add(ObjectIds.KeyOf(root));
                 }
             }
         }
@@ -54,7 +54,7 @@ namespace Artel.Affordances.Scan
 
                 foreach (var root in scene.GetRootGameObjects())
                 {
-                    if (preexisting.Contains(root.GetInstanceID()))
+                    if (preexisting.Contains(ObjectIds.KeyOf(root)))
                     {
                         continue;
                     }

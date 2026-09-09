@@ -100,7 +100,7 @@ namespace Artel.Tests
             var execution = executor.Execute(
                 7,
                 "button_click",
-                new List<object> { targetObject.GetInstanceID() },
+                new List<object> { ObjectIds.Of(targetObject) },
                 value => result = value);
             Drain(execution);
 
@@ -125,7 +125,7 @@ namespace Artel.Tests
             Drain(executor.Execute(
                 7,
                 "button_click",
-                new List<object> { targetObject.GetInstanceID() },
+                new List<object> { ObjectIds.Of(targetObject) },
                 value => result = value));
 
             Assert.That(result.IsSuccess, Is.False);
@@ -154,7 +154,7 @@ namespace Artel.Tests
             Drain(executor.Execute(
                 8,
                 "enter_text",
-                new List<object> { targetObject.GetInstanceID(), "after" },
+                new List<object> { ObjectIds.Of(targetObject), "after" },
                 value => result = value));
 
             Assert.That(result.IsSuccess, Is.False);
@@ -184,7 +184,7 @@ namespace Artel.Tests
             Drain(executor.Execute(
                 9,
                 "enter_text",
-                new List<object> { targetObject.GetInstanceID(), "after" },
+                new List<object> { ObjectIds.Of(targetObject), "after" },
                 value => result = value));
 
             Assert.That(result.IsSuccess, Is.False);

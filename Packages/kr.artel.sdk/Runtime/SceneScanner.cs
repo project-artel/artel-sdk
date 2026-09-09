@@ -54,14 +54,17 @@ namespace Artel
             }
 
             return new SceneSnapshot(
-                scene.handle,
+                // 2022.3 에서 이것은 int 고, Unity 6000.4 부터 SceneHandle 이며 int 로의 암묵 변환이
+                // deprecated 다(6000.5 는 하드 오류). GetHashCode 는 양쪽에 있고 int 일 때는 값 자신을
+                // 돌려주므로, 두 버전이 같은 수를 낸다 — 어느 버전에서 형이 바뀌었는지 묻지 않아도 된다.
+                scene.handle.GetHashCode(),
                 string.IsNullOrEmpty(scene.name) ? "Unity Scene" : scene.name,
                 new Vector2Int(Screen.width, Screen.height),
                 children);
         }
 
         /// <summary>
-        /// id 로 조작 대상을 찾는다. Unity 에 직접 묻는다.
+        /// id 로 조작 대상을 찾는다.
         /// </summary>
         /// <remarks>
         /// 한때 이것은 스캔이 채우고 매 스캔마다 비우는 사전이었다. 그래서 스캔이 멈추면 — <c>GAME_STATE</c> 가 꺼진
@@ -74,10 +77,14 @@ namespace Artel
         ///
         /// 사전이 없어지면서 조준이 스캔에서 풀린다. 무엇을 겨눌 수 있는지는 이제 판독이 말하고, 그것을 실제로 쥐는
         /// 일은 Unity 가 한다.
+        ///
+        /// Unity 6000.4 부터 그 메서드가 deprecated 고 <c>int</c> 로 객체를 되찾는 공인된 경로가 없다. 그래서
+        /// <c>ObjectIds</c> 가 내보낸 id 를 기억한다. 그 표는 비우지 않으므로 스캔이 멈춰도 조준은 풀리지
+        /// 않는다 — 위의 결론은 그대로다.
         /// </remarks>
         public bool TryGetTarget(int id, out ScannedTarget target)
         {
-            var found = Resources.InstanceIDToObject(id);
+            var found = ObjectIds.Find(id);
 
             // 판독은 GameObject 의 id 를 싣지만 이 경로의 유일한 부름은 아니다. 컴포넌트를 받았으면 그것이 매달린
             // 객체가 답이다 — 둘을 가르는 것은 부르는 쪽의 부담이 아니다.
@@ -114,7 +121,7 @@ namespace Artel
                 return null;
             }
 
-            var id = transform.gameObject.GetInstanceID();
+            var id = ObjectIds.Of(transform.gameObject);
             var target = ScannedTarget.FromGameObject(transform.gameObject);
 
             var children = new List<SceneBlock>();

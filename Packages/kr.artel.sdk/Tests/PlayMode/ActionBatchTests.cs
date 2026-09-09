@@ -62,7 +62,7 @@ namespace Artel.Tests
                     {
                         Id = 2,
                         Method = "button_click",
-                        Parameters = new List<object> { buttonObject.GetInstanceID() }
+                        Parameters = new List<object> { ObjectIds.Of(buttonObject) }
                     },
                     new ActionRequestDto { Id = 3, Method = "scan_scene" }
                 }
@@ -98,7 +98,7 @@ namespace Artel.Tests
                     {
                         Id = 1,
                         Method = "button_click",
-                        Parameters = new List<object> { buttonObject.GetInstanceID() }
+                        Parameters = new List<object> { ObjectIds.Of(buttonObject) }
                     }
                 }
             };

@@ -31,7 +31,15 @@ namespace Artel.Diagnostics
 #if UNITY_EDITOR
             stats = new EditorRenderStats(
                 UnityStats.drawCalls,
+#if UNITY_6000_4_OR_NEWER
+                // Unity 6 에서 합계 batches 가 사라졌다. 남은 것은 종류별 집계뿐이라 그것을 더한다 —
+                // 같은 것을 세지만 같은 수라고 보증할 수는 없으니, 버전을 넘어 이 값을 비교하지 않는다.
+                // 경계를 6000.4 에 두는 것은 그쪽이 안전한 방향이어서다. 6000.4 에 아직 합계가 남아
+                // 있다면 이 식은 불필요할 뿐 깨지지 않지만, 반대로 틀리면 컴파일이 죽는다.
+                UnityStats.dynamicBatches + UnityStats.staticBatches + UnityStats.instancedBatches,
+#else
                 UnityStats.batches,
+#endif
                 UnityStats.setPassCalls,
                 UnityStats.triangles,
                 UnityStats.vertices,

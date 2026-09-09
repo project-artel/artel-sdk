@@ -130,7 +130,16 @@ jobs:
 
       - name: Run ${{ matrix.testMode }} tests
         id: tests
-        uses: game-ci/unity-test-runner@v4
+        # 태그가 아니라 커밋에 못박는다. `v4` 는 움직이는 태그고, 2026-09-09 01:06 에
+        # v4.4.0 으로 옮겨가면서 라이선스 활성화를 계정 로그인에서 ULF 파일 방식으로
+        # 바꿨다("Thin wrapper: invoke game-ci/cli as a subprocess"). Unity 는 Personal
+        # 라이선스의 수동 활성화를 더 이상 지원하지 않으므로 그 방식으로는 ULF 를 구할 수
+        # 없고, 우리 시크릿은 멀쩡한데도 develop 을 포함한 모든 실행이 죽었다. 00:51 실행이
+        # 마지막 성공, 01:42 실행이 첫 실패다.
+        #
+        # fa6ced25 는 그 변경 직전인 v4.3.2 다. 태그로 적으면 태그가 또 움직일 수 있어서
+        # 커밋으로 적는다 — 이 사고가 정확히 그것이었다.
+        uses: game-ci/unity-test-runner@fa6ced25861c16ef56187828c43f76d00df43a23  # v4.3.2
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
