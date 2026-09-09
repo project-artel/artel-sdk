@@ -1127,7 +1127,7 @@ namespace Artel.Affordances.Live
         private static bool Offered(
             StringBuilder text, Transform transform, Ledger ledger, string identity)
         {
-            var id = ObjectIds.Of(transform.gameObject);
+            var id = ObjectIds.KeyOf(transform.gameObject);
 
             if (Offers.TryGetValue(id, out var remembered))
             {

@@ -217,7 +217,7 @@ namespace Artel.Affordances.Scan
         private static void Follow(
             UnityEngine.Object value, string ownerType, string field, int depth, HashSet<int> seen)
         {
-            if (value == null || seen.Count >= MaxTraced || !seen.Add(ObjectIds.Of(value)))
+            if (value == null || seen.Count >= MaxTraced || !seen.Add(ObjectIds.KeyOf(value)))
             {
                 return;
             }
@@ -394,7 +394,7 @@ namespace Artel.Affordances.Scan
         /// </remarks>
         private static List<string> CarriedBy(GameObject prefab)
         {
-            var id = ObjectIds.Of(prefab);
+            var id = ObjectIds.KeyOf(prefab);
 
             if (CarriedByPrefab.TryGetValue(id, out var already))
             {
