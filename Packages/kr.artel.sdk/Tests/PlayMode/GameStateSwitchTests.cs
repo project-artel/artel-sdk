@@ -173,6 +173,8 @@ namespace Artel.Tests
 
             public bool IsConnected { get { return true; } }
 
+            public ArtelTransportPhase Phase { get { return ArtelTransportPhase.Connected; } }
+
             public void Start()
             {
             }

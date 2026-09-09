@@ -64,6 +64,7 @@ namespace Artel
 
         private GameObject canvasObject;
         private GameObject createdEventSystem;
+        private GameObject toggleObject;
         private GameObject panelObject;
         private GameObject advancedObject;
         private GameObject coverObject;
@@ -80,7 +81,6 @@ namespace Artel
         private Text gateErrorText;
         private Text coverMessageText;
         private Text coverStatusText;
-        private Text coverProgressText;
         private Text runStatusText;
         private bool appliedShowPanel;
         private bool registrationRunning;
@@ -96,8 +96,6 @@ namespace Artel
         // 고급 섹션의 키 지우기·연결이며, 둘 다 이 값을 지운다.
         private bool gateDismissed;
 
-        // 프로세스가 사는 동안 한 번만 걷는다. ScanScenesThenRegister 참조.
-        private SceneScanReportDto cachedSceneScan;
         private ArtelOverlayViewModel viewModel;
 
         // 가장 최근에 받은 RUN_STATUS (ARTEL-835). 아직 없으면 null 이고, CreateRunStatusLine
@@ -184,16 +182,68 @@ namespace Artel
             }
         }
 
+        /// <summary>
+        /// 전송의 상태를 화면으로 옮기고, 우상단 Artel 버튼을 사람이 마우스를 쥔 동안만 띄운다.
+        /// </summary>
+        /// <remarks>
+        /// 프레임마다 보는 이유가 둘 다 있다. 전송은 스스로 알려줄 수 없다 — 소켓의 닫힘과 열림은
+        /// websocket-sharp 수신 스레드에서 오고, 그 자리에서는 Unity API 를 만질 수 없다. 여기서
+        /// 읽으면 판정과 그리기가 모두 메인 스레드에 남는다. 값이 달라졌을 때만
+        /// <see cref="ArtelOverlayViewModel.NoticeTransport"/> 가 Changed 를 올린다.
+        /// 포인터 소유도 프레임마다 바뀐다 — 사람이 실제 마우스를 4px 움직이면
+        /// <see cref="ArtelInput.AdvanceFrame"/> 이 그 프레임에 에이전트의 포인터 소유를
+        /// 놓는다(<c>VirtualMouseState.OwnsPointer</c>). RefreshView 는 viewModel 이 바뀔 때만
+        /// 도므로 이 신호를 실을 자리가 없다.
+        /// </remarks>
+        private void Update()
+        {
+            viewModel.NoticeTransport(artelManager.TransportPhase);
+
+            // 우상단 Artel 버튼은 사람이 마우스를 쥐고 있을 때만 있다. 에이전트가 게임을 모는
+            // 동안 이 버튼은 사람이 누를 것도 아니고, 에이전트가 눌러야 할 것도 아니다.
+            // 버튼이 사라질 때 열려 있던 패널도 함께 닫는다 — 패널을 여닫는 길이 이 버튼
+            // 하나뿐이라, 버튼 없이 남은 패널은 게임 화면을 440x300 만큼 가린 채 닫히지 않는다.
+            if (toggleObject == null)
+            {
+                return;
+            }
+
+            var humanHoldsMouse = HumanHoldsMouse;
+            if (toggleObject.activeSelf == humanHoldsMouse)
+            {
+                return;
+            }
+
+            toggleObject.SetActive(humanHoldsMouse);
+
+            // 마우스가 사람에게 돌아와도 패널을 도로 열지는 않는다. 몇 분 전에 열어 둔
+            // 패널이 혼자 돌아오는 것보다, 버튼을 한 번 더 누르는 편이 덜 놀랍다.
+            // appliedShowPanel 은 건드리지 않는다 — 그것은 viewModel.ShowPanel 의 전이를
+            // 재는 값이고, 여기서 내리면 다음 Changed 에 RefreshView 가 패널을 다시 연다.
+            if (!humanHoldsMouse && panelObject != null)
+            {
+                panelObject.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// 에이전트가 포인터를 옮긴 적이 없거나, 옮긴 뒤 사람이 실제 마우스를 도로 가져갔나.
+        /// </summary>
+        private static bool HumanHoldsMouse
+        {
+            get { return !ArtelInput.HasVirtualMousePosition; }
+        }
+
         private void RegisterInstance()
         {
-            // viewModel은 스캔이 끝나고 Register에 들어가야 Registering이 된다. 그때까지
-            // 프로젝트 버튼이 살아 있으므로, 이 가드가 없으면 연타한 만큼 씬 워크가 겹쳐 돈다.
+            // viewModel은 Register에 들어가야 Registering이 된다. 그때까지 프로젝트 버튼이
+            // 살아 있으므로, 이 가드가 없으면 연타한 만큼 등록 요청이 겹쳐 나간다.
             if (registrationRunning)
             {
                 return;
             }
 
-            StartCoroutine(ScanScenesThenRegister());
+            StartCoroutine(SendRegistration());
         }
 
         private void BeginLogin()
@@ -266,47 +316,26 @@ namespace Artel
             RegisterInstance();
         }
 
-        // 첫 등록은 씬 워크가 끝날 때까지 늦게 시작한다. 두 번째부터는 캐시를 쓴다.
-        private IEnumerator ScanScenesThenRegister()
+        private IEnumerator SendRegistration()
         {
             registrationRunning = true;
             gateDismissed = false;
 
-            // 씬 워크가 올린 씬은 실제로 그려진다. 등록이 끝날 때까지 화면을 덮어 두는 것이
-            // 그 깜박임을 사람이 보지 않게 하는 유일한 방법이다. 오버레이 캔버스로 그리는
-            // 다른 씬의 UI까지 가려야 하므로 카메라를 꺼서는 부족하다.
-            //
             // registrationRunning은 RefreshView가 읽는다. 뒤집은 직후 직접 불러야 하는데,
             // 이 플래그는 컨트롤러 로컬이라 viewModel.Changed가 뜨지 않는다.
-            ShowCoverMessage(cachedSceneScan == null
-                ? "게임 화면을 분석하는 중입니다. 잠시만 기다려 주세요."
-                : "인스턴스를 등록하는 중입니다. 잠시만 기다려 주세요.");
+            ShowCoverMessage("인스턴스를 등록하는 중입니다. 잠시만 기다려 주세요.");
             RefreshView();
             try
             {
-                // 스캔은 씬을 하나씩 로드했다 내리므로 씬 수만큼 몇 초씩 걸린다. 빌드에 담긴
-                // 씬은 프로세스가 사는 동안 바뀌지 않으니 한 번만 걷고 재사용한다. 등록이
-                // 실패해 다시 시도할 때 이 캐시가 없으면 매번 전체 씬을 다시 걷는다.
-                //
-                // ponytail: 에디터에서 플레이 중에 씬을 편집하면 캐시가 낡는다. 플레이를
-                // 다시 시작하면 지워지므로 그대로 둔다. 런타임 무효화가 필요해지면
-                // AllSceneScanner 쪽에 변경 신호를 만들어야 한다.
-                if (cachedSceneScan == null)
-                {
-                    yield return SceneScanReporter.CreateReport(
-                        report => cachedSceneScan = report,
-                        ShowScanProgress);
-
-                    ShowScanProgress(0, 0);
-                }
-
+                // CreateReport 는 Build Settings 목록만 읽어 그 자리에서 끝난다. 캐시를 두던
+                // 시절이 있었지만 그때는 씬을 하나씩 로드하는 워크가 붙어 있었다.
                 yield return viewModel.Register(
                     artelManager.Server,
                     artelManager.SdkId,
                     artelManager.InstanceName,
                     artelManager.GameVersion,
                     artelManager.StartTransport,
-                    cachedSceneScan);
+                    SceneScanReporter.CreateReport());
             }
             finally
             {
@@ -315,8 +344,8 @@ namespace Artel
             }
         }
 
-        // 덮개는 로그인·목록 조회·씬 스캔·등록을 모두 덮는다. 어느 단계에서 기다리는지
-        // 말해 주지 않으면 넷 다 똑같이 멈춘 화면으로 보인다.
+        // 덮개는 로그인·목록 조회·등록을 모두 덮는다. 어느 단계에서 기다리는지 말해 주지
+        // 않으면 셋 다 똑같이 멈춘 화면으로 보인다.
         private void ShowCoverMessage(string message)
         {
             if (coverMessageText == null)
@@ -324,22 +353,7 @@ namespace Artel
                 return;
             }
 
-            coverProgressText.text = string.Empty;
             coverMessageText.text = message;
-        }
-
-        // 씬 수만큼 로드와 언로드가 쌓여 몇 초씩 걸린다. 진행 숫자가 없으면 덮개가 멈춘
-        // 화면과 구분되지 않는다. sceneCount가 0이면 씬 워크가 끝났다는 뜻이다.
-        private void ShowScanProgress(int sceneNumber, int sceneCount)
-        {
-            if (coverProgressText == null)
-            {
-                return;
-            }
-
-            coverProgressText.text = sceneCount <= 0
-                ? string.Empty
-                : "씬 " + sceneNumber + " / " + sceneCount;
         }
 
         // 나중에로 게이트를 내리면 게이트의 버튼도 함께 비활성된다. 그래서 게이트로
@@ -347,9 +361,48 @@ namespace Artel
         // 연결이 있는 이유는 로그인을 버리지 않고 재시도할 길을 남기는 것이다.
         private void ConnectWebSocket()
         {
+            if (registrationRunning || loginRunning)
+            {
+                return;
+            }
+
             gateDismissed = false;
-            viewModel.Connect(artelManager.StartTransport);
+            StartCoroutine(RegisterThenConnect());
+        }
+
+        /// <summary>
+        /// 연결 버튼이 도는 길. 등록부터 다시 하고 그 끝에서 소켓을 건다.
+        /// </summary>
+        /// <remarks>
+        /// 소켓만 다시 거는 것으로는 자격증명이 거절된 끊김(닫힘 코드 4001)에서 벗어날 수 없다.
+        /// 같은 토큰과 같은 instanceId 로 걸어 같은 대답을 받을 뿐이다. 등록은 만료된 토큰을
+        /// refresh 로 바꾸고 instanceId 를 다시 받아 오므로, 그 두 값이 새로워진 뒤에야 다시 거는
+        /// 일에 뜻이 생긴다. 등록은 (프로젝트, sdkUuid) 로 idempotent 하니 돌고 있는 런의
+        /// instanceId 도 그대로다(ARTEL-842).
+        ///
+        /// sceneScan 은 <see cref="SendRegistration"/> 과 똑같이 그 자리에서 만들어 보낸다.
+        /// CreateReport 는 Build Settings 목록만 읽으므로, 돌고 있는 게임의 씬을 건드리지 않는다.
+        /// </remarks>
+        private IEnumerator RegisterThenConnect()
+        {
+            registrationRunning = true;
+            ShowCoverMessage("실시간 서버에 다시 연결하는 중입니다.");
             RefreshView();
+            try
+            {
+                yield return viewModel.Register(
+                    artelManager.Server,
+                    artelManager.SdkId,
+                    artelManager.InstanceName,
+                    artelManager.GameVersion,
+                    artelManager.StartTransport,
+                    SceneScanReporter.CreateReport());
+            }
+            finally
+            {
+                registrationRunning = false;
+                RefreshView();
+            }
         }
 
         private void LogOut()
@@ -395,6 +448,10 @@ namespace Artel
             CreateLogo(toggleButton.transform, Vector2.zero, 36f);
             AnchorTopRight(toggleButton.GetComponent<RectTransform>(), new Vector2(-24f, -24f));
             toggleButton.onClick.AddListener(() => panelObject.SetActive(!panelObject.activeSelf));
+            // 다크 모드 토글로 이 GUI 가 다시 만들어질 때도 지금 포인터를 쥔 쪽에 맞춰
+            // 시작해야, 에이전트가 모는 중에 버튼이 한 프레임 깜박이지 않는다.
+            toggleObject = toggleButton.gameObject;
+            toggleObject.SetActive(HumanHoldsMouse);
 
             panelObject = new GameObject("Artel Panel", typeof(RectTransform), typeof(Image));
             panelObject.transform.SetParent(canvasObject.transform, false);
@@ -557,15 +614,11 @@ namespace Artel
 
             coverMessageText = CreateText(
                 progressContent.transform,
-                "게임 화면을 분석하는 중입니다. 잠시만 기다려 주세요.",
+                "인스턴스를 등록하는 중입니다. 잠시만 기다려 주세요.",
                 20,
                 TextAnchor.MiddleCenter,
                 textSecondary);
             CenterRect(coverMessageText.rectTransform, new Vector2(0f, -10f), new Vector2(900f, 32f));
-
-            coverProgressText = CreateText(
-                progressContent.transform, string.Empty, 18, TextAnchor.MiddleCenter, textMuted);
-            CenterRect(coverProgressText.rectTransform, new Vector2(0f, -48f), new Vector2(900f, 28f));
 
             coverStatusText = CreateText(
                 progressContent.transform, string.Empty, 16, TextAnchor.MiddleCenter, textMuted);
@@ -762,9 +815,9 @@ namespace Artel
             // 덮개와 두 콘텐츠 그룹의 쓰기 주체는 여기 하나다. 코루틴이 따로 켜고 끄면
             // 어느 한쪽 경로에서 덮개가 켜진 채 남아 게임 화면을 통째로 가린다.
             //
-            // registrationRunning이 콘텐츠 선택에 들어가는 이유: 스캔은 State가 아직
-            // NeedsLogin인 채로 몇 초 돈다. ShowGate만 보면 그 동안 게이트가 버튼을 켠 채
-            // 얼어 있고 진행 숫자는 꺼진 그룹에 써진다. 브라우저를 기다리는 동안도 같다.
+            // registrationRunning이 콘텐츠 선택에 들어가는 이유: 등록 요청이 도는 동안
+            // State가 아직 NeedsLogin일 수 있다. ShowGate만 보면 그 동안 게이트가 버튼을 켠
+            // 채 얼어 있다. 브라우저를 기다리는 동안도 같다.
             var busy = registrationRunning || loginRunning;
             var showGate = viewModel.ShowGate && !busy && !gateDismissed;
             coverObject.SetActive(showGate || busy);

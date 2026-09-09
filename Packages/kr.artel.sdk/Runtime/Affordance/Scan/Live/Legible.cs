@@ -82,11 +82,58 @@ namespace Artel.Affordances.Live
         private static readonly List<Component> Holding = new List<Component>();
 
         /// <summary>
-        /// 이 객체가 글자를 띄우고 있는가. <see cref="Worth"/> 가 순회에 넣을지 정할 때 묻는다.
+        /// 이 객체가 글자를 띄우고 있는가.
         /// </summary>
         internal static bool Carries(GameObject subject)
         {
             return Of(subject) != null;
+        }
+
+        /// <summary>
+        /// 이 객체가 글자를 띄울 수 있는가. 지금 띄우고 있는지는 묻지 않는다.
+        /// <see cref="Worth"/> 가 순회에 넣을지 정할 때 묻는다.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Worth"/> 가 <see cref="Carries"/> 를 물었을 때 대사창이 판독에 영영 들어오지
+        /// 못했다(ARTEL-840). 그쪽은 값을 읽어 답하는데 <see cref="Worth"/> 는 객체마다 한 번 묻고
+        /// 그 답을 기억하기 때문이다. 타자기 효과로 흘러드는 대사는 창이 뜨는 프레임에 아직
+        /// 비어 있고, 그 한 번의 <c>false</c> 가 실행 내내 유효해진다.
+        ///
+        /// 그래서 문에서는 타입만 본다. 컴포넌트가 무엇인지는 객체에 붙박이라 기억해도 안전하다.
+        /// 지금 비었는지는 매 박자 <c>LiveState.Said</c> 가 판단하며, 거기서 <see cref="Of"/> 가
+        /// <c>null</c> 이면 싣지 않으므로 판독이 빈칸으로 차지도 않는다.
+        ///
+        /// 값을 읽지 않으므로 <see cref="Carries"/> 보다 싸다. <see cref="ReaderFor"/> 가 타입마다
+        /// 한 번 답하고 기억하니, 두 번째부터는 사전 조회다.
+        /// </remarks>
+        internal static bool CanCarry(GameObject subject)
+        {
+            if (subject == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                subject.GetComponents(Holding);
+            }
+            catch (Exception)
+            {
+                Holding.Clear();
+                return false;
+            }
+
+            foreach (var component in Holding)
+            {
+                if (component != null && ReaderFor(component.GetType()) != null)
+                {
+                    Holding.Clear();
+                    return true;
+                }
+            }
+
+            Holding.Clear();
+            return false;
         }
 
         /// <summary>

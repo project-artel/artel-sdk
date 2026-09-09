@@ -51,7 +51,10 @@ namespace Artel.Tests
             }
 
             _made.Clear();
-            Legible.Forget();
+
+            // Worth 도 함께 비운다. 객체마다 답을 기억하므로, 안 비우면 앞 테스트가 어떤 객체에 대해
+            // 내린 판단이 다음 테스트로 넘어간다. Worth.Forget 이 Legible 것까지 비운다.
+            Worth.Forget();
         }
 
         [Test]
@@ -86,6 +89,67 @@ namespace Artel.Tests
             // 글자를 띄우라고 놓였지만 지금은 아무것도 안 띄운 라벨이 흔하다. 그것들을 전부 실으면 판독이
             // 빈칸으로 찬다.
             Assert.That(Legible.Of(Saying(string.Empty)), Is.Null);
+        }
+
+        [Test]
+        public void 빈_글자를_띄우는_객체도_순회에는_넣는다()
+        {
+            // 싣지 않는 것과 보지 않는 것은 다르다. 문에서 값을 보고 답하면 그 답이 기억되어, 그때 비어
+            // 있던 라벨은 나중에 무엇을 띄우든 영영 판독에 못 들어온다 (ARTEL-840).
+            var label = Saying(string.Empty);
+
+            Assert.That(Worth.Writing(label, new Dictionary<Type, List<Watched>>()), Is.True);
+            Assert.That(Legible.Of(label), Is.Null, "순회에는 넣되 빈 값을 싣지는 않는다.");
+        }
+
+        /// <summary>
+        /// 한 번 들어온 객체는 다시 나가지 않는다. 나가면 `LiveState.Gone` 이 그것을 사라졌다고
+        /// 보고하고, 읽는 쪽은 살아 있는 객체를 지운다.
+        /// </summary>
+        [Test]
+        public void 들어온_객체는_컴포넌트를_떼어도_계속_들어온다()
+        {
+            var label = Saying("촌장");
+            var byOwner = new Dictionary<Type, List<Watched>>();
+
+            Assert.That(Worth.Writing(label, byOwner), Is.True);
+
+            UnityEngine.Object.DestroyImmediate(label.GetComponent<Text>());
+
+            Assert.That(Worth.Writing(label, byOwner), Is.True,
+                "판독에서 빠지면 살아 있는 객체가 gone 으로 보고된다.");
+        }
+
+        /// <summary>
+        /// 파괴된 객체는 캐시를 거치기 전에 걸러진다. 그래야 진짜 사라짐이 gone 으로 나간다.
+        /// </summary>
+        [Test]
+        public void 파괴된_객체는_들어오지_않는다()
+        {
+            var label = Saying("촌장");
+            var byOwner = new Dictionary<Type, List<Watched>>();
+
+            Assert.That(Worth.Writing(label, byOwner), Is.True);
+
+            UnityEngine.Object.DestroyImmediate(label);
+
+            Assert.That(Worth.Writing(label, byOwner), Is.False);
+        }
+
+        [Test]
+        public void 비었다가_채워지면_그때부터_읽힌다()
+        {
+            // 대사창이 이 모양이다. 타자기 효과라 창이 뜨는 프레임에는 본문이 비어 있고, 한 박자 뒤에
+            // 채워진다. 문이 그 사이에 닫히면 대사를 영영 못 읽는다.
+            var chat = Saying(string.Empty);
+            var byOwner = new Dictionary<Type, List<Watched>>();
+
+            Assert.That(Worth.Writing(chat, byOwner), Is.True, "비어 있는 동안 문이 닫히면 안 된다.");
+
+            chat.GetComponent<Text>().text = "나는 이 마을의 촌장이다";
+
+            Assert.That(Worth.Writing(chat, byOwner), Is.True, "기억된 답이 문을 도로 닫으면 안 된다.");
+            Assert.That(Legible.Of(chat), Is.EqualTo("나는 이 마을의 촌장이다"));
         }
 
         [Test]
