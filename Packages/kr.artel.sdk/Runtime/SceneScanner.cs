@@ -84,18 +84,7 @@ namespace Artel
         /// </remarks>
         public bool TryGetTarget(int id, out ScannedTarget target)
         {
-            var found = ObjectIds.Find(id);
-
-            // 판독은 GameObject 의 id 를 싣지만 이 경로의 유일한 부름은 아니다. 컴포넌트를 받았으면 그것이 매달린
-            // 객체가 답이다 — 둘을 가르는 것은 부르는 쪽의 부담이 아니다.
-            var gameObject = found as GameObject;
-            if (gameObject == null)
-            {
-                var component = found as Component;
-                gameObject = component == null ? null : component.gameObject;
-            }
-
-            if (gameObject == null)
+            if (!TryResolveGameObject(id, out var gameObject))
             {
                 target = null;
                 return false;
@@ -103,6 +92,38 @@ namespace Artel
 
             target = ScannedTarget.FromGameObject(gameObject);
             return true;
+        }
+
+        /// <summary>
+        /// id 로 <see cref="Transform"/> 을 찾는다. <see cref="TryGetTarget"/> 과 같은 자리를 겨누지만, 겨냥에는
+        /// 버튼도 입력란도 아닌 스프라이트나 맨 오브젝트도 필요해서 <see cref="ScannedTarget"/> 을 거치지 않는다.
+        /// </summary>
+        public bool TryGetTransform(int id, out Transform transform)
+        {
+            if (!TryResolveGameObject(id, out var gameObject))
+            {
+                transform = null;
+                return false;
+            }
+
+            transform = gameObject.transform;
+            return true;
+        }
+
+        private static bool TryResolveGameObject(int id, out GameObject gameObject)
+        {
+            var found = ObjectIds.Find(id);
+
+            // 판독은 GameObject 의 id 를 싣지만 이 경로의 유일한 부름은 아니다. 컴포넌트를 받았으면 그것이 매달린
+            // 객체가 답이다 — 둘을 가르는 것은 부르는 쪽의 부담이 아니다.
+            gameObject = found as GameObject;
+            if (gameObject == null)
+            {
+                var component = found as Component;
+                gameObject = component == null ? null : component.gameObject;
+            }
+
+            return gameObject != null;
         }
 
         private SceneBlock ScanTransform(

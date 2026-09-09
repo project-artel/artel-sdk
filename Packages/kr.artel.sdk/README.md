@@ -290,12 +290,51 @@ and drop needs no action of its own — it is those three in sequence:
 }
 ```
 
-`move_mouse` takes the coordinates a scan already reported: pixels from the top
-left of the screen, the same space as a block's `transform.rect`. Aiming at
-something the agent just saw is therefore its `rect` numbers, unchanged — the
-SDK flips them into Unity's bottom-left screen space itself, so no caller has to
-know that space exists. `mouse_down` and `mouse_up` take `[]` for the left
-button, or `[0]`, `[1]`, `[2]` for left, right, and middle.
+`move_mouse` accepts exactly one of three forms of `params`. A caller that
+composes a click or a drag out of `move_mouse` + `mouse_down` + `mouse_up`, the
+way the batch above does, gets aiming by id or by selector for free — nothing
+about the composition changes, only what `move_mouse` is told to aim at:
+
+- **A screen point**, `[x, y]` — the coordinates a scan already reported: pixels
+  from the top left of the screen, the same space as a block's `transform.rect`.
+  Aiming at something the agent just saw is therefore its `rect` numbers,
+  unchanged — the SDK flips them into Unity's bottom-left screen space itself,
+  so no caller has to know that space exists.
+
+  ```json
+  { "id": 1, "method": "move_mouse", "params": [420, 300] }
+  ```
+
+- **A Unity instance id**, `[id]` — the same kind of id `button_click` and
+  `enter_text` take, and the same kind a scan reports per block. The SDK reads
+  the object's own rect the way a scan would and aims at its centre, so this
+  lands on exactly the pixel the agent would have read off that block's `rect`.
+
+  ```json
+  { "id": 1, "method": "move_mouse", "params": [503402] }
+  ```
+
+- **A selector**, `[selector]` — a string written the way a scan's `selector`
+  field writes it: `name[index]` per level from the scene root down, joined by
+  `/`, e.g. `Root[0]/Canvas[1]/Card(Clone)[3]`. Useful when several objects on a
+  path share a name — spawned enemies, list rows — and the id from an earlier
+  scan is not the one on screen any more.
+
+  ```json
+  { "id": 1, "method": "move_mouse", "params": ["Root[0]/Canvas[1]/Card(Clone)[3]"] }
+  ```
+
+  A selector that a scan cut short with a leading `.../` cannot be resolved,
+  since it no longer reaches the scene root. Aiming by id or selector fails with
+  one of three distinct messages, so the agent can tell them apart: no object
+  has that instance id, nothing in the active scene matches that selector, or
+  the object exists but is off screen, behind the camera, or in a scene with no
+  camera to project it through.
+
+`mouse_down` and `mouse_up` stay positionless — they land wherever the pointer
+already is, which is what makes the composed click and drag above work. They
+take `[]` for the left button, or `[0]`, `[1]`, `[2]` for left, right, and
+middle.
 
 These reach the game two ways at once, because games take pointer input two
 ways:
@@ -350,6 +389,15 @@ What this does not change: `button_click` still invokes the button's `onClick`
 directly rather than going through the EventSystem, and it moves the cursor
 without firing hover events. The two paths are separate on purpose, so adding
 pointer events does not alter what an existing `button_click` does to a game.
+
+**`button_click` is deprecated.** A `move_mouse` at the target followed by
+`mouse_down` / `mouse_up` replaces it: that path goes through
+`PointerEventDispatcher` and the scene's `EventSystem`, so it exercises the
+game's own click path — including whatever the game's own click path would
+refuse, such as another element occluding the target — instead of stepping
+past it by calling `onClick` directly. `button_click` keeps its params and its
+result unchanged and is not being removed; several places outside this
+repository still send it.
 
 A held button has the same forgetting problem a held key does, with a worse
 failure: the game stays mid-drag. Stopping the connection releases every button

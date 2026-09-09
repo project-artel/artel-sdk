@@ -5,6 +5,7 @@ using System.Globalization;
 using Artel.Affordances.Scan;
 using Artel.Capture;
 using Artel.Evidence;
+using Artel.Pointer;
 using Artel.Protocol.Dto;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -187,6 +188,18 @@ namespace Artel
             completed(ActionResultDto.Failure(actionId, "Unsupported method: " + method));
         }
 
+        /// <summary>
+        /// Deprecated. Button 의 <c>onClick</c> 을 EventSystem 을 거치지 않고 직접 부른다.
+        /// </summary>
+        /// <remarks>
+        /// 대신 쓸 것은 겨눈 자리로 보낸 <c>move_mouse</c> 뒤에 <c>mouse_down</c>/<c>mouse_up</c> 이다 — 그
+        /// 경로는 <see cref="PointerEventDispatcher"/> 와 EventSystem 을 실제로 거치므로, 게임 자신의 클릭
+        /// 경로를 그대로 밟고 다른 것에 가려진 경우도 그대로 드러낸다. 이 메서드는 그것을 건너뛴다.
+        /// <para>
+        /// 남겨 둔다. 이 레포지토리 바깥의 여러 자리가 지금도 이 액션을 그대로 보내고 있고, params 도 결과
+        /// 모양도 바꾸지 않는다.
+        /// </para>
+        /// </remarks>
         private IEnumerator ExecuteButtonClick(
             int actionId,
             List<object> parameters,
@@ -266,25 +279,38 @@ namespace Artel
         /// turns those steps into a drag, which is why this cannot simply jump to the destination.
         /// </summary>
         /// <remarks>
-        /// The coordinates are the ones a scan reports: pixels from the top left. Unity's screen
-        /// space counts up from the bottom instead, and that flip lives here — once, out of sight —
-        /// rather than in every caller that read a block's rect and wants to aim at it.
+        /// The params name that position in exactly one of three ways, and <see cref="PointerAimParser"/>
+        /// is the only place that tells them apart: the coordinates <c>[x, y]</c>, a Unity instance id
+        /// <c>[id]</c> of the same kind <c>button_click</c> takes, or a selector <c>[selector]</c> as
+        /// <c>Artel.Affordances.Scan.ScenePath.SelectorOf</c> writes it.
+        /// <para>
+        /// Whichever form it was, the position that comes back is the one a scan reports: pixels from
+        /// the top left. Unity's screen space counts up from the bottom instead, and that flip lives
+        /// here — once, out of sight — rather than in every caller that read a block's rect and wants
+        /// to aim at it, or in any implementation of <see cref="IPointerAim"/>.
+        /// </para>
         /// </remarks>
         private IEnumerator ExecuteMoveMouse(
             int actionId,
             List<object> parameters,
             Action<ActionResultDto> completed)
         {
-            if (parameters == null || parameters.Count < 2 ||
-                !TryReadNumber(parameters[0], out var x) ||
-                !TryReadNumber(parameters[1], out var y))
+            if (!PointerAimParser.TryParse(parameters, out var aim, out var parseError))
             {
-                completed(ActionResultDto.Failure(actionId, "move_mouse requires params [x, y]."));
+                completed(ActionResultDto.Failure(actionId, parseError));
+                yield break;
+            }
+
+            if (!aim.TryResolve(scanner, out var reportedPosition, out var resolveError))
+            {
+                completed(ActionResultDto.Failure(actionId, resolveError));
                 yield break;
             }
 
             yield return cursorController.MoveTo(
-                new Vector2(x, Screen.height - y), pointerMoved, glide: true);
+                new Vector2(reportedPosition.x, Screen.height - reportedPosition.y),
+                pointerMoved,
+                glide: true);
             completed(ActionResultDto.Success(actionId));
         }
 
