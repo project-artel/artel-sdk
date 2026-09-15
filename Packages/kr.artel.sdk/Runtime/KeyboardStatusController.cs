@@ -22,6 +22,8 @@ namespace Artel
         private readonly List<KeyCode> pressedKeys = new List<KeyCode>();
         private readonly List<int> heldMouseButtons = new List<int>();
         private GameObject canvasObject;
+        private Canvas canvas;
+        private bool hiddenForCapture;
         private Text keyStatusText;
         private Text pointerStatusText;
         private Image panelImage;
@@ -76,6 +78,52 @@ namespace Artel
             if (canvasObject != null)
             {
                 Destroy(canvasObject);
+            }
+        }
+
+        /// <summary>
+        /// 캡처가 잡을 프레임에서 이 패널을 그리지 않는다.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Capture.ScreenCapturer"/> 가 back buffer 를 통째로 읽으므로, 패널을 이미지에서 빼는 방법은 그
+        /// 프레임에 안 그리는 것뿐이다 (ARTEL-881). <see cref="Affordances.Scan.Instrument"/> 표시는 보고에서만
+        /// 빼 주고, back buffer grab 에는 그 표시를 보고 거를 자리가 없다.
+        ///
+        /// 껐다는 사실을 여기서 기억한다. 호출자가 그 값을 들고 다니면 짝을 맞출 책임이 호출부마다 생기고,
+        /// 원래 꺼져 있던 패널을 캡처 뒤에 켜 버리는 경우를 손으로 막아야 한다.
+        ///
+        /// <c>GameObject.SetActive</c> 가 아니라 <c>Canvas.enabled</c> 다. 계층과 글자를 그대로 두고 렌더만
+        /// 멈추므로 <c>Text</c> mesh 를 다시 만들지 않고, <c>OnEnable</c>·<c>OnDisable</c> 도 돌지 않는다.
+        /// </remarks>
+        internal void HideForCapture()
+        {
+            if (hiddenForCapture || canvas == null || !canvas.enabled)
+            {
+                return;
+            }
+
+            canvas.enabled = false;
+            hiddenForCapture = true;
+        }
+
+        /// <summary>
+        /// <see cref="HideForCapture"/> 가 끈 패널을 다시 그린다. 끄지 않았으면 아무것도 하지 않는다.
+        /// </summary>
+        /// <remarks>
+        /// 캡처가 실패하거나 예외로 끝나도 불려야 한다. 패널이 꺼진 채 남는 것이 캡처 한 장을 놓치는 것보다
+        /// 나쁘다 — 사람이 게임을 보는 동안 어떤 키가 눌렸는지 영영 안 보이게 된다.
+        /// </remarks>
+        internal void ShowAfterCapture()
+        {
+            if (!hiddenForCapture)
+            {
+                return;
+            }
+
+            hiddenForCapture = false;
+            if (canvas != null)
+            {
+                canvas.enabled = true;
             }
         }
 
@@ -162,7 +210,7 @@ namespace Artel
             // 이 아래는 계기다. 사람이 보는 것이고 판독은 보고하지 않는다 (ARTEL-698).
             canvasObject.AddComponent<Instrument>();
 
-            var canvas = canvasObject.GetComponent<Canvas>();
+            canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = OverlaySortingOrder;
 
