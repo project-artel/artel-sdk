@@ -71,10 +71,14 @@ after every action ahead of it has finished:
 }
 ```
 
-The batched scan sends its own `GAME_STATE` message — the same shape the poller
-pushes — and leaves `{ "id": 2, "success": true }` in the `ACTION_RESULT` that
-follows. The top-level request keeps working so existing clients can migrate at
-their own pace.
+The batched scan sends its own `GAME_STATE` message and leaves
+`{ "id": 2, "success": true }` in the `ACTION_RESULT` that follows. The top-level
+request keeps working so existing clients can migrate at their own pace.
+
+`GAME_STATE` is answered on request and nothing else produces it. The SDK used
+to push one every second from a scene poller; ARTEL-400 removed that, so a run
+that never sends `scan_scene` never sees a `GAME_STATE`. What changes while the
+game runs is on the pulse channel — see `## State and action tracking`.
 
 ## Scanning every scene in the build
 
@@ -100,17 +104,19 @@ the walk spans many frames, so there is no top-level form.
 
 `params: ["full"]` widens the same walk. It reads every field Unity would
 serialize on the MonoBehaviours the game itself wrote — public fields and
-`[SerializeField]` private ones, whether or not they carry `[ArtelState]` — it
-walks into inactive objects, which come back as blocks with `"active": false`,
-and it reports what each button is wired to call. Everything else about the walk
-is unchanged.
+`[SerializeField]` private ones — it walks into inactive objects, which come back
+as blocks with `"active": false`, and it reports what each button is wired to
+call. Everything else about the walk is unchanged.
+
+**This is the only mode that reads field values.** The default scan reads none,
+so its components carry no `states` key at all.
 
 ```json
 { "type": "ACTION", "id": 10, "actions": [{ "id": 1, "method": "scan_all_scenes", "params": ["full"] }] }
 ```
 
-Omitting `params` keeps the original behaviour: opted-in state only, active
-objects only. `GAME_STATE` and the poller are never affected by this mode.
+Omitting `params` keeps the original behaviour: no field values, active objects
+only. `GAME_STATE` is never affected by this mode.
 
 What full mode leaves out, on purpose:
 
@@ -159,8 +165,8 @@ the walk unloaded are disabled, since clicking them would address nothing; the
 scene the game already had open stays clickable.
 
 The result is pinned in its own section, above the live scene, and stays there
-until **Clear** — the poller pushes a `GAME_STATE` within a second of any change,
-and a scan that took the whole walk to produce would otherwise vanish under it.
+until **Clear** — a walk over every scene takes long enough that losing it to the
+next **Scan** would waste the wait.
 Each component lists its states and actions, open by default and foldable,
 buttons list their `onClick` calls, and inactive blocks are labelled and dimmed.
 The section also keeps the raw `ALL_SCENES` JSON behind a disclosure.
@@ -535,8 +541,33 @@ must leave the game exactly as it found it.
 
 ## State and action tracking
 
-Add attributes to a `MonoBehaviour`. State is read at scan time. Action results
-are captured by IL post-processing without changing the source class:
+### State: the pulse channel
+
+**Reading state needs no change to the game.** There is no attribute to add and
+no member to mark. The SDK samples what the game holds ten times a second and
+sends a batch once a second as a `PULSE` message on the same WebSocket. The two
+actions `start_readings` and `stop_readings` turn it on and off, so a QA run
+reads only the part of the session it is actually driving.
+
+What a pulse carries is decided by the evidence document baked at build time —
+the members the analysed conditions and effects name — plus the objects that
+carry text on screen. Each reading names the `instanceId` of the object it came
+from, which is the same number `button_click`, `move_mouse`, and the rest take,
+so a reader that sees a value change can act on the thing that changed it.
+
+`tools/watch-readings.py` reads the stream locally. The SDK also writes it to
+`artel-pulse.jsonl` under the player's `Application.persistentDataPath`.
+
+This replaced `[ArtelState]`, which required the game's own source to carry an
+attribute on every member worth reading, and was removed in ARTEL-400. Nothing
+in this SDK reads member values from a scan any more; `scan_all_scenes ["full"]`
+reads serialized fields, but that is a build-time discovery walk, not a live
+channel.
+
+### Actions: `[ArtelAction]`
+
+Action results are captured by IL post-processing without changing the source
+class:
 
 ```csharp
 using Artel.Tracking;
@@ -544,9 +575,6 @@ using UnityEngine;
 
 public sealed class PlayerStatus : MonoBehaviour
 {
-    [ArtelState("hp")]
-    public float Hp = 100f;
-
     [ArtelAction("attack")]
     public int Attack(int damage)
     {
@@ -568,7 +596,7 @@ Current limits:
 - `[ArtelAction]` supports synchronous instance methods on `Component` classes.
 - Async methods, iterators, and coroutines are rejected during compilation.
 - Method parameters are not captured.
-- Return and state values must be serializable by Newtonsoft.Json.
+- Return values must be serializable by Newtonsoft.Json.
 - Each component keeps at most 256 pending actions; overflow drops the oldest.
 
 - HTTP URL: `http://127.0.0.1:17310/`
