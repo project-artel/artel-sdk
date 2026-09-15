@@ -94,7 +94,7 @@ stateDiagram-v2
 - **재시도 타이머 스레드는 `ArtelSdkSession` 을 직접 읽지 않습니다.** pair review 의 must-fix 입니다.
   - `ArtelManager` 가 메인 스레드에서만 갱신하는 `volatile` 스냅샷 둘을 읽습니다.
 
-| 타이머 안에서 세션을 바로 읽으면 | 무엇이 일어나나 |
+| 건드리게 되는 것 | 무엇이 일어나나 |
 | --- | --- |
 | `PlayerPrefs` | Unity 메인 스레드 밖에서 만짐 |
 | 만료된 토큰 | 그 자리에서 `Clear()` 가 세션을 지움 |

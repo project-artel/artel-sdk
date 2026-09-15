@@ -31,9 +31,7 @@ https://github.com/project-artel/artel-sdk.git?path=/Packages/kr.artel.sdk#devel
 | `-artel-logout` | 없음 | 저장된 세션을 지움 |
 | `-artel-window-label` | 문자열 | 오버레이에 그릴 이번 실행의 라벨 |
 
-| 환경 변수 | 무엇 |
-| --- | --- |
-| `ARTEL_SDK_TOKEN` | SDK 토큰 |
+SDK 토큰은 인자가 아니라 환경 변수 `ARTEL_SDK_TOKEN` 으로 받음.
 
 | 규칙 | 이유 |
 | --- | --- |

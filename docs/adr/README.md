@@ -39,9 +39,8 @@
 
 ### `reset_game`
 
-| 문서 | 무엇에 답하나 |
-| --- | --- |
-| [`2026-08-26-reset-game-clears-player-prefs.md`](../../.plan/general/2026-08-26-reset-game-clears-player-prefs.md) | `clearPlayerPrefs` 가 선택인 이유, SDK 자신의 `Artel.*` 키를 살리는 법 |
+- [`2026-08-26-reset-game-clears-player-prefs.md`](../../.plan/general/2026-08-26-reset-game-clears-player-prefs.md)
+  — `clearPlayerPrefs` 가 선택인 이유, SDK 자신의 `Artel.*` 키를 살리는 법
 
 ### screen capture 와 스트리밍
 
