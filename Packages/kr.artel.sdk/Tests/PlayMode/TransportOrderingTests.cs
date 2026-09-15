@@ -14,9 +14,9 @@ namespace Artel.Tests
     /// 유니티는 컴포넌트 사이의 <c>Awake</c>·<c>OnEnable</c> 순서를 보장하지 않는데,
     /// <c>ArtelTestPageManager</c> 는 자기 <c>OnEnable</c> 에서 매니저에 전송을 꽂는다. 그래서 같은 씬이
     /// 실행마다 두 갈래로 갈렸다 — 매니저가 먼저 돌면 자기 소켓을 열어 오케스트레이션에 붙고 테스트
-    /// 페이지는 물러났고, 테스트 페이지가 먼저 돌면 아직 없는 <c>sceneStatePoller</c> 를 건드려
-    /// <c>NullReferenceException</c> 이 났다. 그 예외는 전송 필드를 이미 채운 뒤에 터져서, 게임은 어느
-    /// 쪽에도 붙지 못하고 테스트 페이지 서버도 뜨지 않은 채로 남았다.
+    /// 페이지는 물러났고, 테스트 페이지가 먼저 돌면 <c>EnsureRuntime</c> 이 아직 만들지 않은 필드를
+    /// 건드려 <c>NullReferenceException</c> 이 났다. 그 예외는 전송 필드를 이미 채운 뒤에 터져서, 게임은
+    /// 어느 쪽에도 붙지 못하고 테스트 페이지 서버도 뜨지 않은 채로 남았다.
     ///
     /// 살아 있는 매니저가 필요해 플레이 모드에서만 돈다. <c>Awake</c> 가 부르는
     /// <c>DontDestroyOnLoad</c> 는 에디터 스크립트에서 부를 수 없다.

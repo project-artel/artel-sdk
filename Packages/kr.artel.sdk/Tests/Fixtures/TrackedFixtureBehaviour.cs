@@ -6,7 +6,7 @@ namespace Artel.Tests.Tracking
 {
     public sealed class TrackedFixtureBehaviour : MonoBehaviour
     {
-        [ArtelState("hp")]
+        /// <summary>public 이므로 <c>scan_all_scenes ["full"]</c> 이 직렬화 필드로 읽는다.</summary>
         public int Hp = 10;
 
         [ArtelAction("attack")]

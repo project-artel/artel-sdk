@@ -8,8 +8,19 @@ namespace Artel.Tests.Protocol
 {
     public sealed class SceneJsonContractTests
     {
+        /// <summary>
+        /// <c>GAME_STATE</c> 한 장의 wire 모양. <c>states</c> 는 여기 실리지 않는다 (ARTEL-400).
+        /// </summary>
+        /// <remarks>
+        /// 기본 스캔은 필드 값을 하나도 읽지 않는다. 빈 목록 대신 키를 빼는 것은
+        /// <c>onClick</c> 과 같은 규칙이고, orchestration 의 <c>SdkComponent.states</c> 는
+        /// <c>emptyList()</c> 기본값이라 키가 없어도 파싱된다.
+        ///
+        /// <c>states</c> 자신의 모양은 <see cref="Serialize_TrackedStateCarriesLoweredFieldValues"/>
+        /// 가 본다 — 그것을 싣는 것은 <c>scan_all_scenes ["full"]</c> 하나뿐이다.
+        /// </remarks>
         [Test]
-        public void Serialize_UsesBlockComponentStateActionShape()
+        public void Serialize_UsesBlockComponentActionShape()
         {
             var message = new GameStateMessageDto
             {
@@ -33,10 +44,6 @@ namespace Artel.Tests.Protocol
                                 {
                                     Name = "email edit text",
                                     Placeholder = "example@artel.kr",
-                                    States = new List<StateDto>
-                                    {
-                                        new StateDto { Tag = "hp", Name = "hp", Type = "float", Value = 2f }
-                                    },
                                     Actions = new List<ActionInvocationDto>
                                     {
                                         new ActionInvocationDto
@@ -61,7 +68,7 @@ namespace Artel.Tests.Protocol
             Assert.That(root["scene"]?["childern"], Is.Null);
             Assert.That((string)root["scene"]?["children"]?[0]?["type"], Is.EqualTo("block"));
             Assert.That((string)root["scene"]?["children"]?[0]?["components"]?[0]?["type"], Is.EqualTo("editText"));
-            Assert.That((string)root["scene"]?["children"]?[0]?["components"]?[0]?["states"]?[0]?["tag"], Is.EqualTo("hp"));
+            Assert.That(root["scene"]?["children"]?[0]?["components"]?[0]?["states"], Is.Null);
             Assert.That((string)root["scene"]?["children"]?[0]?["components"]?[0]?["actions"]?[0]?["tag"], Is.EqualTo("attack"));
         }
 

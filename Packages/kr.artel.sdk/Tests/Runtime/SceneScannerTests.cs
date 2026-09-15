@@ -239,24 +239,31 @@ namespace Artel.Tests
                 "Engine components would bury the game's own fields.");
         }
 
+        /// <summary>
+        /// <c>[ArtelAction]</c> 을 가진 컴포넌트도 기본 스캔에서는 값을 싣지 않는다 (ARTEL-400).
+        ///
+        /// <c>[ArtelState]</c> 가 있던 시절에는 그 멤버가 여기 실렸다. 지금 상태를 말하는 것은 pulse 이고,
+        /// 필드 값을 싣는 것은 <c>scan_all_scenes ["full"]</c> 하나뿐이다.
+        /// </summary>
         [Test]
-        public void Scan_Full_KeepsTaggedStateTagsInsteadOfReadingTheFieldTwice()
+        public void Scan_Default_ReportsAnActionSourceWithNoStates()
         {
             gameObject.AddComponent<TrackedFixtureBehaviour>();
 
-            var tracked = new SceneScanner().Scan(SceneScanOptions.Full).Scene.Children
+            var tracked = new SceneScanner().Scan().Scene.Children
                 .Single(candidate => candidate.Name == gameObject.name)
                 .Components
                 .OfType<TrackedComponent>()
                 .Single(component => component.ComponentType == typeof(TrackedFixtureBehaviour).FullName);
-            var hp = tracked.States.Single(state => state.Name == "Hp");
 
-            Assert.That(hp.Tag, Is.EqualTo("hp"));
-            Assert.That(hp.Value, Is.EqualTo(10));
+            Assert.That(tracked.States, Is.Empty);
         }
 
+        /// <summary>
+        /// <c>[ArtelAction]</c> 도 없고 full 모드도 아니면 컴포넌트 자체가 실리지 않는다.
+        /// </summary>
         [Test]
-        public void Scan_Default_ReadsOnlyTaggedState()
+        public void Scan_Default_SkipsAGameBehaviourWithNoActions()
         {
             gameObject.AddComponent<SerializedFixtureBehaviour>();
 
@@ -268,6 +275,23 @@ namespace Artel.Tests
                 components.OfType<TrackedComponent>().Any(component =>
                     component.ComponentType == typeof(SerializedFixtureBehaviour).FullName),
                 Is.False);
+        }
+
+        /// <summary>full 모드는 태그 없는 직렬화 필드로 값을 읽는다.</summary>
+        [Test]
+        public void Scan_Full_ReadsAnActionSourcesSerializedFields()
+        {
+            gameObject.AddComponent<TrackedFixtureBehaviour>();
+
+            var tracked = new SceneScanner().Scan(SceneScanOptions.Full).Scene.Children
+                .Single(candidate => candidate.Name == gameObject.name)
+                .Components
+                .OfType<TrackedComponent>()
+                .Single(component => component.ComponentType == typeof(TrackedFixtureBehaviour).FullName);
+            var hp = tracked.States.Single(state => state.Name == "Hp");
+
+            Assert.That(hp.Value, Is.EqualTo(10));
+            Assert.That(hp.Tag, Is.Empty, "태그를 붙이던 attribute 는 ARTEL-400 이 지웠다.");
         }
 
         [Test]
@@ -284,7 +308,8 @@ namespace Artel.Tests
             Assert.That(handler.TargetType, Is.EqualTo(typeof(TrackedFixtureBehaviour).FullName));
             Assert.That(handler.Method, Is.EqualTo(nameof(TrackedFixtureBehaviour.Ping)));
 
-            // The poller rescans constantly, so the default scan keeps paying nothing for this.
+            // Reading these is reflection over every persistent listener, and the default scan is
+            // on the request path — it keeps paying nothing for something only discovery reads.
             var byDefault = new SceneScanner().Scan().Scene;
             Assert.That(ButtonOf(byDefault, gameObject.name).ClickHandlers, Is.Empty);
         }
@@ -368,10 +393,11 @@ namespace Artel.Tests
         }
 
         /// <summary>
-        /// 스캔한 적이 없어도 id 로 조준할 수 있다 (ARTEL-513).
+        /// 스캔한 적이 없어도 id 로 조준할 수 있다 (ARTEL-513 · ARTEL-400).
         ///
-        /// <c>GAME_STATE</c> 가 꺼진 빌드는 스캔이 돌지 않는다. 조준이 스캔에 매달려 있으면 판독으로 무엇이
-        /// 바뀌었는지 아는 독자가 그것을 건드릴 방법을 잃는다 — 이 테스트가 그 매달림이 없다는 것이다.
+        /// 1초 <c>poller</c> 가 사라진 지금, 아무도 <c>scan_scene</c> 을 보내지 않는 실행에서는 스캔이 한 번도
+        /// 돌지 않는다. 조준이 스캔에 매달려 있으면 pulse 로 무엇이 바뀌었는지 아는 독자가 그것을 건드릴 방법을
+        /// 잃는다 — 이 테스트가 그 매달림이 없다는 것이다.
         /// </summary>
         [Test]
         public void TryGetTarget_ResolvesWithoutAScan()
