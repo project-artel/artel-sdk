@@ -17,36 +17,53 @@ login relay page. A manager the scene carries keeps the spot: the spawn steps
 aside when one already exists. The server builds the matching HTTP and WebSocket
 base URLs (`http`/`ws` or `https`/`wss`). API clients own their endpoint paths.
 
-Registration is authenticated with an **instance key** issued by the Artel
-dashboard. Create a game instance there, copy its key, and paste it into the
-onboarding panel's key field. The view-model-backed panel then calls:
+Registration is authenticated with a **JWT obtained by browser login**. Since
+2026-07-31 there is no instance key to paste. The overlay's login button starts
+`ArtelLoopbackLogin`, which opens a short-lived loopback server and sends the
+browser to `<frontendOrigin>/sdk-login`. That page trades an existing console
+session for a one-time code, and the SDK exchanges that code — with its PKCE
+verifier — at `POST /api/auth/sdk/token` for an SDK token. The session cookie is
+HttpOnly and never reaches a loopback address, which is why the code exchange
+exists; the SDK is a public client with no secret, which is why PKCE replaces
+one. `HttpListener` ships only in the editor and standalone players, so login
+works there and nowhere else.
+
+The JWT says who you are, not which instance you are. Instance identity is
+carried by `sdkUuid`, the SDK's per-installation UUID. After login the person
+picks a project once, and from then on the server finds or creates the instance
+by `(projectId, sdkUuid)`:
 
 ```
 POST /api/sdk/registrations
-{ "instanceKey": "H4KQ2-8VTRM-9XZ0C-N5JWE", "sdkUuid": "<uuid>", "gameVersion": "1.2.3" }
+Authorization: Bearer <sdk token>
+{ "projectId": "<id>", "sdkUuid": "<uuid>", "instanceName": "<name>", "gameVersion": "1.2.3" }
 ```
 
-`gameVersion` is `Application.version` from Player Settings, and `sdkUuid` is
-the SDK's per-installation UUID — it identifies which runtime registered, and is
-not a credential. On success the key is written to Unity `PlayerPrefs` under
-`Artel.InstanceKey` and the SDK connects to `/ws/sdk?instanceKey={INSTANCE_KEY}`
-automatically. Every later launch registers and connects with no interaction.
+`gameVersion` is `Application.version` from Player Settings. The response
+carries `instanceId`, `projectId`, `instanceName`, `gameBuildId` and
+`gameVersion`. The SDK then connects to
+`/ws/sdk?token={SDK_TOKEN}&instanceId={INSTANCE_ID}`. Every later launch
+registers and connects with no interaction.
 
-A key is stored only after the server accepts it. If the server answers `404`
-the key is unknown or its instance was deleted, so the stored key is discarded
-and the panel asks for a new one. Any other failure keeps the key so the `등록`
-button can retry. The panel's `고급` section shows the SDK UUID and game
-version, and offers a manual `연결` button plus `키 지우기` to forget the stored
-key.
+The two tokens — access and refresh — live in the OS secret store
+(`ArtelSecretStore`; DPAPI on Windows, Keychain on macOS). Expiry, display name,
+project and instance sit in `PlayerPrefs` under `Artel.*`, because none of them
+opens anything on its own. The per-installation UUID is generated once and
+stored in `PlayerPrefs` under `Artel.SdkId`.
 
-The per-installation UUID is generated once and stored in `PlayerPrefs` under
-`Artel.SdkId`.
+Close code `4001` on the socket means the token or the instance was refused.
+The SDK does not retry that one; the overlay's `연결` button registers again,
+which refreshes the token and the instance id.
 
 ## Local PoC
 
-Add both `ArtelManager` and `ArtelTestPageManager` to the same scene object.
-The test page manager replaces the default client transport with its local
-WebSocket server and manages both test servers:
+This is the one case that still wants an `ArtelManager` in the scene. The SDK
+spawns its own manager on a `GameObject` of its own, and `ArtelTestPageManager`
+looks for the manager on its own object — so put both on the same scene object,
+or assign the manager to the test page manager's field. The scene's manager
+keeps the spot and the spawn steps aside. The test page manager replaces the
+default client transport with its local WebSocket server and manages both test
+servers:
 
 - WebSocket URL: `ws://127.0.0.1:17311/ws`
 - Scan request: `{ "jsonrpc": "2.0", "id": 1, "method": "scan_scene", "params": [] }`
