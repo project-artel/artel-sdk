@@ -280,9 +280,10 @@ namespace Artel
                 gameObject.AddComponent<ArtelOverlayController>();
             }
 
-            if (GetComponent<KeyboardStatusController>() == null)
+            var keyboardStatus = GetComponent<KeyboardStatusController>();
+            if (keyboardStatus == null)
             {
-                gameObject.AddComponent<KeyboardStatusController>();
+                keyboardStatus = gameObject.AddComponent<KeyboardStatusController>();
             }
 
             pointerEvents = new PointerEventDispatcher();
@@ -291,7 +292,9 @@ namespace Artel
                 scanner,
                 cursorController,
                 pointerEvents,
-                new ScreenCapturer(),
+                // 캡처가 잡는 프레임에서 keyboard status 패널을 끄려면 그 패널을 그리는 컨트롤러가 필요하다
+                // (ARTEL-881).
+                new ScreenCapturer(keyboardStatus),
                 // The credentials are read at upload time, not now: onboarding may still be
                 // waiting for the player to sign in, and a capture asked for before that should
                 // say so rather than upload with a stale value.
@@ -303,7 +306,7 @@ namespace Artel
                 this,
                 // 순회가 씬을 하나씩 띄우는 그 자리에서 화면도 한 장씩 뜬다. 같은 capturer 를 쓰는 이유는 back buffer 를
                 // 읽는 경로가 하나뿐이어야 `capture_screen` 이 보는 것과 근거에 실리는 것이 갈라지지 않기 때문이다.
-                new WalkedEvidenceScan(new ScreenCapturer()),
+                new WalkedEvidenceScan(new ScreenCapturer(keyboardStatus)),
                 // 캡처와 축이 다르다. 근거 문서는 살아 있는 인스턴스가 아니라 빌드에 붙으므로 gameBuildId 를 읽는다.
                 new EvidenceUploader(
                     jsonCodec,
