@@ -150,13 +150,13 @@ flowchart TB
 - 신호 메시지는 `/ws/sdk` 를 타고, 그 계약 문서는 이 저장소가 아니라
   `artel-orchestration-server/docs/streaming-protocol.md`
 
-## 계측을 게임에서 가려내기
+## SDK 가 놓은 것을 게임에서 가려내기
 
 - SDK 가 화면에 띄우는 것들이 게임인 척 섞여 들어감
 - `Instrument` 컴포넌트가 "이 객체와 그 아래는 SDK 가 놓은 것" 이라고 표시하고, 스캔과 scene walk 이 그것을 건너뜀
 - 스테이지 런의 렌더에서 객체를 센 결과
 
-| 이름 | 줄 수 |
+| 이름 | 렌더에서 차지한 줄 |
 | --- | --- |
 | `Artel Keyboard Status Canvas` 아래 | 48 |
 | 게임에서 가장 많은 `Card(Clone)` | 25 |

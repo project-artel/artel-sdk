@@ -107,7 +107,7 @@ stateDiagram-v2
     중이면 사람이 할 일이 없고 자격증명이 거절됐으면 재등록 말고는 길이 없습니다.
 - 연결 버튼은 이제 **등록부터 다시 합니다**(`RegisterThenConnect`).
   - 등록이 토큰 refresh 와 instanceId 를 새로 하고 그 끝에서 `StartTransport` 를 부릅니다.
-  - 씬 walk 는 일부러 건너뜁니다 — walk 는 씬을 하나씩 load·unload 하므로 돌고 있는 게임 위에서 다시
+  - scene walk 은 일부러 건너뜁니다 — walk 은 씬을 하나씩 load·unload 하므로 돌고 있는 게임 위에서 다시
     걸으면 안 되고, 서버는 `sceneScan` 이 없는 등록에서 저장된 scan 을 지우지 않습니다.
   - `SceneScanReporter.CreateReport()` 가 Build Settings 만 읽습니다.
 

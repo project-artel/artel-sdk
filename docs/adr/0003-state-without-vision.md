@@ -71,5 +71,5 @@ Notion 원문과 실제로 나간 것이 세 자리에서 다릅니다.
 - `onScreen` 을 정확히 답하려면 블록마다 mask walk 나 raycast 가 붙는데, 이 코드는 폴링 경로에서 돕니다.
 - 좌표를 자르지 않으면 숨 쉬는 idle 애니메이션 하나가 매 폴링 `GAME_STATE` 를 다시 내보냅니다. 자세한
   것은 [`docs/protocol.md`](../protocol.md) 에 있습니다.
-- `GAME_STATE` 스위치는 `pulse` 가 그 자리를 대신할 수 있는지 재는 중이라 남아 있고, ARTEL-400 이 씬
+- `GAME_STATE` 스위치는 `pulse` 가 그 자리를 대신할 수 있는지 재는 중이라 남아 있고, ARTEL-400 이
   scene walk 을 지우면 함께 사라집니다.

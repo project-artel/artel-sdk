@@ -75,7 +75,7 @@ sequenceDiagram
 | 필드 | 뜻 |
 | --- | --- |
 | `objectKey` | 올라간 문서의 키 |
-| `evidenceDigest` | 문서 자신의 지문 |
+| `evidenceDigest` | 문서 내용의 digest |
 | `byteSize` | 바이트 수 |
 | `schemaVersion` | 문서의 schema version |
 | `sceneCount` | 스캔이 본 씬 수 |
@@ -106,7 +106,7 @@ sequenceDiagram
 | --- | --- |
 | `ACTION` | action 배치 |
 | `RUN_STATUS` | 이 창에서 지금 무엇이 도는지. 답을 기다리는 요청이 아니라 통지다 |
-| `SCAN_SCENE` · `GET_GAME_STATE` | `GAME_STATE` 를 청한다. JSON-RPC `method: "scan_scene"` 도 같은 자리로 온다 |
+| `SCAN_SCENE` · `GET_GAME_STATE` | `GAME_STATE` 를 요청한다. JSON-RPC `method: "scan_scene"` 도 같은 자리로 온다 |
 | `STREAM_START` | 스트림 세션을 연다. 살아 있는 세션이 있으면 앞선 `STREAM_STOP` 없이 갈아치운다 |
 | `STREAM_RENEW` | lease 를 늘린다 |
 | `STREAM_STOP` | 세션을 닫는다 |

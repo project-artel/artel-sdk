@@ -12,7 +12,7 @@
   `scan_scene` 과 `scan_all_scenes` 가 있습니다. 전체 목록과 params 모양은
   [`docs/protocol.md`](../protocol.md) 에 있습니다.
 
-targeting 은 화면 좌표로만 하지 않습니다. 세 모양 다 `PointerAimParser` 한 자리에서 갈립니다.
+targeting 의 모양은 화면 좌표 하나가 아닙니다. 세 모양 다 `PointerAimParser` 한 자리에서 갈립니다.
 
 | `move_mouse` 의 params | 무엇 |
 | --- | --- |
@@ -67,5 +67,5 @@ targeting 은 화면 좌표로만 하지 않습니다. 세 모양 다 `PointerAi
 | `mouse_down` 이 한 프레임을 기다림 | 누른 뒤 `reached` 와 `pointerHeldByPerson` 을 `returnValue` 에 실음 (ARTEL-769) |
 | `set_axis`·`set_button` 이 별도 action 으로 존재 | legacy Input Manager 가 축과 키의 연결을 런타임 API 로 내주지 않아 가상 키 입력이 `GetAxis` 에 닿지 못함 |
 
-- `mouse_down` 이 기다리지 않으면 targeting 이 빗나간 것, 게임이 입력을 막고 있던 것, 사람이 포인터를 도로
+- `mouse_down` 이 기다리지 않으면 포인터가 목표를 빗나간 것, 게임이 입력을 막고 있던 것, 사람이 포인터를 도로
   가져간 것 셋이 전부 `ok` 로 읽힙니다.

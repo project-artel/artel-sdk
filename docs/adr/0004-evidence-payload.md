@@ -106,9 +106,9 @@ flowchart TB
 - **7 은 항목 타입을 바꾼 첫 번째입니다.**
   - 문자열 하나로는 두 항목이 같은 프리팹인지 답할 수 없었고, 실측에서 `MagicEnemy.fireShoot` 와
     `BossEnemy.fireShoot` 는 서로 다른 프리팹이었습니다.
-  - 같은 세대에서 `cut` 이 붙은 항목이 생깁니다 — 걷기가 깊이에 막혀 읽지 못한 프리팹입니다.
+  - 같은 세대에서 `cut` 이 붙은 항목이 생깁니다 — walk 이 깊이에 막혀 읽지 못한 프리팹입니다.
   - 이것이 없으면 빈 `createdBy` 가 "아무도 만들지 않는다" 와 "우리가 못 걸어갔다" 둘 다를 뜻해 살아
-    있는 타입이 폐기로 적재됩니다.
+    있는 타입이 폐기된 것으로 적힙니다.
 - 버전 번호 옆에 `capabilities` 가 따로 있습니다.
   - 숫자는 문서가 어느 세대인지를, 목록은 그 문서가 어떤 약속을 하는지를 말합니다.
   - 지금 실리는 이름은 `build-info-v1`, `selector-v1`, `visual-roles-v1`, `persistent-objects-v1`
@@ -132,4 +132,4 @@ flowchart TB
 | 스캔 결과가 바이트 동일하지 않음 | 씬 참조가 Unity 가 세션마다 새로 나눠 주는 instance id 로 쓰임 |
 
 - evidence 절반은 같은 바이트이고, 그것이 Mono 빌드와 IL2CPP 빌드가 일치한다고 보인 방법입니다.
-- 두 파일을 비교할 숫자는 문서 자신의 지문인 `evidence` 입니다.
+- 두 파일을 비교할 숫자는 문서 자신의 digest 인 `evidenceDigest` 입니다.
