@@ -17,7 +17,7 @@
 - `.plan/general/` 에 39 개, `.plan/issues/` 에 5 개의 plan 문서가 있습니다.
 - ADR 로 옮기지 않은 결정의 이유는 전부 거기 있습니다. 아래는 그것을 주제별로 묶은 것입니다.
 
-### 좌표와 겨냥
+### 좌표와 targeting
 
 | 문서 | 무엇에 답하나 |
 | --- | --- |
@@ -27,11 +27,11 @@
 | [`2026-07-16-add-virtual-cursor.md`](../../.plan/general/2026-07-16-add-virtual-cursor.md) | 가상 커서를 화면에 그리는 이유 |
 | [`2026-08-27-bridge-mouse-keycodes-to-mouse-events.md`](../../.plan/general/2026-08-27-bridge-mouse-keycodes-to-mouse-events.md) | `KeyCode.Mouse0` 이 마우스 이벤트를 내야 하는 이유 |
 
-### 씬 순회와 그 부작용
+### scene walk 과 그 부작용
 
 | 문서 | 무엇에 답하나 |
 | --- | --- |
-| [`2026-08-26-clean-scene-walk-persistent-objects.md`](../../.plan/general/2026-08-26-clean-scene-walk-persistent-objects.md) | 순회가 게임 위에 남기는 `DontDestroyOnLoad` 객체를 치우는 법 |
+| [`2026-08-26-clean-scene-walk-persistent-objects.md`](../../.plan/general/2026-08-26-clean-scene-walk-persistent-objects.md) | scene walk 이 게임 위에 남기는 `DontDestroyOnLoad` 객체를 치우는 법 |
 | [`2026-07-26-scan-all-scenes-full-serialized-fields.md`](../../.plan/general/2026-07-26-scan-all-scenes-full-serialized-fields.md) | `scan_all_scenes` 의 `full` 모드 |
 | [`2026-07-15-add-scene-scan-polling.md`](../../.plan/general/2026-07-15-add-scene-scan-polling.md) | 폴링 주기와 변화 감지 |
 | [`2026-08-13-port-affordance-runtime-scan-and-report.md`](../../.plan/general/2026-08-13-port-affordance-runtime-scan-and-report.md) | 런타임 스캔과 리포트 이식 |

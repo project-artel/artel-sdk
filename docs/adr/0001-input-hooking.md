@@ -38,12 +38,12 @@
 | 거르는 것 | 어떻게 맞추나 | 왜 |
 | --- | --- | --- |
 | `Artel.Runtime` | 정확한 이름 하나 (`WeavableAssemblies.SkippedNames`) | `ArtelInput` 이 스스로 `UnityEngine.Input` 을 부르므로, 거르지 않으면 proxy 가 자기를 부름 |
-| `UnityEngine`, `UnityEditor`, `Unity`, `System`, `mscorlib`, `netstandard`, `nunit`, `Newtonsoft`, `Mono` | 접두어 목록, 이름 경계에서 맞춤 | 엔진과 시스템 어셈블리 |
+| `UnityEngine`, `UnityEditor`, `Unity`, `System`, `mscorlib`, `netstandard`, `nunit`, `Newtonsoft`, `Mono` | prefix 목록, 이름 경계에서 맞춤 | 엔진과 시스템 어셈블리 |
 
-- `Artel.Runtime` 을 접두어로 거르면 `Artel.Runtime.Tests` 와 `Artel.Runtime.PlayModeTests` 까지 걸립니다.
+- `Artel.Runtime` 을 prefix 로 거르면 `Artel.Runtime.Tests` 와 `Artel.Runtime.PlayModeTests` 까지 걸립니다.
   - 그 둘은 위빙 대상이어야 합니다. 위빙이 실제로 일어났는지 확인하는 테스트들이 제 어셈블리가 갈아
     끼워진 것을 보고 판정하기 때문입니다.
-  - 접두어로 거르면 그 테스트가 아무것도 증명하지 못합니다.
+  - prefix 로 거르면 그 테스트가 아무것도 증명하지 못합니다.
 - 맞추기가 이름 경계에서 일어나므로 `Unity` 는 `Unity.Artel.CodeGen` 을 덮고 `UnityLike` 는 덮지 않습니다.
 
 ## 거절한 대안

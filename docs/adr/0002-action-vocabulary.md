@@ -5,14 +5,14 @@
 
 ## 결정
 
-- agent 가 보낼 수 있는 action 은 범용 UI 조작과 겨냥뿐입니다 — 클릭, 드래그, 키, 축, 시간 제어,
+- agent 가 보낼 수 있는 action 은 범용 UI 조작과 targeting 뿐입니다 — 클릭, 드래그, 키, 축, 시간 제어,
   screen capture, 스캔.
 - 게임의 뜻을 담은 action 은 하나도 두지 않습니다.
 - `ActionExecutor` 가 받는 action 은 17 개이고, 그 위에 `ArtelManager` 가 배치 안에서 직접 처리하는
   `scan_scene` 과 `scan_all_scenes` 가 있습니다. 전체 목록과 params 모양은
   [`docs/protocol.md`](../protocol.md) 에 있습니다.
 
-겨냥은 화면 좌표로만 하지 않습니다. 세 모양 다 `PointerAimParser` 한 자리에서 갈립니다.
+targeting 은 화면 좌표로만 하지 않습니다. 세 모양 다 `PointerAimParser` 한 자리에서 갈립니다.
 
 | `move_mouse` 의 params | 무엇 |
 | --- | --- |
@@ -67,5 +67,5 @@
 | `mouse_down` 이 한 프레임을 기다림 | 누른 뒤 `reached` 와 `pointerHeldByPerson` 을 `returnValue` 에 실음 (ARTEL-769) |
 | `set_axis`·`set_button` 이 별도 action 으로 존재 | legacy Input Manager 가 축과 키의 연결을 런타임 API 로 내주지 않아 가상 키 입력이 `GetAxis` 에 닿지 못함 |
 
-- `mouse_down` 이 기다리지 않으면 겨냥이 빗나간 것, 게임이 입력을 막고 있던 것, 사람이 포인터를 도로
+- `mouse_down` 이 기다리지 않으면 targeting 이 빗나간 것, 게임이 입력을 막고 있던 것, 사람이 포인터를 도로
   가져간 것 셋이 전부 `ok` 로 읽힙니다.

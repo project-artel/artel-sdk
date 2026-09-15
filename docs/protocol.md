@@ -46,7 +46,7 @@ sequenceDiagram
 | `pause_time` | `[]` | `Time.timeScale = 0`. SDK 자신은 unscaled 로 돈다 |
 | `resume_time` | `[]` | `pause_time` 이 없었으면 실패 |
 | `reset_game` | `[]` 또는 `[{ "clearPlayerPrefs": bool }]` | 시작 씬을 다시 연다 |
-| `start_readings` | `[]` | `pulse` 를 켠다. 멱등 |
+| `start_readings` | `[]` | `pulse` 를 켠다. 여러 번 불러도 같음 |
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
