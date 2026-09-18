@@ -48,10 +48,10 @@ namespace Artel.Affordances.Scan
         /// 있고, 꺼진 계기도 계기다 — 켜질 때 갑자기 게임으로 보고되면 그것이 더 나쁘다.
         ///
         /// 소비자가 둘이다(ARTEL-906). <see cref="Live.Worth"/> 는 이 메서드를 그대로 부르고 답을 프레임을 넘어
-        /// 기억한다. <see cref="SceneEvidenceScan"/> 은 씬 로드나 evidence scan 요청 한 번에 한 번만 걷으므로 그
-        /// 기억이 필요 없고, 대신 자기 컴포넌트 확인과 root 하나짜리 얕은 사전으로 같은 규칙 — 자기 자신이거나 조상
-        /// 하나가 표시를 달았으면 계기 — 을 직접 구현한다. 규칙은 하나이고, 그것을 묻는 값을 치를 이유가 서로 다를
-        /// 뿐이다.
+        /// 기억한다. <see cref="SceneEvidenceScan"/> 은 이 메서드를 다시 구현하지 않고 그 위에 캐시 하나를 얹는다 —
+        /// root 하나를 걷는 동안만 사는 얕은 사전에 부모의 답이 이미 있으면 물려받고, 없으면 이 메서드에 직접 묻는다.
+        /// 씬 로드나 evidence scan 요청 한 번에 한 번만 걷으므로 `Worth` 처럼 프레임을 넘어 기억할 이유는 없지만,
+        /// 답은 언제나 이 메서드가 내는 것과 같다.
         /// </remarks>
         internal static bool Marks(GameObject subject)
         {

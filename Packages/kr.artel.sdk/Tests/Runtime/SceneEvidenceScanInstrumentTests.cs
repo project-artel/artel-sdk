@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 using Artel.Affordances.Scan;
 using Artel.Tests.Tracking;
 using NUnit.Framework;
@@ -120,6 +121,40 @@ namespace Artel.Tests
             var document = ComposedAfterSceneWalk();
 
             Assert.That(document, Does.Contain("Game Host"));
+        }
+
+        /// <summary>
+        /// <c>Instrumented</c> 가 자기 사전이 아니라 <see cref="Instrument.Marks"/> 를 답으로 삼는지 본다.
+        /// </summary>
+        /// <remarks>
+        /// <c>GetComponentsInChildren&lt;Transform&gt;(true)</c> 는 실제로 부모를 자식보다 먼저 내놓지만, 그것은
+        /// 이 메서드가 기댈 수 있는 문서화된 계약이 아니다. 그 순서가 언젠가 바뀌면 표시된 서브트리가 조용히 보고에
+        /// 실리는데, 예외도 gap 도 없어 아무도 걷기 순서를 의심할 이유가 없다 — 그래서 사전에 부모 답이 없는 경우를
+        /// 직접, 순회를 거치지 않고 확인해 둔다. 자손을 부모보다 먼저 묻는 것이 옛 구현이 틀리게 답하던 바로 그
+        /// 경우다.
+        /// </remarks>
+        [Test]
+        public void 부모보다_자손을_먼저_물어도_계기로_답한다()
+        {
+            var canvas = Object_("Artel Overlay Canvas");
+            canvas.AddComponent<Instrument>();
+
+            var descendant = Object_("Overlay Child");
+            descendant.transform.SetParent(canvas.transform, false);
+
+            var answered = new Dictionary<Transform, bool>();
+
+            Assert.That(
+                CallInstrumented(descendant.transform, answered),
+                Is.True,
+                "부모 답이 사전에 없으면 Instrument.Marks 로 조상을 직접 확인해야 한다.");
+        }
+
+        private static bool CallInstrumented(Transform subject, Dictionary<Transform, bool> answered)
+        {
+            var method = typeof(SceneEvidenceScan).GetMethod(
+                "Instrumented", BindingFlags.Static | BindingFlags.NonPublic);
+            return (bool)method.Invoke(null, new object[] { subject, answered });
         }
 
         [Test]
