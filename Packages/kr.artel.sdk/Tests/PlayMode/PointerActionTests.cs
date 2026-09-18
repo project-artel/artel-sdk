@@ -328,7 +328,7 @@ namespace Artel.Tests
                 NewAction(1, "move_mouse", Params(10.5d)),
                 NewAction(2, "mouse_down", Params(9d)));
 
-            // Not Sent[0]: a live manager also pushes GAME_STATE from its poller.
+            // Not Sent[0]: a live manager sends other frames on the same socket.
             var results = transport.FirstActionResult()["results"];
             Assert.That((bool)results[0]["success"], Is.False);
             Assert.That(

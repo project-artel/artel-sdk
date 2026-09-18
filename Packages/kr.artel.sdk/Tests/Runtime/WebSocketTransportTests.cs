@@ -517,9 +517,9 @@ namespace Artel.Tests.Transport
             Assert.That(ArtelTestPage.Html, Does.Contain("id=\"scan-all-full\""));
             Assert.That(ArtelTestPage.Html, Does.Contain("scanAllScenes('full')"));
 
-            // The poller pushes a GAME_STATE within a second of any change. A scan that
-            // took the whole walk to produce has to survive that, so it is drawn into its
-            // own section and stays until Clear.
+            // A walk over every scene in Build Settings takes long enough that losing it to the
+            // next Scan would waste the wait, so it is drawn into its own section and stays until
+            // Clear.
             Assert.That(ArtelTestPage.Html, Does.Contain("id=\"snapshot\""));
             Assert.That(ArtelTestPage.Html, Does.Contain("snapshotScene.appendChild(renderNode(entry.scene"));
             Assert.That(ArtelTestPage.Html, Does.Contain("snapshotJson.textContent = JSON.stringify(message, null, 2)"));
@@ -546,8 +546,8 @@ namespace Artel.Tests.Transport
             Assert.That(ArtelTestPage.Html, Does.Contain("return actions.map(action => action.id)"));
             Assert.That(ArtelTestPage.Html, Does.Contain("entry.id === pendingCaptureId"));
 
-            // Same reason the pinned scan lives outside the live tree: a GAME_STATE lands within
-            // a second of any change and renderScene replaces everything it draws.
+            // Same reason the pinned scan lives outside the live tree: the next Scan replaces
+            // everything renderScene draws.
             Assert.That(ArtelTestPage.Html, Does.Contain("id=\"capture\""));
             Assert.That(ArtelTestPage.Html, Does.Contain("captureImage.src = capture.url"));
             Assert.That(ArtelTestPage.Html, Does.Contain("id=\"capture-clear\""));

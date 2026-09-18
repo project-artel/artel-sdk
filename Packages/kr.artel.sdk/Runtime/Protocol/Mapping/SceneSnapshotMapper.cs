@@ -55,10 +55,10 @@ namespace Artel.Protocol.Mapping
         /// How many decimal places a world coordinate keeps.
         /// </summary>
         /// <remarks>
-        /// The poller decides whether to send GAME_STATE by hashing this whole payload, so a raw
-        /// float turns a breathing idle animation into a scene change and the state goes out again
-        /// every tick. Screen rects avoid this by being whole pixels; world positions are in the
-        /// game's own units and need a place to round to.
+        /// 반올림이 없으면 숨쉬는 idle 애니메이션 하나가 같은 씬의 두 스냅샷을 다르게 만든다. 읽는
+        /// 쪽은 그 둘을 견주어 무엇이 움직였는지 고르므로, 아무도 볼 수 없는 자릿수는 차이가 아니라
+        /// 잡음이다. screen rect 는 정수 픽셀이라 이 문제가 없고, world 좌표만 게임 자신의 단위라
+        /// 반올림할 자리가 필요하다.
         /// </remarks>
         private const int WorldDecimals = 4;
 
@@ -126,17 +126,7 @@ namespace Artel.Protocol.Mapping
 
         private static SceneComponentDto ToDto(SceneComponent component)
         {
-            var states = new List<StateDto>(component.States.Count);
-            foreach (var state in component.States)
-            {
-                states.Add(new StateDto
-                {
-                    Tag = state.Tag,
-                    Name = state.Name,
-                    Type = state.Type,
-                    Value = state.Value
-                });
-            }
+            var states = ToDto(component.States);
 
             var actions = new List<ActionInvocationDto>(component.Actions.Count);
             foreach (var action in component.Actions)
@@ -196,6 +186,31 @@ namespace Artel.Protocol.Mapping
             dto.States = states;
             dto.Actions = actions;
             return dto;
+        }
+
+        // 아래 handlers 와 같은 이유로 빈 목록이 아니라 null 이다. `[ArtelState]` 가 사라진 뒤
+        // (ARTEL-400) 기본 스캔은 값을 하나도 읽지 않으므로, 모든 블록의 모든 컴포넌트에 빈
+        // `states` 를 다는 것은 아무것도 말하지 않는 바이트다.
+        private static List<StateDto> ToDto(IReadOnlyList<TrackedState> states)
+        {
+            if (states.Count == 0)
+            {
+                return null;
+            }
+
+            var dtos = new List<StateDto>(states.Count);
+            foreach (var state in states)
+            {
+                dtos.Add(new StateDto
+                {
+                    Tag = state.Tag,
+                    Name = state.Name,
+                    Type = state.Type,
+                    Value = state.Value
+                });
+            }
+
+            return dtos;
         }
 
         // Null rather than an empty list: a scan that did not collect handlers and a button with
