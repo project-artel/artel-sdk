@@ -720,6 +720,71 @@ namespace Artel.Tests.Transport
         }
 
         [Test]
+        public void HideForCapture_TurnsTheOverlayCanvasOff()
+        {
+            WithOverlay((controller, canvas) =>
+            {
+                controller.HideForCapture();
+
+                Assert.That(canvas.GetComponent<Canvas>().enabled, Is.False);
+            });
+        }
+
+        [Test]
+        public void ShowAfterCapture_TurnsTheOverlayCanvasBackOn()
+        {
+            WithOverlay((controller, canvas) =>
+            {
+                controller.HideForCapture();
+                controller.ShowAfterCapture();
+
+                Assert.That(canvas.GetComponent<Canvas>().enabled, Is.True);
+            });
+        }
+
+        /// <summary>
+        /// 캡처는 자기가 끈 캔버스만 켠다.
+        /// </summary>
+        /// <remarks>
+        /// 캔버스를 끄고 싶어 끈 사람이 있을 수 있고, 그 캔버스가 다음 캡처 뒤에 혼자 켜지면 안 된다.
+        /// </remarks>
+        [Test]
+        public void ShowAfterCapture_LeavesAnOverlayCanvasThatWasAlreadyOffAlone()
+        {
+            WithOverlay((controller, canvas) =>
+            {
+                var overlayCanvas = canvas.GetComponent<Canvas>();
+                overlayCanvas.enabled = false;
+
+                controller.HideForCapture();
+                controller.ShowAfterCapture();
+
+                Assert.That(overlayCanvas.enabled, Is.False);
+            });
+        }
+
+        /// <summary>
+        /// 캡처 두 개가 겹쳐도 캔버스는 꺼진 채 남지 않는다.
+        /// </summary>
+        /// <remarks>
+        /// `capture_screen` 과 evidence scan 의 thumbnail 이 같은 컨트롤러를 부른다. 둘이 겹치면 뒤쪽 이미지에
+        /// 캔버스가 한 번 찍힐 수는 있어도, 끄고 켜는 것이 어긋나 캔버스가 사라진 채 남는 일은 없어야 한다.
+        /// </remarks>
+        [Test]
+        public void ShowAfterCapture_TurnsTheOverlayCanvasOnAfterOverlappingCaptures()
+        {
+            WithOverlay((controller, canvas) =>
+            {
+                controller.HideForCapture();
+                controller.HideForCapture();
+                controller.ShowAfterCapture();
+                controller.ShowAfterCapture();
+
+                Assert.That(canvas.GetComponent<Canvas>().enabled, Is.True);
+            });
+        }
+
+        [Test]
         public void OverlayViewModel_ShowsGateOnlyWithoutStoredSession()
         {
             var withoutSession = CreateViewModel();
