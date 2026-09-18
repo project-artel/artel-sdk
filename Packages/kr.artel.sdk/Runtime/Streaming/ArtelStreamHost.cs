@@ -6,7 +6,8 @@ using UnityEngine;
 namespace Artel.Streaming
 {
     /// <summary>
-    /// The `type` discriminators from docs/streaming-protocol.md. Named here so a change to the
+    /// The `type` discriminators from the streaming protocol, which the orchestration server owns:
+    /// `artel-orchestration-server/docs/streaming-protocol.md`. Named here so a change to the
     /// contract is a compile-time search rather than a hunt through string literals.
     /// </summary>
     internal static class StreamMessageType
