@@ -46,6 +46,12 @@ namespace Artel.Affordances.Scan
         ///
         /// <c>GetComponentInParent</c> 를 쓰지 않는 것은 그것이 꺼진 객체를 건너뛰기 때문이다. 오버레이는 꺼져 있을 수
         /// 있고, 꺼진 계기도 계기다 — 켜질 때 갑자기 게임으로 보고되면 그것이 더 나쁘다.
+        ///
+        /// 소비자가 둘이다(ARTEL-906). <see cref="Live.Worth"/> 는 이 메서드를 그대로 부르고 답을 프레임을 넘어
+        /// 기억한다. <see cref="SceneEvidenceScan"/> 은 씬 로드나 evidence scan 요청 한 번에 한 번만 걷으므로 그
+        /// 기억이 필요 없고, 대신 자기 컴포넌트 확인과 root 하나짜리 얕은 사전으로 같은 규칙 — 자기 자신이거나 조상
+        /// 하나가 표시를 달았으면 계기 — 을 직접 구현한다. 규칙은 하나이고, 그것을 묻는 값을 치를 이유가 서로 다를
+        /// 뿐이다.
         /// </remarks>
         internal static bool Marks(GameObject subject)
         {
