@@ -1,0 +1,13 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <!-- The root ignores picking on purpose. It covers the whole screen, and a root that picks
+         would answer a ray aimed at the uGUI button sitting behind the panel, which would make
+         this scene measure raycaster ordering instead of what it is for. -->
+    <ui:VisualElement name="root" picking-mode="Ignore" style="flex-grow: 1;">
+        <ui:Label name="status-label" text="ready"
+                  style="position: absolute; left: 40px; top: 16px; font-size: 20px;" />
+        <ui:Button name="play-button" text="Play"
+                   style="position: absolute; left: 40px; top: 60px; width: 200px; height: 80px;" />
+        <ui:Button name="quit-button" text="Quit"
+                   style="position: absolute; left: 40px; top: 160px; width: 200px; height: 80px;" />
+    </ui:VisualElement>
+</ui:UXML>
