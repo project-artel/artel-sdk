@@ -63,6 +63,8 @@ namespace Artel
         [SerializeField] private ArtelManager artelManager;
 
         private GameObject canvasObject;
+        private Canvas canvas;
+        private bool hiddenForCapture;
         private GameObject createdEventSystem;
         private GameObject toggleObject;
         private GameObject panelObject;
@@ -232,6 +234,56 @@ namespace Artel
         private static bool HumanHoldsMouse
         {
             get { return !ArtelInput.HasVirtualMousePosition; }
+        }
+
+        /// <summary>
+        /// 캡처가 잡을 프레임에서 이 캔버스를 통째로 그리지 않는다 — 우상단 토글 버튼, 패널,
+        /// window label, run status 줄, 로그인 게이트 전부다 (ARTEL-905).
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Capture.ScreenCapturer"/> 가 back buffer 를 통째로 읽으므로, 이미지에서 빼는
+        /// 방법은 그 프레임에 안 그리는 것뿐이다. <see cref="KeyboardStatusController.HideForCapture"/>
+        /// 와 같은 이유, 같은 모양이다 (ARTEL-881).
+        ///
+        /// 껐다는 사실을 여기서 기억한다. 호출자가 그 값을 들고 다니면 짝을 맞출 책임이 호출부마다
+        /// 생기고, 원래 꺼져 있던 캔버스를 캡처 뒤에 켜 버리는 경우를 손으로 막아야 한다.
+        ///
+        /// <c>GameObject.SetActive</c> 가 아니라 <c>Canvas.enabled</c> 다. <see cref="Update"/> 가
+        /// 매 프레임 <c>toggleObject.SetActive(HumanHoldsMouse)</c> 를 부르지만, 부모 캔버스의 렌더를
+        /// 끄면 그 호출과 무관하게 화면에 안 그려진다.
+        /// </remarks>
+        internal void HideForCapture()
+        {
+            if (hiddenForCapture || canvas == null || !canvas.enabled)
+            {
+                return;
+            }
+
+            canvas.enabled = false;
+            hiddenForCapture = true;
+        }
+
+        /// <summary>
+        /// <see cref="HideForCapture"/> 가 끈 캔버스를 다시 그린다. 끄지 않았으면 아무것도 하지
+        /// 않는다.
+        /// </summary>
+        /// <remarks>
+        /// 캡처가 실패하거나 예외로 끝나도 불려야 한다. 캔버스가 꺼진 채 남는 것이 캡처 한 장을
+        /// 놓치는 것보다 나쁘다 — 사람이 게임을 보는 동안 로그인 게이트도 우상단 버튼도 영영 안
+        /// 보이게 된다.
+        /// </remarks>
+        internal void ShowAfterCapture()
+        {
+            if (!hiddenForCapture)
+            {
+                return;
+            }
+
+            hiddenForCapture = false;
+            if (canvas != null)
+            {
+                canvas.enabled = true;
+            }
         }
 
         private void RegisterInstance()
@@ -429,7 +481,7 @@ namespace Artel
             canvasObject.transform.SetParent(transform, false);
             // 이 아래는 계기다. 사람이 보는 것이고 판독은 보고하지 않는다 (ARTEL-698).
             canvasObject.AddComponent<Instrument>();
-            var canvas = canvasObject.GetComponent<Canvas>();
+            canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = short.MaxValue - 1;
 
