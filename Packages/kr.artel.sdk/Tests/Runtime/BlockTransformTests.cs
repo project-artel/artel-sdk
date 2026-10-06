@@ -4,7 +4,6 @@ using System.Linq;
 using Artel.Domain;
 using Artel.Protocol.Mapping;
 using Artel.Serialization;
-using Artel.Tracking;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -155,25 +154,31 @@ namespace Artel.Tests
             Assert.That(transform.World, Is.EqualTo(target.transform.position));
         }
 
+        /// <summary>
+        /// 가만히 있는 씬은 두 번 스캔해도 글자까지 같은 payload 가 된다.
+        ///
+        /// 한때 이것을 SHA256 해시 하나로 확인했고, 그 트래커는 ARTEL-400 이 지웠다. 확인할 성질은
+        /// 그대로다 — 아무도 볼 수 없는 자릿수가 두 스냅샷을 다르게 만들면, 그 둘을 견주어 무엇이
+        /// 움직였는지 고르는 쪽이 잡음을 변화로 읽는다.
+        /// </summary>
         [Test]
-        public void Map_RoundsCoordinatesSoAStillSceneHashesTheSame()
+        public void Map_RoundsCoordinatesSoAStillSceneSerializesTheSame()
         {
-            var tracker = new SceneStateHashTracker(new NewtonsoftJsonCodec());
+            var codec = new NewtonsoftJsonCodec();
 
             var settled = Snapshot(new Vector3(1.000001f, 2.000002f, 3f), new Rect(10f, 20f, 30f, 40f));
             var jittered = Snapshot(new Vector3(1.000004f, 2.000005f, 3f), new Rect(10.4f, 20.3f, 30.2f, 40.1f));
+            var moved = Snapshot(new Vector3(1f, 2f, 3f), new Rect(12f, 20f, 30f, 40f));
 
-            Assert.That(tracker.Observe(SceneSnapshotMapper.ToDto(settled)), Is.False);
-
-            // Sub-pixel drift is noise from a breathing animation or a layout pass, and resending
-            // the whole scene for it would flood the socket.
-            Assert.That(tracker.Observe(SceneSnapshotMapper.ToDto(jittered)), Is.False);
-
-            // A whole pixel of movement is a real change and still gets through.
+            // Sub-pixel drift is noise from a breathing animation or a layout pass.
             Assert.That(
-                tracker.Observe(SceneSnapshotMapper.ToDto(
-                    Snapshot(new Vector3(1f, 2f, 3f), new Rect(12f, 20f, 30f, 40f)))),
-                Is.True);
+                codec.Serialize(SceneSnapshotMapper.ToDto(jittered)),
+                Is.EqualTo(codec.Serialize(SceneSnapshotMapper.ToDto(settled))));
+
+            // A whole pixel of movement is a real change and still shows.
+            Assert.That(
+                codec.Serialize(SceneSnapshotMapper.ToDto(moved)),
+                Is.Not.EqualTo(codec.Serialize(SceneSnapshotMapper.ToDto(settled))));
         }
 
         [Test]

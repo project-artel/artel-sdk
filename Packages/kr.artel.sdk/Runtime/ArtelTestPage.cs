@@ -435,9 +435,9 @@ namespace Artel
 
     window.addEventListener('beforeunload', () => stopStream(true));
 
-    // Drawn beside the scene, never into it. The poller pushes a GAME_STATE within a second of
-    // any change and renderScene replaces that whole subtree, so a capture rendered there would
-    // disappear before it could be looked at. This one stays until the next capture or Clear.
+    // Drawn beside the scene, never into it. Pressing Scan replaces that whole subtree, so a
+    // capture rendered there would disappear the next time anyone looked at the scene. This one
+    // stays until the next capture or Clear.
     function renderCapture(results) {
       const result = (results || []).find(entry => entry.id === pendingCaptureId);
       if (!result) return;
@@ -467,15 +467,18 @@ namespace Artel
       captureImage.hidden = false;
     }
 
+    // Only a Scan says what the live scene looks like. The SDK stopped pushing GAME_STATE on a
+    // timer with ARTEL-400; values that change while the game runs are on the pulse channel, which
+    // `tools/watch-readings.py` reads.
     function renderScene(scene) {
       liveSceneId = scene.id;
       sceneRoot.innerHTML = '';
       sceneRoot.appendChild(renderNode(scene, true));
     }
 
-    // Drawn into its own pinned section rather than over the live scene: the poller
-    // pushes a GAME_STATE within a second of any change, and a scan that took the
-    // whole walk to produce would vanish under it. It stays until Clear.
+    // Drawn into its own pinned section rather than over the live scene: a walk that visits
+    // every scene in Build Settings takes long enough that losing it to the next Scan would
+    // waste the whole wait. It stays until Clear.
     function renderAllScenes(scenes, message) {
       const entries = scenes || [];
       status.textContent = `${entries.length} scenes scanned`;
@@ -549,6 +552,8 @@ namespace Artel
         wrap.textContent = component.name || component.type;
       }
 
+      // states 는 full 모드 scan_all_scenes 만 싣는다. 기본 스캔의 payload 에는 키 자체가
+      // 없으므로(ARTEL-400) live 씬에서는 이 블록이 그려지지 않는다.
       const states = component.states || [];
       const actions = component.actions || [];
       if (states.length > 0 || actions.length > 0) {

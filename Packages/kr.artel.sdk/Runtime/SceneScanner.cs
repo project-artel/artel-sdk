@@ -10,9 +10,9 @@ using UnityEngine.UI;
 
 namespace Artel
 {
-    internal sealed class SceneScanner : ISceneSnapshotScanner
+    internal sealed class SceneScanner
     {
-        private readonly StateReader stateReader = new StateReader();
+        private readonly SerializedFieldReader serializedFieldReader = new SerializedFieldReader();
         private readonly BlockTransformReader transformReader = new BlockTransformReader();
 
         public SceneScanResult Scan()
@@ -67,9 +67,9 @@ namespace Artel
         /// id 로 조작 대상을 찾는다.
         /// </summary>
         /// <remarks>
-        /// 한때 이것은 스캔이 채우고 매 스캔마다 비우는 사전이었다. 그래서 스캔이 멈추면 — <c>GAME_STATE</c> 가 꺼진
-        /// 빌드가 그렇다(ARTEL-513) — 사전이 비고, 판독으로 무엇이 바뀌었는지 아는 독자가 <b>그것을 건드릴 방법을
-        /// 잃었다.</b>
+        /// 한때 이것은 스캔이 채우고 매 스캔마다 비우는 사전이었다. 그래서 스캔이 멈추면 — 1초 <c>poller</c> 가
+        /// 사라진 지금은 아무도 <c>scan_scene</c> 을 보내지 않는 실행이 전부 그렇다(ARTEL-400) — 사전이 비고,
+        /// pulse 로 무엇이 바뀌었는지 아는 독자가 <b>그것을 건드릴 방법을 잃었다.</b>
         ///
         /// <c>Resources.InstanceIDToObject</c> 가 그 일을 이미 하고 있었다. 사전을 대신할 <c>AimableTargets</c> 를
         /// 만들었다가 폐기한 것이 그 발견이다(ARTEL-397): 에디터가 아닌 실제 플레이어에서, 네 variation(mono·il2cpp ×
@@ -160,7 +160,7 @@ namespace Artel
                 transform.gameObject.name,
                 active,
                 transformReader.Read(transform),
-                target.CreateComponents(transform.gameObject, stateReader, options, actionCommits),
+                target.CreateComponents(transform.gameObject, serializedFieldReader, options, actionCommits),
                 children);
         }
     }
@@ -243,7 +243,7 @@ namespace Artel
 
         public IReadOnlyList<SceneComponent> CreateComponents(
             GameObject gameObject,
-            StateReader stateReader,
+            SerializedFieldReader serializedFieldReader,
             SceneScanOptions options,
             List<ActionBatchCommit> actionCommits)
         {
@@ -325,7 +325,10 @@ namespace Artel
 
                 var actionSource = component as IArtelActionSource;
                 var readAllFields = options.IncludeAllSerializedFields && IsGameBehaviour(component);
-                if (actionSource == null && !readAllFields && !stateReader.HasTrackedState(component.GetType()))
+
+                // 조건이 둘이다. 셋이던 시절의 세 번째는 `[ArtelState]` 가 붙은 멤버를 가졌는가였고,
+                // 그 attribute 는 ARTEL-400 이 지웠다 — 상태는 이제 pulse 채널이 말한다.
+                if (actionSource == null && !readAllFields)
                 {
                     continue;
                 }
@@ -340,11 +343,64 @@ namespace Artel
                 components.Add(new TrackedComponent(
                     component.GetType().FullName,
                     component.GetType().Name,
-                    stateReader.Read(component, readAllFields),
+                    readAllFields ? ReadSerializedFields(component, serializedFieldReader) : EmptyStates,
                     actions));
             }
 
             return components;
+        }
+
+        /// <summary>
+        /// Unity 가 직렬화할 필드를 전부 읽어 상태로 만든다. <c>scan_all_scenes ["full"]</c> 만
+        /// 지나는 길이다.
+        /// </summary>
+        /// <remarks>
+        /// 이름순으로 정렬해 돌려준다. 같은 객체를 두 번 스캔한 결과가 글자까지 같아야 읽는 쪽이
+        /// 두 스냅샷을 견줄 수 있다.
+        ///
+        /// 한 필드가 던져도 나머지는 싣는다. 값을 못 읽는 필드 하나 때문에 컴포넌트 전체가 빈 채로
+        /// 보고되면, 읽는 쪽은 그것이 비어 있는 것인지 못 읽은 것인지 가릴 수 없다.
+        /// </remarks>
+        private static IReadOnlyList<TrackedState> ReadSerializedFields(
+            Component component,
+            SerializedFieldReader serializedFieldReader)
+        {
+            var states = new List<TrackedState>();
+
+            // 필드 하나가 아니라 컴포넌트 하나에 marker 를 건다. 한 스캔이 필드 수만 개를 읽으므로,
+            // 필드마다 재면 Profiler 자신의 기록이 캡처에서 가장 큰 항목이 된다.
+            using (ArtelProfilerMarkers.StateReadSerializedFields.Auto())
+            {
+                foreach (var field in serializedFieldReader.GetSerializedFields(component.GetType()))
+                {
+                    try
+                    {
+                        states.Add(new TrackedState(
+                            string.Empty,
+                            field.Name,
+                            NormalizeType(field.FieldType),
+                            serializedFieldReader.ReadValue(field, component)));
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogWarning("[Artel] Failed to read field " + field.Name + ": " + exception.Message);
+                    }
+                }
+            }
+
+            states.Sort((left, right) => string.CompareOrdinal(left.Name, right.Name));
+            return states;
+        }
+
+        private static string NormalizeType(Type type)
+        {
+            if (type == typeof(float)) return "float";
+            if (type == typeof(double)) return "double";
+            if (type == typeof(int)) return "int";
+            if (type == typeof(long)) return "long";
+            if (type == typeof(bool)) return "bool";
+            if (type == typeof(string)) return "string";
+            return type.IsEnum ? "enum" : type.FullName;
         }
 
         /// <summary>
