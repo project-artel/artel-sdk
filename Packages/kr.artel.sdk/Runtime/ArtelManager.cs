@@ -20,7 +20,6 @@ namespace Artel
 {
     public sealed class ArtelManager : MonoBehaviour, IReadingChannel
     {
-        private const float SceneScanIntervalSeconds = 1f;
         private const float PerformanceReportIntervalSeconds = 1f;
 
         /// <summary>
@@ -29,25 +28,6 @@ namespace Artel
         /// register it.
         /// </summary>
         private static ArtelManager instance;
-
-        /// <summary>
-        /// <c>GAME_STATE</c> 채널을 보내는가 (ARTEL-513). <b>기본은 끔이다.</b>
-        /// </summary>
-        /// <remarks>
-        /// <b>임시 스위치다.</b> 실제로 지우는 것은 ARTEL-400 이고, 그때 이 속성도 함께 사라진다.
-        ///
-        /// 목적은 채널을 덜어내는 것이지 선택지를 만드는 것이 아니다. 그래서 기본이 끔이다 — 켜 두고 누군가 끄기를
-        /// 기다리면 아무도 끄지 않고, 판독이 <c>GAME_STATE</c> 를 대신할 수 있는지는 영영 재지지 않는다. 둘이 함께
-        /// 오는 동안에는 어느 쪽이 무엇을 하고 있는지 가릴 방법이 없다.
-        ///
-        /// 그럼에도 지우지 않고 스위치로 둔 것은 <b>되돌릴 수 있어야 하기 때문</b>이다. 판독이 못 덮는 것이 실제
-        /// 게임에서 드러나면 코드를 되살리는 대신 이 값을 <c>true</c> 로 돌려 그 자리에서 복구한다.
-        ///
-        /// 프레임만 막지 않고 <see cref="sceneStatePoller"/> 앞에서 막는 것이 요점이다. ARTEL-400 이 지우려는 것은
-        /// 전송이 아니라 <b>씬 순회</b>(<c>SceneScanner</c>·<c>SceneStatePoller</c>)이므로, 그것이 돌지 않는 상태를
-        /// 재야 폐기 뒤를 예측할 수 있다.
-        /// </remarks>
-        public static bool SendsGameState { get; set; } = false;
 
         /// <summary>
         /// 첫 연결이 <c>Start</c> 에서 일어나는 이유는 <see cref="Start"/> 에 적었다. 이름이 그 자리를 말하도록
@@ -65,7 +45,6 @@ namespace Artel
         private CursorController cursorController;
         private PointerEventDispatcher pointerEvents;
         private IJsonCodec jsonCodec;
-        private SceneStatePoller sceneStatePoller;
         private FrameTimeRecorder frameTimeRecorder;
         private FrameTimingSampler frameTimingSampler;
         private ProcessResourceSampler processResourceSampler;
@@ -75,9 +54,6 @@ namespace Artel
         /// <summary>Frame Timing Stats 경고를 한 번만 내기 위한 표시. 매 보고마다 찍으면 로그가 덮인다.</summary>
         private bool warnedFrameTimingUnavailable;
         private bool reportedDeviceContext;
-
-        /// <summary>지난 프레임의 전송 연결 상태. 새 연결이 열린 프레임을 집어내는 데만 쓴다.</summary>
-        private bool transportWasConnected;
 
         /// <summary>
         /// 전송이 dial 에 쓰는 자격증명. 쓰는 곳은 <see cref="RefreshTransportCredentials"/> 하나이고
@@ -254,11 +230,11 @@ namespace Artel
         /// because Unity orders Awake and OnEnable between components arbitrarily.
         /// <c>ArtelTestPageManager</c> installs its transport from its own <c>OnEnable</c>, which
         /// can land before this manager's <c>Awake</c>; that used to throw a
-        /// <c>NullReferenceException</c> on <see cref="sceneStatePoller"/> partway through
-        /// installing the transport. The half-installed state was the damaging part: the field was
-        /// already assigned, so this manager then refused to connect to orchestration — while the
-        /// throw had skipped the test page's own server startup, leaving the game reachable from
-        /// nowhere.
+        /// <c>NullReferenceException</c> on the fields this method builds, partway through
+        /// installing the transport. The half-installed state was the damaging part: the transport
+        /// field was already assigned, so this manager then refused to connect to orchestration —
+        /// while the throw had skipped the test page's own server startup, leaving the game
+        /// reachable from nowhere.
         /// </remarks>
         private void EnsureRuntime()
         {
@@ -313,10 +289,6 @@ namespace Artel
                     () => server,
                     ArtelSdkSession.LoadToken,
                     ArtelSdkSession.LoadGameBuildId));
-            sceneStatePoller = new SceneStatePoller(
-                scanner,
-                new SceneStateHashTracker(jsonCodec),
-                SceneScanIntervalSeconds);
             frameTimeRecorder = new FrameTimeRecorder();
             frameTimingSampler = new FrameTimingSampler();
 
@@ -407,11 +379,8 @@ namespace Artel
 
                 if (webSocketTransport == null)
                 {
-                    transportWasConnected = false;
                     return;
                 }
-
-                NoticeNewConnection();
 
                 using (ArtelProfilerMarkers.ManagerHandleMessage.Auto())
                 {
@@ -421,39 +390,11 @@ namespace Artel
                     }
                 }
 
-                using (ArtelProfilerMarkers.ManagerPollSceneState.Auto())
-                {
-                    PollSceneState();
-                }
-
                 using (ArtelProfilerMarkers.ManagerPerformanceReport.Auto())
                 {
                     SendPerformanceReport();
                 }
             }
-        }
-
-        /// <summary>
-        /// 연결이 새로 열린 프레임에 씬 해시를 비운다.
-        /// </summary>
-        /// <remarks>
-        /// 재연결한 서버 세션은 이 SDK 가 무엇을 띄우고 있는지 모른다. SceneStatePoller 는 마지막으로
-        /// 보낸 씬의 해시를 들고 있어서, 씬이 그대로면 GAME_STATE 를 다시 보내지 않는다. 그러면
-        /// 소켓만 되살아나고 새 세션은 빈 채로 남아, 에이전트가 아무것도 보지 못한 채 액션을 고른다.
-        ///
-        /// 상승 edge 를 여기서 재는 이유는 전송 쪽 콜백이 Unity 메인 스레드가 아니기 때문이다.
-        /// Update 에서 상태를 읽으면 그 판정과 Reset 이 모두 메인 스레드에 남는다.
-        /// </remarks>
-        private void NoticeNewConnection()
-        {
-            var connected = webSocketTransport.IsConnected;
-
-            if (connected && !transportWasConnected)
-            {
-                sceneStatePoller.Reset(Time.unscaledTime);
-            }
-
-            transportWasConnected = connected;
         }
 
         /// <summary>
@@ -522,10 +463,8 @@ namespace Artel
 
             RefreshTransportCredentials();
             webSocketTransport.Start();
-            sceneStatePoller.Reset(Time.unscaledTime);
             BeginDiscovery();
-            Debug.Log("[Artel] WebSocket transport started. GAME_STATE is "
-                      + (SendsGameState ? "on (restored, ARTEL-513)." : "off; read the pulse channel."));
+            Debug.Log("[Artel] WebSocket transport started.");
             return true;
         }
 
@@ -677,7 +616,6 @@ namespace Artel
             // The connection this was taken for is gone, so the host game gets its setting back.
             Application.runInBackground = hostRunInBackground;
 
-            sceneStatePoller.Reset(Time.unscaledTime);
             Debug.Log("[Artel] WebSocket transport stopped.");
         }
 
@@ -751,7 +689,6 @@ namespace Artel
 
             webSocketTransport = transport ?? throw new ArgumentNullException(nameof(transport));
             ownsTransport = takeOwnership;
-            sceneStatePoller.Reset(Time.unscaledTime);
 
             // 주입된 전송도 다른 것과 마찬가지로 하나의 연결이다. 로컬 테스트 페이지는 여기로만 도착하고 — StartTransport 를 결코
             // 부르지 않는다 — 그래서 그 실행이 게임을 읽겠다고 청하는 누군가로 인식될 수 있는 유일한 자리가 여기다.
@@ -951,37 +888,23 @@ namespace Artel
 
         private void ReplyWithGameState(ArtelWebSocketMessage request)
         {
-            // 조용히 무동작하지 않는다. 이것은 물어본 것에 대한 답이고, 답이 없으면 묻는 쪽은 화면이 비어 있는 것과
-            // 채널이 꺼진 것을 가릴 수 없다 — 그 둘은 다음 수가 다르다. 오류로 답하는 것은 SendGameState 와 다른데,
-            // 그쪽은 배치가 자기 몫으로 끼운 스캔이라 답을 기다리는 쪽이 없기 때문이다.
-            if (!SendsGameState)
-            {
-                SendError(request, "GAME_STATE is switched off on this build. Read the pulse channel instead.");
-                return;
-            }
+            var scanResult = scanner.Scan();
 
-            var poll = sceneStatePoller.ScanNow();
-
-            request.Reply(SerializeGameState(poll.Scene));
-            poll.ScanResult.CommitActions();
+            request.Reply(SerializeGameState(SceneSnapshotMapper.ToDto(scanResult.Scene)));
+            scanResult.CommitActions();
         }
 
         private void SendGameState()
         {
-            if (!SendsGameState)
-            {
-                return;
-            }
-
             if (webSocketTransport == null)
             {
                 return;
             }
 
-            var poll = sceneStatePoller.ScanNow();
+            var scanResult = scanner.Scan();
 
-            webSocketTransport.Send(SerializeGameState(poll.Scene));
-            poll.ScanResult.CommitActions();
+            webSocketTransport.Send(SerializeGameState(SceneSnapshotMapper.ToDto(scanResult.Scene)));
+            scanResult.CommitActions();
         }
 
         private void SendAllScenes(List<ScannedSceneDto> scenes)
@@ -1167,29 +1090,6 @@ namespace Artel
             }
 
             return 1f / 60f;
-        }
-
-        private void PollSceneState()
-        {
-            // 순회 앞에서 막는다. 여기서 나가는 것만 막으면 스캔 비용은 그대로 치르고, 그러면 이 스위치가
-            // 재려는 것을 재지 못한다.
-            if (!SendsGameState)
-            {
-                return;
-            }
-
-            if (!webSocketTransport.IsConnected)
-            {
-                return;
-            }
-
-            if (!sceneStatePoller.TryPoll(Time.unscaledTime, out var poll))
-            {
-                return;
-            }
-
-            webSocketTransport.Send(SerializeGameState(poll.Scene));
-            poll.ScanResult.CommitActions();
         }
 
         private string SerializeGameState(SceneDto scene)

@@ -29,25 +29,16 @@ namespace Artel.Diagnostics
         public static readonly ProfilerMarker ManagerHandleMessage =
             new ProfilerMarker("Artel.Manager.HandleMessage");
 
-        public static readonly ProfilerMarker ManagerPollSceneState =
-            new ProfilerMarker("Artel.Manager.PollSceneState");
-
         public static readonly ProfilerMarker ManagerPerformanceReport =
             new ProfilerMarker("Artel.Manager.PerformanceReport");
 
         /// <summary>Walking the scene hierarchy and building the snapshot.</summary>
         public static readonly ProfilerMarker SceneScanScan = new ProfilerMarker("Artel.SceneScan.Scan");
 
-        /// <summary>Lowering the snapshot to the wire DTO.</summary>
-        public static readonly ProfilerMarker SceneScanMap = new ProfilerMarker("Artel.SceneScan.Map");
-
-        /// <summary>Hashing the DTO to decide whether the state actually changed.</summary>
-        public static readonly ProfilerMarker SceneScanHash = new ProfilerMarker("Artel.SceneScan.Hash");
-
-        /// <summary>Reading members carried by <see cref="Tracking.ArtelStateAttribute"/>.</summary>
-        public static readonly ProfilerMarker StateReadTagged = new ProfilerMarker("Artel.StateRead.Tagged");
-
-        /// <summary>Reading and lowering the fields Unity itself would serialize.</summary>
+        /// <summary>
+        /// Reading and lowering the fields Unity itself would serialize. Only
+        /// <c>scan_all_scenes ["full"]</c> reaches it.
+        /// </summary>
         public static readonly ProfilerMarker StateReadSerializedFields =
             new ProfilerMarker("Artel.StateRead.SerializedFields");
 

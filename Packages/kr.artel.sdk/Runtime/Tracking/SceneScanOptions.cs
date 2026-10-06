@@ -4,10 +4,10 @@ namespace Artel.Tracking
     /// How much of a scene a scan is allowed to see.
     /// </summary>
     /// <remarks>
-    /// <see cref="Default"/> is what <c>GAME_STATE</c> and the poller run: opted-in state only,
-    /// active objects only. <see cref="Full"/> is the discovery mode behind
-    /// <c>scan_all_scenes ["full"]</c> — every serialized field of the game's own behaviours, and
-    /// inactive objects too. Nothing on the live-play path uses it.
+    /// <see cref="Default"/> is what <c>GAME_STATE</c> runs: no field values at all, active objects
+    /// only. <see cref="Full"/> is the discovery mode behind <c>scan_all_scenes ["full"]</c> —
+    /// every serialized field of the game's own behaviours, and inactive objects too. Nothing on
+    /// the live-play path uses it.
     /// </remarks>
     internal readonly struct SceneScanOptions
     {
@@ -16,7 +16,8 @@ namespace Artel.Tracking
 
         /// <summary>
         /// Include every MonoBehaviour the game itself wrote, reading the fields Unity would
-        /// serialize rather than only the ones marked with <see cref="ArtelStateAttribute"/>.
+        /// serialize. Without it a scan reports no field values, because the default scan has read
+        /// none since <c>[ArtelState]</c> was removed (ARTEL-400).
         /// </summary>
         public bool IncludeAllSerializedFields { get; }
 
