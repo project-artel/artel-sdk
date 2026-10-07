@@ -374,6 +374,16 @@ ways:
   driving: every `Input.mousePosition` in the project answers with wherever the
   agent last left it, and the person at the machine cannot move anything until
   play mode is restarted.
+
+  Two things keep the real mouse from taking the claim. While the agent holds a
+  mouse button, up to the frame the release lands on, the real mouse is not
+  compared, so a drag is not cut in half by a hand moving in another window.
+  While the server's `RUN_STATUS` says `RUNNING`, it is not compared at all.
+  Every other state gives the pointer back, and `FINISHED` also releases every
+  button and key the agent holds. A person who needs the pointer during a run
+  presses **Ctrl+Shift+M** in the game window. That releases the agent's input
+  and, until the next `RUNNING`, moving the real mouse more than 4 pixels takes
+  the pointer back again.
 - **uGUI.** The SDK dispatches `PointerEventData` through the scene's
   `EventSystem`, so `IPointerDownHandler`, `IBeginDragHandler`, `IDragHandler`,
   `IEndDragHandler`, `IDropHandler`, and `IPointerClickHandler` fire as they
