@@ -14,23 +14,37 @@ namespace Artel.Capture
     /// judge. The virtual cursor is part of that composite and appears in captures on purpose —
     /// the agent seeing where its own pointer is beats a clean image.
     ///
-    /// The keyboard status panel is the one exception, and it is turned off for the frame this
-    /// grabs (ARTEL-881). It reports the SDK's own state rather than the game's, and the agent
-    /// reads it as the bottom strip of the game screen.
+    /// Two things are turned off for the frame this grabs: the keyboard status panel (ARTEL-881)
+    /// and the Artel Overlay Canvas — the corner toggle, its panel, the window label, the run
+    /// status line, and the login gate (ARTEL-905). Both report the SDK's own state rather than
+    /// the game's, and a <c>screen_verdict</c> agent comparing two captures should not be swayed
+    /// by either one.
     /// </remarks>
     internal sealed class ScreenCapturer : IScreenCapturer
     {
         private readonly WaitForEndOfFrame endOfFrame = new WaitForEndOfFrame();
         private readonly KeyboardStatusController keyboardStatus;
+        private readonly ArtelOverlayController overlayController;
 
         /// <param name="keyboardStatus">
         /// The panel to turn off for the captured frame. Required so that a new call site has to
         /// answer the question; the body still tolerates the reference being gone, since a
         /// destroyed <c>UnityEngine.Object</c> compares equal to null.
         /// </param>
-        public ScreenCapturer(KeyboardStatusController keyboardStatus)
+        /// <param name="overlayController">
+        /// The Artel Overlay Canvas to turn off for the same frame (ARTEL-905). Same tolerance
+        /// for a gone reference as <paramref name="keyboardStatus"/>.
+        ///
+        /// Kept as its own concrete-typed parameter rather than folded into a list or an
+        /// interface: an interface-typed reference to a destroyed <c>UnityEngine.Object</c> does
+        /// not compare equal to null the way <see cref="KeyboardStatusController"/> and
+        /// <see cref="ArtelOverlayController"/> do as concrete types, which would reintroduce the
+        /// exact lifecycle bug the <c>!= null</c> checks below exist to avoid.
+        /// </param>
+        public ScreenCapturer(KeyboardStatusController keyboardStatus, ArtelOverlayController overlayController)
         {
             this.keyboardStatus = keyboardStatus;
+            this.overlayController = overlayController;
         }
 
         public IEnumerator Capture(
@@ -52,16 +66,21 @@ namespace Artel.Capture
                 yield break;
             }
 
-            // 패널을 끄는 것은 end-of-frame 을 기다리기 전이어야 한다. 그 뒤에 끄면 잡을 프레임은 이미 그려진
-            // 뒤라 패널이 그대로 찍힌다. 여기서 끄면 이 coroutine 이 Update 에서 시작했든 직전 캡처의
-            // end-of-frame 에서 이어졌든 grab 하는 프레임은 패널 없이 그려진다 — 후자에서 던진
+            // 끄는 것은 end-of-frame 을 기다리기 전이어야 한다. 그 뒤에 끄면 잡을 프레임은 이미 그려진
+            // 뒤라 패널과 캔버스가 그대로 찍힌다. 여기서 끄면 이 coroutine 이 Update 에서 시작했든 직전
+            // 캡처의 end-of-frame 에서 이어졌든 grab 하는 프레임은 둘 다 없이 그려진다 — 후자에서 던진
             // WaitForEndOfFrame 은 다음 프레임 끝에 깨어나기 때문이다.
             //
             // 대신 사람이 보는 화면과 같은 back buffer 를 읽는 WebRTC stream 에서 캡처 한 번마다 한 프레임
-            // 패널이 사라진다. 이미지에서 패널을 빼는 값으로 받아들인 것이다 (ARTEL-881).
+            // 이 둘이 사라진다. 이미지에서 빼는 값으로 받아들인 것이다 (ARTEL-881, ARTEL-905).
             if (keyboardStatus != null)
             {
                 keyboardStatus.HideForCapture();
+            }
+
+            if (overlayController != null)
+            {
+                overlayController.HideForCapture();
             }
 
             try
@@ -170,6 +189,11 @@ namespace Artel.Capture
                 if (keyboardStatus != null)
                 {
                     keyboardStatus.ShowAfterCapture();
+                }
+
+                if (overlayController != null)
+                {
+                    overlayController.ShowAfterCapture();
                 }
             }
         }
