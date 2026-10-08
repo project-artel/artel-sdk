@@ -73,6 +73,7 @@ namespace Artel.Affordances.Scan
             for (var rootIndex = 0; rootIndex < roots.Length; rootIndex++)
             {
                 var root = roots[rootIndex];
+                var instrumented = new Dictionary<Transform, bool>();
 
                 // 비활성 객체를 일부러 포함한다. 지금 꺼져 있는 메뉴도 게임이 보여 줄 수 있는 것이고, 그것을 빼면 결과가 화면이 아니라
                 // 한순간에 대해서만 참이 된다.
@@ -82,6 +83,11 @@ namespace Artel.Affordances.Scan
                     {
                         gaps.Add("object-limit");
                         break;
+                    }
+
+                    if (Instrumented(transform, instrumented))
+                    {
+                        continue;
                     }
 
                     if (Describe(text, transform.gameObject, scene.name, rootIndex, gaps, ref first))
@@ -131,14 +137,62 @@ namespace Artel.Affordances.Scan
                     continue;
                 }
 
+                // `ArtelManager` 는 이 hideFlags 검사에 안 걸린다 — 게임이 놓은 오브젝트에 컴포넌트로 붙어서, 루트가 게임
+                // 것이다(ARTEL-906). `Instrument` 로 표시된 오버레이 서브트리를 여기서도 걸러야 이 씬이 정확히 그 자리다.
+                var instrumented = new Dictionary<Transform, bool>();
+
                 foreach (var transform in root.GetComponentsInChildren<Transform>(true))
                 {
+                    if (Instrumented(transform, instrumented))
+                    {
+                        continue;
+                    }
+
                     Describe(text, transform.gameObject, scene.name, rootIndex, gaps, ref first);
                 }
             }
 
             AffordanceReport.Persistent(text.ToString(), gaps);
             return true;
+        }
+
+        /// <summary>
+        /// 이 객체가 계기 안에 있는가 — <see cref="Instrument.Marks"/> 위에 캐시 하나를 얹어서, root 하나를 걷는 동안
+        /// 같은 조상을 두 번 안 걷도록.
+        /// </summary>
+        /// <remarks>
+        /// `Instrument.Marks` 는 불릴 때마다 조상을 거슬러 오른다. `Worth` 는 그 값을 객체마다 프레임을 넘어 기억해
+        /// 두지만, 이 순회는 초당 열 번이 아니라 씬 로드나 evidence scan 요청 한 번에 한 번 돈다(`SceneWalk.Visit`,
+        /// `AffordanceBootstrap.Capture`) — 프레임마다 갚는 값이 아니므로 그 기억을 그대로 옮겨 오는 것은 이 순회가
+        /// 갖지 않은 문제에 코드를 더하는 일이다.
+        ///
+        /// 대신 root 하나를 걷는 동안만 사는 얕은 사전을 규칙 자체 위의 캐시로 쓴다. 부모의 답이 이미 사전에 있으면
+        /// 그것을 물려받고, 없으면 <c>Instrument.Marks</c> 에 직접 묻고 그 답을 사전에 남긴다. <b>사전은 규칙을 다시
+        /// 구현한 것이 아니다</b> — 값을 몰라서 못 답하면 규칙 자신에게 묻는 자리이지, 물려받을 것이 없으니 아니라고
+        /// 답하는 자리가 아니다. 그래서 이 함수는 `GetComponentsInChildren&lt;Transform&gt;(true)` 가 부모를 자식보다
+        /// 먼저 내놓는 순서에 기대지 않는다 — 부모가 아직 사전에 없어도(순회 순서가 달라져도, 또는 이 함수가 조상보다
+        /// 먼저 어느 자손에 대해 불려도) `Instrument.Marks` 가 조상을 거슬러 올라 같은 답을 낸다. 부모가 이미 있는
+        /// 흔한 depth-first 경우에는 root 하나당 `Marks` 를 한 번만 부르는 값 그대로다. 다음 root, 다음 캡처에서는
+        /// 새 사전으로 다시 시작한다.
+        /// </remarks>
+        private static bool Instrumented(Transform subject, Dictionary<Transform, bool> answered)
+        {
+            if (subject.GetComponent<Instrument>() != null)
+            {
+                answered[subject] = true;
+                return true;
+            }
+
+            var parent = subject.parent;
+
+            // 부모 답이 이미 있으면 그것을 물려받는다. 없으면 순회가 부모를 먼저 내놨다는 보장에 기대는 대신 규칙
+            // 자신에게 묻는다 — 답은 같고, 순회 순서가 달라져도 같다.
+            var marked = parent != null && answered.TryGetValue(parent, out var known)
+                ? known
+                : Instrument.Marks(subject.gameObject);
+
+            answered[subject] = marked;
+            return marked;
         }
 
         /// <summary>객체 하나를 쓰고, 쓸 값이 있었는지 말한다.</summary>
