@@ -4,6 +4,7 @@
   "displayName": "Artel SDK",
   "description": "Unity runtime SDK for onboarding and remote scene interaction over WebSocket.",
   "unity": "2022.3",
+  "license": "MIT",
   "author": {
     "name": "Artel"
   },
