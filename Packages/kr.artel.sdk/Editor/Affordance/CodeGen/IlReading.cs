@@ -230,7 +230,8 @@ namespace Artel.Affordances.CodeGen
                         instruction.Operand as MethodReference, instruction, boundary, within, depth);
 
                 default:
-                    return Arithmetic(instruction, boundary, 0, within);
+                    // depth 를 0 으로 되돌리면 WhichScene 의 가드가 걸리지 않아 필드가 제 값으로 갱신되는 식에서 끝나지 않는다.
+                    return Arithmetic(instruction, boundary, depth, within);
             }
         }
 
@@ -397,7 +398,7 @@ namespace Artel.Affordances.CodeGen
 
             return Operator(instruction.OpCode.Code) != null || instruction.OpCode.Code == Code.Neg
                 ? Arithmetic(instruction, boundary, depth, within)
-                : Describe(instruction, boundary, within);
+                : Describe(instruction, boundary, within, depth);
         }
 
         private static string Operator(Code code)
