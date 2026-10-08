@@ -369,6 +369,13 @@ namespace Artel
             {
                 RecordFrameTime();
 
+                // Before AdvanceFrame, so the frame the person asks for the pointer is already
+                // theirs.
+                if (ArtelInput.PointerHeldForRun && IsPointerTakeoverPressed())
+                {
+                    TakePointerBack();
+                }
+
                 ArtelInput.AdvanceFrame();
 
                 // Ahead of the transport check on purpose: the lease is a dead-man timer, so it has to
@@ -622,12 +629,14 @@ namespace Artel
 
         /// <summary>
         /// Lets go of every key and button the agent was holding, and ends any drag in progress on
-        /// the game's own terms so its handler sees the end it was waiting for.
+        /// the game's own terms so its handler sees the end it was waiting for. The run's hold on
+        /// the pointer goes with them.
         /// </summary>
         private void ReleaseAgentInput()
         {
             pointerEvents.ReleaseAll();
             ArtelInput.ReleaseAllVirtualInput();
+            ArtelInput.PointerHeldForRun = false;
         }
 
         internal bool HasWebSocketTransport { get { return webSocketTransport != null; } }
@@ -769,11 +778,70 @@ namespace Artel
                 return;
             }
 
+            HoldPointerFor(runStatus.State);
+
             var handler = RunStatusReceived;
             if (handler != null)
             {
                 handler(runStatus);
             }
+        }
+
+        /// <summary>
+        /// Keeps the agent's pointer for as long as a run is <c>RUNNING</c>, and hands everything
+        /// back when it is not.
+        /// </summary>
+        /// <remarks>
+        /// Any other state lets go, including one this SDK does not know yet: a pointer held
+        /// when no run needs it is the ARTEL-154 failure, where the person could not use the
+        /// mouse in the game at all. <c>FINISHED</c> also releases held buttons and keys, because
+        /// a run that ends mid-drag would otherwise leave the game holding them. The server sends
+        /// the current state again on reconnect, so a hold lost with the connection comes back.
+        /// </remarks>
+        private void HoldPointerFor(string state)
+        {
+            if (state == RunStatusState.Running)
+            {
+                ArtelInput.PointerHeldForRun = true;
+                return;
+            }
+
+            if (state == RunStatusState.Finished)
+            {
+                ReleaseAgentInput();
+                return;
+            }
+
+            ArtelInput.PointerHeldForRun = false;
+        }
+
+        /// <summary>
+        /// Ctrl+Shift+M on the real keyboard. Read straight from the engine, not through
+        /// <see cref="ArtelInput"/>, so a key the agent holds can never count as the person's.
+        /// </summary>
+        private static bool IsPointerTakeoverPressed()
+        {
+            var control = global::UnityEngine.Input.GetKey(KeyCode.LeftControl) ||
+                          global::UnityEngine.Input.GetKey(KeyCode.RightControl);
+            var shift = global::UnityEngine.Input.GetKey(KeyCode.LeftShift) ||
+                        global::UnityEngine.Input.GetKey(KeyCode.RightShift);
+            return control && shift && global::UnityEngine.Input.GetKeyDown(KeyCode.M);
+        }
+
+        /// <summary>
+        /// The person takes the pointer during a run. Every button and key the agent holds is
+        /// released, so a drag in progress ends on the game's own terms, and the run falls back
+        /// to the rule outside runs: the agent's next pointer action claims the pointer again,
+        /// and moving the real mouse more than a few pixels takes it back.
+        /// </summary>
+        /// <remarks>
+        /// It lasts until the next <c>RUNNING</c>, which the server sends when the next scenario
+        /// of the run starts.
+        /// </remarks>
+        internal void TakePointerBack()
+        {
+            ReleaseAgentInput();
+            Debug.Log("[Artel] The person took the pointer back during a run (Ctrl+Shift+M).");
         }
 
         private IEnumerator ProcessActions()

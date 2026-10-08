@@ -29,6 +29,18 @@ namespace Artel
 
         public Vector2 Position { get; private set; }
 
+        /// <summary>
+        /// True while a QA run is on this game. The real mouse is then not compared at all: a
+        /// person moving it during a run is not taking the game back, only working in another
+        /// window, and every pointer action the agent takes would fail at random if it counted.
+        /// </summary>
+        /// <remarks>
+        /// It survives <see cref="ReleasePointer"/>, because <c>reset_game</c> lets go of all input
+        /// in the middle of a run and the run is still on. Only the run ending, the connection
+        /// ending, or the person taking the pointer by force turns it off.
+        /// </remarks>
+        public bool HeldForRun { get; set; }
+
         public static bool IsButton(int button)
         {
             return button >= 0 && button < ButtonCount;
@@ -49,12 +61,28 @@ namespace Artel
         /// <remarks>
         /// This gives the claim up as a side effect, because the read is the only moment the two
         /// positions can be compared.
+        /// <para>
+        /// The real mouse is not compared while the agent holds a button, up to and including the
+        /// frame the release lands on. Giving the pointer back mid-drag sends the game a
+        /// <c>OnMouseUp</c> nobody asked for and hands its drag loop the real cursor, so the card
+        /// lands wherever the person's hand happened to be. A drag is about a second and a half,
+        /// and a person moving the mouse in another window during it made drags fail at random.
+        /// Only <see cref="ReleasePointer"/> ends the claim during a hold.
+        /// </para>
+        /// <para>
+        /// For the same reason it is not compared at all while <see cref="HeldForRun"/> is set.
+        /// </para>
         /// </remarks>
         public bool OwnsPointer(Vector2 physicalPosition)
         {
             if (!HasPosition)
             {
                 return false;
+            }
+
+            if (HeldForRun || IsAnyButtonPending())
+            {
+                return true;
             }
 
             if ((physicalPosition - physicalWhenClaimed).sqrMagnitude > ReclaimPixels * ReclaimPixels)
@@ -182,6 +210,7 @@ namespace Artel
 
             Position = Vector2.zero;
             HasPosition = false;
+            HeldForRun = false;
         }
 
         /// <summary>
@@ -212,6 +241,25 @@ namespace Artel
             var earliest = state.StartFrame + 1;
             var asked = currentFrame + 1;
             state.ReleaseFrame = asked > earliest ? asked : earliest;
+        }
+
+        /// <summary>
+        /// A button pressed and not yet forgotten by <see cref="Refresh"/>. Frame-free on purpose:
+        /// it covers the frame before the press starts and the frame the release lands on, and
+        /// the messenger needs both to send <c>OnMouseDown</c> and <c>OnMouseUp</c> at the
+        /// agent's position.
+        /// </summary>
+        private bool IsAnyButtonPending()
+        {
+            foreach (var state in buttons)
+            {
+                if (state != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsHeldOn(ButtonPressState state, int frame)
