@@ -223,6 +223,16 @@ namespace Artel
         }
 
         /// <summary>
+        /// Whether a QA run keeps the agent's pointer no matter what the real mouse does. Set from
+        /// <c>RUN_STATUS</c>; see <c>VirtualMouseState.HeldForRun</c> for why.
+        /// </summary>
+        internal static bool PointerHeldForRun
+        {
+            get { return VirtualMouse.HeldForRun; }
+            set { VirtualMouse.HeldForRun = value; }
+        }
+
+        /// <summary>
         /// Lets go of everything the agent was holding. A run that ends mid-drag would otherwise
         /// leave the game with a key or a button held down for the rest of the session — and with
         /// a pointer position frozen where the agent left it, which is worse: the game keeps

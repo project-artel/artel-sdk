@@ -146,6 +146,54 @@ namespace Artel.Tests.Input
         }
 
         [Test]
+        public void OwnsPointer_KeepsThePointerWhileAButtonIsHeld()
+        {
+            // A drag is a held button. Giving the pointer back mid-drag sent the game an
+            // OnMouseUp and the real cursor, so the card landed wherever the person's hand was.
+            var mouse = new VirtualMouseState();
+            mouse.MoveTo(new Vector2(120f, 240f), new Vector2(10f, 10f));
+            mouse.Press(0, 1);
+
+            Assert.That(mouse.OwnsPointer(new Vector2(400f, 300f)), Is.True);
+            Assert.That(mouse.HasPosition, Is.True);
+        }
+
+        [Test]
+        public void OwnsPointer_KeepsThePointerUntilTheReleaseFrameHasPassed()
+        {
+            // The release frame is when the messenger sends OnMouseUp, and the game reads the
+            // drop position on that frame too, so it has to still be the agent's position.
+            var mouse = new VirtualMouseState();
+            mouse.MoveTo(new Vector2(120f, 240f), new Vector2(10f, 10f));
+            mouse.Press(0, 1);
+            mouse.Release(0, 5);
+
+            mouse.Refresh(6);
+            Assert.That(mouse.OwnsPointer(new Vector2(400f, 300f)), Is.True);
+
+            mouse.Refresh(7);
+            Assert.That(mouse.OwnsPointer(new Vector2(400f, 300f)), Is.False);
+        }
+
+        [Test]
+        public void OwnsPointer_KeepsThePointerForAWholeRun()
+        {
+            var mouse = new VirtualMouseState { HeldForRun = true };
+            mouse.MoveTo(new Vector2(120f, 240f), new Vector2(10f, 10f));
+
+            Assert.That(mouse.OwnsPointer(new Vector2(400f, 300f)), Is.True);
+
+            // reset_game lets go of all input mid-run, and the run is still on after it.
+            mouse.ReleasePointer();
+            Assert.That(mouse.OwnsPointer(new Vector2(400f, 300f)), Is.False);
+            mouse.MoveTo(new Vector2(50f, 60f), new Vector2(400f, 300f));
+            Assert.That(mouse.OwnsPointer(new Vector2(900f, 700f)), Is.True);
+
+            mouse.HeldForRun = false;
+            Assert.That(mouse.OwnsPointer(new Vector2(900f, 700f)), Is.False);
+        }
+
+        [Test]
         public void ReleasePointer_LeavesAHeldButtonAlone()
         {
             // The connection ending hands the pointer back, but a button still has to report its
