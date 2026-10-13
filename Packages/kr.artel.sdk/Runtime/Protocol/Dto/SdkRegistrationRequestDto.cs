@@ -18,6 +18,10 @@ namespace Artel.Protocol.Dto
         [JsonProperty("gameVersion")]
         public string GameVersion { get; set; }
 
+        // 에디터 실행인지 development build인지를 서버가 가르는 값. 에디터 실행은 별도 game build 행에 기록된다.
+        [JsonProperty("isEditor")]
+        public bool IsEditor { get; set; }
+
         // 스캔이 실패한 등록도 유효해야 하므로 null이면 필드 자체를 보내지 않는다.
         [JsonProperty("sceneScan", NullValueHandling = NullValueHandling.Ignore)]
         public SceneScanReportDto SceneScan { get; set; }

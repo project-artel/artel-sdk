@@ -363,6 +363,7 @@ namespace Artel
             string sdkUuid,
             string instanceName,
             string gameVersion,
+            bool isEditor,
             Func<bool> connect,
             SceneScanReportDto sceneScan = null)
         {
@@ -413,7 +414,7 @@ namespace Artel
                 try
                 {
                     request = registrationClient.CreateRequest(
-                        server, token, SelectedProjectId, sdkUuid, instanceName, gameVersion, sceneScan);
+                        server, token, SelectedProjectId, sdkUuid, instanceName, gameVersion, isEditor, sceneScan);
                 }
                 catch (Exception exception)
                 {
