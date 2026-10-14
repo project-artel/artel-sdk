@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-- 이 저장소의 모양을 정한 결정 여섯 개입니다.
+- 이 저장소의 모양을 정한 결정 일곱 개입니다.
 - 나머지 결정은 아래 「그 밖의 결정」 이 가리키는 `.plan/general/` 문서에 있습니다.
 
 | ADR | 제목 | 상태 |
@@ -11,6 +11,7 @@
 | [0004](0004-evidence-payload.md) | evidence 를 assembly 안 deflate blob 으로 싣고 attribute 에는 anchor 만 남긴다 | 확정 |
 | [0005](0005-affordance-analyser-gate.md) | affordance analyser 를 여는 define gate 를 없애고 3겹 안전장치로 대신한다 | 뒤집힘 (두 번) |
 | [0006](0006-websocket-reconnect.md) | 끊긴 WebSocket 을 무제한 재시도와 handshake 마감으로 되살린다 | 뒤집힘 |
+| [0007](0007-game-registered-cheats-and-behaviors.md) | 게임이 등록한 cheat 와 behavior 를 부르는 action 네 개를 ADR 0002 의 예외로 둔다 | 확정 |
 
 ## 그 밖의 결정
 
