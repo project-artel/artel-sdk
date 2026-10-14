@@ -386,6 +386,7 @@ namespace Artel
                     artelManager.SdkId,
                     artelManager.InstanceName,
                     artelManager.GameVersion,
+                    artelManager.IsEditor,
                     artelManager.StartTransport,
                     SceneScanReporter.CreateReport());
             }
@@ -447,6 +448,7 @@ namespace Artel
                     artelManager.SdkId,
                     artelManager.InstanceName,
                     artelManager.GameVersion,
+                    artelManager.IsEditor,
                     artelManager.StartTransport,
                     SceneScanReporter.CreateReport());
             }
@@ -804,7 +806,7 @@ namespace Artel
 
             var details = CreateText(
                 advancedObject.transform,
-                "SDK UUID " + artelManager.SdkId + "\n게임 버전 " + artelManager.GameVersion,
+                "SDK UUID " + artelManager.SdkId + "\n게임 버전 " + GameVersionLabel(),
                 14,
                 TextAnchor.UpperLeft);
             SetRect(details.rectTransform, new Vector2(20f, -8f), new Vector2(400f, 44f));
@@ -846,7 +848,7 @@ namespace Artel
             accountText.text =
                 (viewModel.HasToken ? "로그인 " + AccountLabel() : "로그인하지 않음") +
                 "\nSDK UUID " + artelManager.SdkId +
-                "\n게임 버전 " + artelManager.GameVersion;
+                "\n게임 버전 " + GameVersionLabel();
             coverStatusText.text = viewModel.Status;
             gateErrorText.text = viewModel.HasError ? viewModel.Status : string.Empty;
             connectButton.interactable = viewModel.CanConnect;
@@ -889,6 +891,14 @@ namespace Artel
         {
             var displayName = viewModel.DisplayName;
             return string.IsNullOrWhiteSpace(displayName) ? "완료" : displayName;
+        }
+
+        // 에디터 실행은 development build와 같은 버전 문자열을 쓰므로 overlay에서 구분해 보인다.
+        private string GameVersionLabel()
+        {
+            return artelManager.IsEditor
+                ? artelManager.GameVersion + " (editor)"
+                : artelManager.GameVersion;
         }
 
         private Color StatusColor()

@@ -18,5 +18,9 @@ namespace Artel.Protocol.Dto
 
         [JsonProperty("gameVersion")]
         public string GameVersion { get; set; }
+
+        // 이전 서버는 이 필드를 주지 않는다. 없으면 false다.
+        [JsonProperty("isEditor")]
+        public bool IsEditor { get; set; }
     }
 }

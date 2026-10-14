@@ -168,7 +168,7 @@ namespace Artel.Tests.Transport
         {
             var server = new Server(false, "127.0.0.1", 8080);
             var client = new ArtelSdkRegistrationClient(new Artel.Serialization.NewtonsoftJsonCodec());
-            var request = client.CreateRequest(server, "sdk-token", "1", "sdk-uuid", "내 맥북", "1.2.3");
+            var request = client.CreateRequest(server, "sdk-token", "1", "sdk-uuid", "내 맥북", "1.2.3", true);
 
             try
             {
@@ -178,7 +178,26 @@ namespace Artel.Tests.Transport
                     Encoding.UTF8.GetString(request.uploadHandler.data),
                     Is.EqualTo(
                         "{\"projectId\":\"1\",\"sdkUuid\":\"sdk-uuid\"," +
-                        "\"instanceName\":\"내 맥북\",\"gameVersion\":\"1.2.3\"}"));
+                        "\"instanceName\":\"내 맥북\",\"gameVersion\":\"1.2.3\",\"isEditor\":true}"));
+            }
+            finally
+            {
+                request.Dispose();
+            }
+        }
+
+        [Test]
+        public void RegistrationClient_SendsIsEditorFalseForBuildRun()
+        {
+            var server = new Server(false, "127.0.0.1", 8080);
+            var client = new ArtelSdkRegistrationClient(new Artel.Serialization.NewtonsoftJsonCodec());
+            var request = client.CreateRequest(server, "sdk-token", "1", "sdk-uuid", null, "1.2.3", false);
+
+            try
+            {
+                Assert.That(
+                    Encoding.UTF8.GetString(request.uploadHandler.data),
+                    Does.Contain("\"isEditor\":false"));
             }
             finally
             {
@@ -194,7 +213,7 @@ namespace Artel.Tests.Transport
             var sceneScan = new Artel.Protocol.Dto.SceneScanReportDto();
             sceneScan.ScenesInBuild.Add("Assets/Scenes/Main.unity");
 
-            var request = client.CreateRequest(server, "sdk-token", "1", "sdk-uuid", null, "1.2.3", sceneScan);
+            var request = client.CreateRequest(server, "sdk-token", "1", "sdk-uuid", null, "1.2.3", false, sceneScan);
 
             try
             {
@@ -425,14 +444,15 @@ namespace Artel.Tests.Transport
                 ProjectId = "1",
                 SdkUuid = "sdk-uuid",
                 InstanceName = "내 맥북",
-                GameVersion = "1.2.3"
+                GameVersion = "1.2.3",
+                IsEditor = true
             });
 
             Assert.That(
                 json,
                 Is.EqualTo(
                     "{\"projectId\":\"1\",\"sdkUuid\":\"sdk-uuid\"," +
-                    "\"instanceName\":\"내 맥북\",\"gameVersion\":\"1.2.3\"}"));
+                    "\"instanceName\":\"내 맥북\",\"gameVersion\":\"1.2.3\",\"isEditor\":true}"));
         }
 
         [Test]
@@ -447,7 +467,7 @@ namespace Artel.Tests.Transport
 
             Assert.That(
                 json,
-                Is.EqualTo("{\"projectId\":\"1\",\"sdkUuid\":\"sdk-uuid\",\"gameVersion\":null}"));
+                Is.EqualTo("{\"projectId\":\"1\",\"sdkUuid\":\"sdk-uuid\",\"gameVersion\":null,\"isEditor\":false}"));
         }
 
         [Test]
@@ -462,6 +482,24 @@ namespace Artel.Tests.Transport
             Assert.That(response.InstanceName, Is.EqualTo("메인 빌드"));
             Assert.That(response.GameBuildId, Is.EqualTo("5"));
             Assert.That(response.GameVersion, Is.EqualTo("1.2.3"));
+        }
+
+        [Test]
+        public void SdkRegistrationResponse_ReadsIsEditorWhenPresent()
+        {
+            var response = JsonConvert.DeserializeObject<SdkRegistrationResponseDto>(
+                "{\"instanceId\":\"12\",\"gameBuildId\":\"5\",\"gameVersion\":\"1.2.3\",\"isEditor\":true}");
+
+            Assert.That(response.IsEditor, Is.True);
+        }
+
+        [Test]
+        public void SdkRegistrationResponse_DefaultsIsEditorToFalseWhenAbsent()
+        {
+            var response = JsonConvert.DeserializeObject<SdkRegistrationResponseDto>(
+                "{\"instanceId\":\"12\",\"gameBuildId\":\"5\",\"gameVersion\":\"1.2.3\"}");
+
+            Assert.That(response.IsEditor, Is.False);
         }
 
         [Test]
@@ -610,7 +648,7 @@ namespace Artel.Tests.Transport
             // 주소를 만들 수 없는 Server 는 요청을 보내기 전에 던진다. 예전에는 `new Server()`
             // 가 그것이었지만 이제 기본값이 실제 서버라(ARTEL-703), 못 쓰는 서버를 직접 만든다.
             RunToCompletionWithoutWaiting(
-                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", false, () => true));
 
             Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.ChoosingProject));
             Assert.That(viewModel.ShowPanel, Is.True);
@@ -641,7 +679,7 @@ namespace Artel.Tests.Transport
             viewModel.Initialize();
 
             RunToCompletionWithoutWaiting(
-                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", false, () => true));
 
             Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.NeedsLogin));
             Assert.That(viewModel.HasError, Is.True);
@@ -810,7 +848,7 @@ namespace Artel.Tests.Transport
             // 주소를 만들 수 없는 Server 는 요청을 만드는 중에 던진다. 401이 아니므로 세션이
             // 그대로 남는 실패 경로다.
             RunToCompletionWithoutWaiting(
-                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", false, () => true));
 
             Assert.That(viewModel.HasToken, Is.True);
             Assert.That(viewModel.HasError, Is.True);
@@ -908,7 +946,7 @@ namespace Artel.Tests.Transport
             // 주소를 만들 수 없는 Server 는 401 도 404 도 아닌 실패다. 세션은 그대로 남고
             // 화면만 프로젝트 선택으로 간다.
             RunToCompletionWithoutWaiting(
-                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", () => true));
+                viewModel.Register(Unreachable(), "sdk-uuid", "내 맥북", "1.2.3", false, () => true));
             Assert.That(viewModel.ShowGate, Is.True);
 
             viewModel.NoticeTransport(ArtelTransportPhase.Connected);

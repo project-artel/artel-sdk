@@ -25,6 +25,7 @@ namespace Artel
             string sdkUuid,
             string instanceName,
             string gameVersion,
+            bool isEditor,
             SceneScanReportDto sceneScan = null)
         {
             if (server == null)
@@ -54,6 +55,7 @@ namespace Artel
                 SdkUuid = sdkUuid,
                 InstanceName = string.IsNullOrWhiteSpace(instanceName) ? null : instanceName.Trim(),
                 GameVersion = gameVersion,
+                IsEditor = isEditor,
                 SceneScan = sceneScan
             });
             var request = new UnityWebRequest(endpoint.AbsoluteUri, UnityWebRequest.kHttpVerbPOST)

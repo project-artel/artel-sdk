@@ -93,6 +93,8 @@ namespace Artel
         public string SdkId { get; private set; }
         public string GameVersion { get; private set; }
 
+        public bool IsEditor { get; private set; }
+
         /// <summary>대시보드에서 이 설치를 알아볼 첫 이름. 서버가 등록 때 한 번만 쓴다.</summary>
         public string InstanceName { get; private set; }
 
@@ -304,6 +306,7 @@ namespace Artel
 
             SdkId = ArtelSdkIdentity.LoadOrCreate();
             GameVersion = Application.version;
+            IsEditor = Application.isEditor;
             InstanceName = SystemInfo.deviceName;
             ownsRuntime = true;
         }
