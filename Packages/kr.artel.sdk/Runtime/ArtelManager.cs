@@ -42,6 +42,17 @@ namespace Artel
         private SceneScanner scanner;
         private AllSceneScanner allSceneScanner;
         private ActionExecutor actionExecutor;
+
+        /// <summary>
+        /// 게임이 등록한 cheat 와 behavior. behavior 는 연결과 무관하게 프레임마다 돌아야 하므로 실행기가 아니라 여기서 민다.
+        /// </summary>
+        private GameFunctionActions gameFunctions;
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        /// <summary>이 연결에 마지막으로 보낸 catalog 의 revision. 0 이면 이 연결에는 아직 보내지 않았다.</summary>
+        private long sentCatalogRevision;
+        private float nextCatalogTime;
+#endif
         private CursorController cursorController;
         private PointerEventDispatcher pointerEvents;
         private IJsonCodec jsonCodec;
@@ -267,6 +278,10 @@ namespace Artel
 
             pointerEvents = new PointerEventDispatcher();
             jsonCodec = new NewtonsoftJsonCodec();
+            gameFunctions = new GameFunctionActions();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Affordances.Live.LiveState.Attachment = new GameFunctionPulse(gameFunctions);
+#endif
             actionExecutor = new ActionExecutor(
                 scanner,
                 cursorController,
@@ -291,7 +306,8 @@ namespace Artel
                     jsonCodec,
                     () => server,
                     ArtelSdkSession.LoadToken,
-                    ArtelSdkSession.LoadGameBuildId));
+                    ArtelSdkSession.LoadGameBuildId),
+                gameFunctions);
             frameTimeRecorder = new FrameTimeRecorder();
             frameTimingSampler = new FrameTimingSampler();
 
@@ -363,6 +379,9 @@ namespace Artel
             if (instance == this)
             {
                 instance = null;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Affordances.Live.LiveState.Attachment = null;
+#endif
             }
         }
 
@@ -387,6 +406,9 @@ namespace Artel
                 {
                     PumpStreaming();
                 }
+
+                // 이것도 전송 검사 앞이다. behavior 의 timeout 과 target_gone 은 소켓이 없어도 지켜져야 한다.
+                PumpGameFunctions();
 
                 if (webSocketTransport == null)
                 {
@@ -610,6 +632,10 @@ namespace Artel
             // 스캔하고 파일이 자라는 것.
             EndDiscovery();
 
+            // 소켓이 닫히기 전에 끝내고 보낸다. 아직 열려 있으면 BEHAVIOR_ENDED 가 서버에 닿는다.
+            gameFunctions.EndRun("connection closed");
+            SendBehaviorEndedFrames();
+
             if (webSocketTransport == null)
             {
                 return;
@@ -656,6 +682,8 @@ namespace Artel
             }
 
             ReleaseAgentInput();
+            gameFunctions.EndRun("connection closed");
+            SendBehaviorEndedFrames();
             webSocketTransport = null;
             ownsTransport = true;
 
@@ -782,6 +810,11 @@ namespace Artel
             }
 
             HoldPointerFor(runStatus.State);
+
+            if (runStatus.State == RunStatusState.Finished)
+            {
+                gameFunctions.EndRun("run finished");
+            }
 
             var handler = RunStatusReceived;
             if (handler != null)
@@ -1046,7 +1079,17 @@ namespace Artel
             {
                 // 재연결한 서버 인스턴스는 이 세션의 컨텍스트를 모른다. 끊긴 것을 본 시점에
                 // 표시를 내려 두어 다음 연결에서 다시 보내게 한다.
+                if (reportedDeviceContext)
+                {
+                    // 연결돼 있다가 끊긴 첫 프레임이다. 끊긴 연결의 run 은 끝났다 — 다시 붙는 서버는 새 세션을 연다.
+                    // 그 BEHAVIOR_ENDED 는 닫힌 소켓으로 나갈 수 없어 버려진다.
+                    gameFunctions.EndRun("connection closed");
+                }
+
                 reportedDeviceContext = false;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                sentCatalogRevision = 0;
+#endif
                 return;
             }
 
@@ -1059,6 +1102,7 @@ namespace Artel
                     Device = RuntimeEnvironment.ReadDeviceContext()
                 }));
                 reportedDeviceContext = true;
+                SendGameFunctionCatalog();
             }
 
             var now = Time.unscaledTime;
@@ -1117,6 +1161,57 @@ namespace Artel
             }
 
             webSocketTransport.Send(jsonCodec.Serialize(report));
+        }
+
+        /// <summary>
+        /// behavior 를 한 프레임 밀고, 끝난 behavior 와 바뀐 catalog 를 보낸다.
+        /// </summary>
+        /// <remarks>
+        /// <c>BEHAVIOR_ENDED</c> 는 runner 가 쌓아 둔 것을 여기서 꺼낸다. 끝난 걸음이 action 배치 안이었다면 그 배치의
+        /// <c>ACTION_RESULT</c> 가 먼저 나간 다음 프레임에 나간다.
+        ///
+        /// catalog 는 <c>DEVICE_CONTEXT</c> 바로 뒤에 한 번 나가고(<see cref="SendPerformanceReport"/>), 그 뒤로는 목록이
+        /// 바뀌었을 때 1초에 한 번까지 다시 나간다. 그 사이의 여러 변경은 마지막 revision 하나로 나간다.
+        /// </remarks>
+        private void PumpGameFunctions()
+        {
+            gameFunctions.Tick();
+            SendBehaviorEndedFrames();
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (sentCatalogRevision == 0 ||
+                gameFunctions.Registry.Revision == sentCatalogRevision ||
+                Time.unscaledTime < nextCatalogTime ||
+                webSocketTransport == null || !webSocketTransport.IsConnected)
+            {
+                return;
+            }
+
+            SendGameFunctionCatalog();
+#endif
+        }
+
+        /// <summary>쌓인 <c>BEHAVIOR_ENDED</c> 를 보낸다. 연결이 없으면 버린다 — 다음 연결은 새 세션이라 받을 쪽이 없다.</summary>
+        private void SendBehaviorEndedFrames()
+        {
+            while (gameFunctions.TryDequeueEnded(out var ended))
+            {
+                if (webSocketTransport != null && webSocketTransport.IsConnected)
+                {
+                    webSocketTransport.Send(jsonCodec.Serialize(ended));
+                }
+            }
+        }
+
+        /// <summary>출시 빌드에는 등록할 수 있는 함수가 없으므로 catalog 를 보내지 않는다.</summary>
+        private void SendGameFunctionCatalog()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            var catalog = gameFunctions.BuildCatalog();
+            webSocketTransport.Send(jsonCodec.Serialize(catalog));
+            sentCatalogRevision = catalog.Revision;
+            nextCatalogTime = Time.unscaledTime + GameFunctionTiming.PollSeconds;
+#endif
         }
 
         /// <summary>
