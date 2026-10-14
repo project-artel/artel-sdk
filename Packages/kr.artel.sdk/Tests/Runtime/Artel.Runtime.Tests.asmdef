@@ -3,6 +3,7 @@
   "rootNamespace": "Artel.Tests.Protocol",
   "references": [
     "Artel.Runtime",
+    "Artel.GameFunctions.Fixtures",
     "Artel.Tracking.Fixtures",
     "UnityEngine.UI",
     "Unity.TextMeshPro",
