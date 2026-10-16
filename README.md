@@ -20,6 +20,19 @@ https://github.com/project-artel/artel-sdk.git?path=/Packages/kr.artel.sdk
 https://github.com/project-artel/artel-sdk.git?path=/Packages/kr.artel.sdk#develop
 ```
 
+## AI coding agent 로 설치
+
+- Claude Code, Codex, Cursor 같은 AI coding agent 에 [artel-skills](https://github.com/project-artel/artel-skills) 를 설치
+
+```bash
+npx skills add project-artel/artel-skills
+```
+
+- 기본은 현재 프로젝트에만 설치. 모든 프로젝트에 쓰려면 `-g`, skill 하나만 설치하려면 `--skill <name>`
+- `artel-unity-sdk` — 이 패키지 설치, 로그인, 개발 빌드, 등록
+- `artel-cheats` — `[ArtelCheat]` 치트 추가
+- `artel-behaviors` — `[ArtelBehavior]` behavior 추가
+
 ## 실행 인자
 
 | 인자 | 값 | 무엇 |
