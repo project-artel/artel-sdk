@@ -1,6 +1,6 @@
 # ADR 0002 — agent 에게 여는 조작을 범용 UI 조작으로만 정규화한다
 
-- 상태: 확정
+- 상태: 확정 ([ADR 0007](0007-game-registered-cheats-and-behaviors.md) 이 고침)
 - 근거: Notion `3960bce5-474c-808b-a907-c0524b995d03`, `.plan/general/2026-07-28-add-virtual-mouse-and-drag-actions.md`, `Packages/kr.artel.sdk/Runtime/ActionExecutor.cs`
 
 ## 결정
@@ -8,7 +8,9 @@
 - agent 가 보낼 수 있는 action 은 범용 UI 조작과 targeting 뿐입니다 — 클릭, 드래그, 키, 축, 시간 제어,
   screen capture, 스캔.
 - 게임의 뜻을 담은 action 은 하나도 두지 않습니다.
-- `ActionExecutor` 가 받는 action 은 17 개이고, 그 위에 `ArtelManager` 가 배치 안에서 직접 처리하는
+  - 예외는 [ADR 0007](0007-game-registered-cheats-and-behaviors.md) 의 네 action 입니다. 뜻은 게임이
+    `[ArtelCheat]`·`[ArtelBehavior]` 로 등록하고, action 은 그 이름과 인자만 나릅니다.
+- `ActionExecutor` 가 받는 action 은 21 개이고, 그 위에 `ArtelManager` 가 배치 안에서 직접 처리하는
   `scan_scene` 과 `scan_all_scenes` 가 있습니다. 전체 목록과 params 모양은
   [`docs/protocol.md`](../protocol.md) 에 있습니다.
 

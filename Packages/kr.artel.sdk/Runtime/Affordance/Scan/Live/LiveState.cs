@@ -37,6 +37,11 @@ namespace Artel.Affordances.Live
         private const string Active = "|active";
 
         /// <summary>
+        /// 문서 끝에 필드를 더하는 다른 어셈블리. 없으면 null 이고, 그때 문서는 이것이 생기기 전과 같다.
+        /// </summary>
+        internal static IPulseAttachment Attachment { get; set; }
+
+        /// <summary>
         /// 감시 대상 멤버를 전부 읽고 문서 하나를 쓴다.
         /// </summary>
         /// <remarks>
@@ -173,6 +178,8 @@ namespace Artel.Affordances.Live
                 text.Append(']');
             }
 
+            var attachmentHasNews = AppendAttachment(text, everything);
+
             text.Append(",\"changed\":[");
             moved.Sort(StringComparer.Ordinal);
 
@@ -188,7 +195,7 @@ namespace Artel.Affordances.Live
 
             text.Append("]}");
 
-            settled = moved.Count == 0;
+            settled = moved.Count == 0 && !attachmentHasNews;
 
             since.Clear();
 
@@ -198,6 +205,38 @@ namespace Artel.Affordances.Live
             }
 
             return text.ToString();
+        }
+
+        /// <summary>
+        /// <see cref="Attachment"/> 의 조각을 붙이고, 그것이 바뀐 것을 실었는지 답한다.
+        /// </summary>
+        /// <remarks>
+        /// 조각을 문자열로 받아 통째로 붙인다. 쓰는 도중에 던지면 반쯤 쓴 JSON 이 문서에 남기 때문이다. 던지는 조각은 이번
+        /// <c>pulse</c> 에서 빠질 뿐 감시를 멈추지 않는다.
+        /// </remarks>
+        private static bool AppendAttachment(StringBuilder text, bool whole)
+        {
+            var attachment = Attachment;
+            if (attachment == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                var fragment = attachment.Compose(whole, out var news);
+                if (fragment != null)
+                {
+                    text.Append(fragment);
+                }
+
+                return news;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("[Artel] A pulse attachment could not be written: " + exception.Message);
+                return false;
+            }
         }
 
         /// <summary>이번 판독이 한 말, 직전 판독이 한 말, 그리고 그 차이.</summary>

@@ -1,6 +1,6 @@
 {
   "name": "kr.artel.sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "Artel SDK",
   "description": "Unity runtime SDK for onboarding and remote scene interaction over WebSocket.",
   "unity": "2022.3",

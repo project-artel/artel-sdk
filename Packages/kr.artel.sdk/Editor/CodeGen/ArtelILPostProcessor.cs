@@ -61,13 +61,33 @@ namespace Artel.CodeGen
                     }
 
                     var inputWeaver = inputAttempt.Weaver;
-                    if (actionWeaver == null && inputWeaver == null)
+
+                    // cheat 와 behavior 등록은 에디터와 DEVELOPMENT_BUILD 에서만 만든다. 출시 빌드에서는 attribute 가 아무 일도
+                    // 하지 않고, 런타임의 네 action 이 "not available in this build" 로 거절한다.
+                    var gameFunctionWeaver = IsDiscoveryBuild(compiledAssembly)
+                        ? GameFunctionWeaver.TryCreate(assembly.MainModule)
+                        : null;
+
+                    if (actionWeaver == null && inputWeaver == null && gameFunctionWeaver == null)
                     {
                         return new ILPostProcessResult(null, diagnostics);
                     }
 
                     var changed = actionWeaver != null && actionWeaver.Process();
                     changed |= inputWeaver != null && inputWeaver.Process();
+                    changed |= gameFunctionWeaver != null && gameFunctionWeaver.Process();
+
+                    if (gameFunctionWeaver != null)
+                    {
+                        foreach (var error in gameFunctionWeaver.Errors)
+                        {
+                            diagnostics.Add(new DiagnosticMessage
+                            {
+                                DiagnosticType = DiagnosticType.Error,
+                                MessageData = "[Artel] " + compiledAssembly.Name + ": " + error
+                            });
+                        }
+                    }
                     if (!changed)
                     {
                         return new ILPostProcessResult(null, diagnostics);
@@ -89,6 +109,17 @@ namespace Artel.CodeGen
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// 에디터나 <c>DEVELOPMENT_BUILD</c> 컴파일인지. <c>AffordanceILPostProcessor</c> 에 같은 판단이 있지만, 두 CodeGen
+        /// asmdef 은 서로를 참조하지 못해 여기에 다시 둔다.
+        /// </summary>
+        private static bool IsDiscoveryBuild(ICompiledAssembly compiledAssembly)
+        {
+            var defines = compiledAssembly.Defines;
+            return defines != null &&
+                   Array.Exists(defines, define => define == "UNITY_EDITOR" || define == "DEVELOPMENT_BUILD");
         }
     }
 }
