@@ -30,7 +30,8 @@ npx skills add project-artel/artel-skills
 
 - 기본은 현재 프로젝트에만 설치. 모든 프로젝트에 쓰려면 `-g`, skill 하나만 설치하려면 `--skill <name>`
 - `artel-unity-sdk` — 이 패키지 설치, 로그인, 개발 빌드, 등록
-- `artel-game-functions` — `[ArtelCheat]` cheat 와 `[ArtelBehavior]` behavior 추가
+- `artel-cheats` — `[ArtelCheat]` 치트 추가
+- `artel-behaviors` — `[ArtelBehavior]` behavior 추가
 
 ## 실행 인자
 
