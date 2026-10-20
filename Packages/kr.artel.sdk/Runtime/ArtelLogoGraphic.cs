@@ -41,68 +41,78 @@ namespace Artel
             }
         }
 
-        private const float StrokeWidth = 9f;
-        private static readonly Vector2[] BodyPoints =
+        // 64x64 상자 안의 SVG 좌표(y는 아래로 증가)다. 데스크톱 앱과 웹사이트가 쓰는 값과 같다.
+        // 본체는 앞 6개가 바깥 윤곽, 뒤 6개가 안쪽 윤곽을 거꾸로 이은 오목 다각형이다.
+        // 바깥 k번째 점은 안쪽 (OutlineCount - 1 - k)번째 점과 짝이 된다.
+        private const int OutlineCount = 6;
+        private static readonly Vector2[] BodyPolygon =
         {
-            new Vector2(52f, 40f),
-            new Vector2(52f, 18f),
-            new Vector2(32f, 6f),
-            new Vector2(12f, 18f),
-            new Vector2(12f, 46f),
-            new Vector2(30f, 56f)
+            new Vector2(57.28f, 45.10f),
+            new Vector2(57.28f, 17.40f),
+            new Vector2(32.00f, 2.80f),
+            new Vector2(6.72f, 17.40f),
+            new Vector2(6.72f, 46.60f),
+            new Vector2(30.70f, 60.45f),
+            new Vector2(30.70f, 50.05f),
+            new Vector2(15.72f, 41.40f),
+            new Vector2(15.72f, 22.60f),
+            new Vector2(32.00f, 13.20f),
+            new Vector2(48.28f, 22.60f),
+            new Vector2(48.28f, 39.90f)
+        };
+
+        // 본체에서 잘려 나간 오른쪽 아래 변이다. 볼록한 사다리꼴이다.
+        private static readonly Vector2[] AccentPolygon =
+        {
+            new Vector2(33.30f, 50.05f),
+            new Vector2(33.30f, 60.45f),
+            new Vector2(55.99f, 47.35f),
+            new Vector2(46.99f, 42.15f)
         };
 
         protected override void OnPopulateMesh(VertexHelper vertexHelper)
         {
             vertexHelper.Clear();
 
-            AddPolyline(vertexHelper, BodyPoints, bodyColor);
-            AddStroke(vertexHelper, new Vector2(36f, 56f), new Vector2(52f, 46f), accentColor);
+            AddBand(vertexHelper, BodyPolygon, bodyColor);
+            AddConvex(vertexHelper, AccentPolygon, accentColor);
         }
 
-        private void AddPolyline(VertexHelper vertexHelper, Vector2[] points, Color32 strokeColor)
+        // 바깥 윤곽과 안쪽 윤곽의 짝이 맞는 점끼리 quad를 이어 오목 다각형을 채운다.
+        private void AddBand(VertexHelper vertexHelper, Vector2[] points, Color32 fillColor)
         {
             var first = vertexHelper.currentVertCount;
-            var halfWidth = StrokeWidth * Scale * 0.5f;
-
-            for (var index = 0; index < points.Length; index++)
+            foreach (var point in points)
             {
-                var point = ToLocal(points[index]);
-                var previousNormal = index == 0
-                    ? SegmentNormal(points[0], points[1])
-                    : SegmentNormal(points[index - 1], points[index]);
-                var nextNormal = index == points.Length - 1
-                    ? previousNormal
-                    : SegmentNormal(points[index], points[index + 1]);
-                var miter = (previousNormal + nextNormal).normalized;
-                var offset = miter * (halfWidth / Vector2.Dot(miter, nextNormal));
-
-                AddVertex(vertexHelper, point - offset, strokeColor);
-                AddVertex(vertexHelper, point + offset, strokeColor);
+                AddVertex(vertexHelper, ToLocal(point), fillColor);
             }
 
-            for (var index = 0; index < points.Length - 1; index++)
+            var last = points.Length - 1;
+            for (var index = 0; index < OutlineCount - 1; index++)
             {
-                var start = first + (index * 2);
-                vertexHelper.AddTriangle(start, start + 1, start + 3);
-                vertexHelper.AddTriangle(start, start + 3, start + 2);
+                var outerStart = first + index;
+                var outerEnd = first + index + 1;
+                var innerEnd = first + last - (index + 1);
+                var innerStart = first + last - index;
+
+                // 화면에서 시계 방향이 앞면이다.
+                vertexHelper.AddTriangle(outerStart, innerEnd, outerEnd);
+                vertexHelper.AddTriangle(outerStart, innerStart, innerEnd);
             }
         }
 
-        private void AddStroke(VertexHelper vertexHelper, Vector2 start, Vector2 end, Color32 strokeColor)
+        private void AddConvex(VertexHelper vertexHelper, Vector2[] points, Color32 fillColor)
         {
-            var scale = Scale;
-            start = ToLocal(start);
-            end = ToLocal(end);
-
-            var normal = Vector2.Perpendicular((end - start).normalized) * StrokeWidth * scale * 0.5f;
             var first = vertexHelper.currentVertCount;
-            AddVertex(vertexHelper, start - normal, strokeColor);
-            AddVertex(vertexHelper, start + normal, strokeColor);
-            AddVertex(vertexHelper, end + normal, strokeColor);
-            AddVertex(vertexHelper, end - normal, strokeColor);
-            vertexHelper.AddTriangle(first, first + 1, first + 2);
-            vertexHelper.AddTriangle(first, first + 2, first + 3);
+            foreach (var point in points)
+            {
+                AddVertex(vertexHelper, ToLocal(point), fillColor);
+            }
+
+            for (var index = 1; index < points.Length - 1; index++)
+            {
+                vertexHelper.AddTriangle(first, first + index + 1, first + index);
+            }
         }
 
         private float Scale => Mathf.Min(rectTransform.rect.width, rectTransform.rect.height) / 64f;
@@ -116,14 +126,9 @@ namespace Artel
             return origin + new Vector2(point.x, 64f - point.y) * scale;
         }
 
-        private Vector2 SegmentNormal(Vector2 start, Vector2 end)
+        private static void AddVertex(VertexHelper vertexHelper, Vector2 position, Color32 fillColor)
         {
-            return Vector2.Perpendicular((ToLocal(end) - ToLocal(start)).normalized);
-        }
-
-        private static void AddVertex(VertexHelper vertexHelper, Vector2 position, Color32 strokeColor)
-        {
-            vertexHelper.AddVert(position, strokeColor, Vector2.zero);
+            vertexHelper.AddVert(position, fillColor, Vector2.zero);
         }
     }
 }
