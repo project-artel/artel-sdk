@@ -35,6 +35,43 @@ namespace Artel.Affordances.Scan
         /// </remarks>
         public static Action<int, int, string> SceneOpening;
 
+        /// <summary>
+        /// 도는 순회를 멈춰 달라는 뜻. 순회가 씬과 씬 사이에서 읽는다(ARTEL-1182).
+        /// </summary>
+        /// <remarks>
+        /// 여기 두는 이유는 참조 방향이다. 취소를 받는 쪽은 WebSocket 을 쥔 <c>Artel.Runtime</c> 이고, 멈춰야 하는 쪽은
+        /// 이 어셈블리의 순회다. Runtime 은 이쪽을 참조하지만 반대는 아니므로, 순회가 바깥을 아는 대신 바깥이 여기에 적어
+        /// 두고 순회가 읽어 간다.
+        ///
+        /// <b>씬을 여는 도중에는 안 멈춘다.</b> 로드가 반쯤 간 자리에서 끊으면 게임이 어느 씬에 있는지 아무도 모르는 상태로
+        /// 남는다. 한 씬을 다 읽은 뒤에 보고, 멈추기로 했으면 원래 씬으로 되돌린 다음 끝낸다.
+        /// </remarks>
+        private static bool cancelRequested;
+
+        /// <summary>순회를 멈춰 달라고 적어 둔다. 도는 순회가 없으면 다음 순회가 이것을 지우고 시작한다.</summary>
+        public static void RequestCancel()
+        {
+            cancelRequested = true;
+        }
+
+        /// <summary>멈춰 달라고 적힌 것이 있나.</summary>
+        public static bool CancelRequested
+        {
+            get { return cancelRequested; }
+        }
+
+        /// <summary>
+        /// 순회가 시작할 때 지운다.
+        /// </summary>
+        /// <remarks>
+        /// 지우지 않으면 한 번 취소한 뒤의 모든 순회가 첫 씬에서 멎는다. 끝낼 때가 아니라 시작할 때 지우는 이유는, 끝에서
+        /// 지우면 순회가 돌지 않는 동안 도착한 취소가 그대로 남아 다음 순회를 죽이기 때문이다.
+        /// </remarks>
+        internal static void ClearCancel()
+        {
+            cancelRequested = false;
+        }
+
         internal static void OnSceneOpening(int done, int total, string sceneName)
         {
             var hook = SceneOpening;

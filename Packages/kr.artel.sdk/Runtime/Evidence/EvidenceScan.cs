@@ -107,6 +107,14 @@ namespace Artel.Evidence
                 }
             }
 
+            // 멈추라는 말을 듣고 그만둔 순회다. 문서는 반쯤 돈 것이라 읽지 않는다 — 서버가 그것을 적재하면 지도에서
+            // 못 돈 씬들이 사라진다. 실패로 답해 서버가 그 스캔을 닫게 한다(ARTEL-1182).
+            if (SceneWalkHooks.CancelRequested)
+            {
+                completed(ScannedEvidence.Failed("cancelled: the scan was stopped before it finished."));
+                yield break;
+            }
+
             var path = AffordanceBootstrap.ReportPath;
             byte[] document;
 

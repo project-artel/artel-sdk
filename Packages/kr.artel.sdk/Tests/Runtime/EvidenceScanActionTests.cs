@@ -146,6 +146,54 @@ namespace Artel.Tests.Evidence
             Assert.That(uploader.Attempts, Is.EqualTo(1));
         }
 
+        /// <summary>
+        /// 순회가 끝난 뒤, 올리기 전에 취소가 도착한 경우. 올라가지 않고 실패가 답에 실린다(ARTEL-1182).
+        /// </summary>
+        [Test]
+        public void ScanEvidence_DoesNotUploadWhatACancelledScanProduced()
+        {
+            SceneWalkHooks.RequestCancel();
+
+            try
+            {
+                var uploader = new FakeEvidenceUploader();
+                var scanned = new ScannedEvidence { Document = new byte[] { 1 }, SceneCount = 1 };
+                var result = Run(Executor(new FakeEvidenceScan(scanned), uploader));
+
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(result.Error, Does.Contain("cancelled"));
+                Assert.That(uploader.Attempts, Is.EqualTo(0));
+            }
+            finally
+            {
+                SceneWalkHooks.ClearCancel();
+            }
+        }
+
+        /// <summary>
+        /// 올리는 도중에 취소가 도착한 경우. 올라간 것은 그대로지만 성공으로 답하지 않는다 — 성공이라고 하면 서버가
+        /// 취소된 스캔을 적재한다.
+        /// </summary>
+        [Test]
+        public void ScanEvidence_DoesNotReportSuccessWhenCancelArrivesWhileUploading()
+        {
+            var uploader = new CancellingEvidenceUploader();
+            var scanned = new ScannedEvidence { Document = new byte[] { 1 }, SceneCount = 1 };
+
+            try
+            {
+                var result = Run(Executor(new FakeEvidenceScan(scanned), uploader));
+
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(result.Error, Does.Contain("cancelled"));
+                Assert.That(uploader.Attempts, Is.EqualTo(1));
+            }
+            finally
+            {
+                SceneWalkHooks.ClearCancel();
+            }
+        }
+
         // --- helpers ---
 
         private static ActionExecutor Executor(
@@ -177,6 +225,30 @@ namespace Artel.Tests.Evidence
                 {
                     Drain(nested);
                 }
+            }
+        }
+
+        /// <summary>한 걸음 올리고 나서 취소가 도착한 척한다.</summary>
+        private sealed class CancellingEvidenceUploader : IEvidenceUploader
+        {
+            public int Attempts;
+
+            public IEnumerator Upload(
+                byte[] document,
+                IReadOnlyList<SceneThumbnail> thumbnails,
+                Action<EvidenceUpload> completed,
+                Action<int, int> stepped = null)
+            {
+                Attempts++;
+                SceneWalkHooks.RequestCancel();
+                completed(new EvidenceUpload
+                {
+                    ObjectKey = "k",
+                    EvidenceDigest = "d",
+                    ByteSize = 1,
+                    SchemaVersion = 1
+                });
+                yield break;
             }
         }
 

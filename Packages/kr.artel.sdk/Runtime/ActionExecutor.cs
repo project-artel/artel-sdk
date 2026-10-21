@@ -786,6 +786,14 @@ namespace Artel
                 yield break;
             }
 
+            // 순회는 끝났는데 그 사이 멈추라는 말이 왔다. 올리기 전에 그만둔다(ARTEL-1182).
+            if (SceneWalkHooks.CancelRequested)
+            {
+                completed(ActionResultDto.Failure(
+                    actionId, ScanEvidence, "cancelled: the scan was stopped before the upload started."));
+                yield break;
+            }
+
             var upload = default(EvidenceUpload);
             yield return evidenceUploader.Upload(
                 scanned.Document,
@@ -797,6 +805,15 @@ namespace Artel
             if (!upload.IsSuccess)
             {
                 completed(ActionResultDto.Failure(actionId, ScanEvidence, upload.Error));
+                yield break;
+            }
+
+            // 올리는 동안 멈추라는 말이 왔다. 올라간 것은 그대로 두되 성공으로 답하지 않는다 — 성공이라고 하면 서버가
+            // 취소된 스캔을 적재한다. 걸음 사이에서 끊을 수 없어 여기가 가장 이른 자리다.
+            if (SceneWalkHooks.CancelRequested)
+            {
+                completed(ActionResultDto.Failure(
+                    actionId, ScanEvidence, "cancelled: the scan was stopped while the evidence was uploading."));
                 yield break;
             }
 

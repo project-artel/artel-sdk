@@ -768,6 +768,12 @@ namespace Artel
                     return;
                 }
 
+                if (request.Type == "CANCEL_EVIDENCE_SCAN")
+                {
+                    HandleCancelEvidenceScan();
+                    return;
+                }
+
                 if (streamHost.TryHandleMessage(request.Type, message.Text, Time.unscaledTime))
                 {
                     return;
@@ -794,6 +800,22 @@ namespace Artel
             {
                 StartCoroutine(ProcessActions());
             }
+        }
+
+        /// <summary>
+        /// 도는 근거 스캔을 멈춰 달라는 통지(ARTEL-1182).
+        /// </summary>
+        /// <remarks>
+        /// <b>큐에 넣지 않는다.</b> <c>scan_evidence</c> 는 액션 큐를 쥐고 도는 긴 작업이라, 취소를 큐로 보내면 그 스캔이
+        /// 끝난 다음에야 꺼내진다 — 멈추려던 것이 끝난 뒤에 멈추라는 말을 듣는 셈이다. 진행 보고가 큐 밖에서 나가는 것과
+        /// 같은 이유로 여기서 바로 처리한다.
+        ///
+        /// 도는 스캔이 없어도 탓하지 않는다. 사람이 누른 시점과 스캔이 끝난 시점이 스칠 수 있고, 그때 올 답은 어차피
+        /// 실패가 아니라 그 스캔의 원래 결과다. 다음 순회가 시작할 때 이 표시를 지운다.
+        /// </remarks>
+        private void HandleCancelEvidenceScan()
+        {
+            SceneWalkHooks.RequestCancel();
         }
 
         /// <summary>
