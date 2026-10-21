@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Artel.Affordances.Scan;
 using Artel.Evidence;
 using Artel.Protocol.Dto;
 using Artel.Serialization;
@@ -111,9 +112,92 @@ namespace Artel.Tests.Evidence
             Assert.That(json, Does.Not.Contain("action"));
         }
 
+        /// <summary>
+        /// 스캔 동안 씬을 열 때마다, 업로드 걸음마다 진행이 나간다(ARTEL-1177). 끝나면 hook 은 앞 구독자로 돌아간다 — 남겨 두면
+        /// 에디터 메뉴로 돌린 다음 순회가 서버에 진행을 보낸다.
+        /// </summary>
+        [Test]
+        public void ScanEvidence_ReportsEachSceneAndUploadStep()
+        {
+            var progress = new RecordingProgress();
+            var executor = Executor(new WalkingEvidenceScan(), new FakeEvidenceUploader(new EvidenceUpload()), progress);
+
+            Run(executor);
+
+            Assert.That(progress.Reports, Is.EqualTo(new[]
+            {
+                "SCANNING 0/2 Title",
+                "SCANNING 1/2 Stage",
+                "SCANNING 2/2 -",
+                "UPLOADING 0/1 -"
+            }));
+            Assert.That(SceneWalkHooks.SceneOpening, Is.Null);
+        }
+
+        /// <summary>진행을 받을 곳이 없어도 스캔은 그대로 간다.</summary>
+        [Test]
+        public void ScanEvidence_WithoutProgressStillSucceeds()
+        {
+            var uploader = new FakeEvidenceUploader(new EvidenceUpload());
+
+            var result = Run(Executor(new WalkingEvidenceScan(), uploader));
+
+            Assert.That(result.IsSuccess, Is.True);
+            Assert.That(uploader.Attempts, Is.EqualTo(1));
+        }
+
+        /// <summary>
+        /// 순회가 끝난 뒤, 올리기 전에 취소가 도착한 경우. 올라가지 않고 실패가 답에 실린다(ARTEL-1182).
+        /// </summary>
+        [Test]
+        public void ScanEvidence_DoesNotUploadWhatACancelledScanProduced()
+        {
+            SceneWalkHooks.RequestCancel();
+
+            try
+            {
+                var uploader = new FakeEvidenceUploader();
+                var scanned = new ScannedEvidence { Document = new byte[] { 1 }, SceneCount = 1 };
+                var result = Run(Executor(new FakeEvidenceScan(scanned), uploader));
+
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(result.Error, Does.Contain("cancelled"));
+                Assert.That(uploader.Attempts, Is.EqualTo(0));
+            }
+            finally
+            {
+                SceneWalkHooks.ClearCancel();
+            }
+        }
+
+        /// <summary>
+        /// 올리는 도중에 취소가 도착한 경우. 올라간 것은 그대로지만 성공으로 답하지 않는다 — 성공이라고 하면 서버가
+        /// 취소된 스캔을 적재한다.
+        /// </summary>
+        [Test]
+        public void ScanEvidence_DoesNotReportSuccessWhenCancelArrivesWhileUploading()
+        {
+            var uploader = new CancellingEvidenceUploader();
+            var scanned = new ScannedEvidence { Document = new byte[] { 1 }, SceneCount = 1 };
+
+            try
+            {
+                var result = Run(Executor(new FakeEvidenceScan(scanned), uploader));
+
+                Assert.That(result.IsSuccess, Is.False);
+                Assert.That(result.Error, Does.Contain("cancelled"));
+                Assert.That(uploader.Attempts, Is.EqualTo(1));
+            }
+            finally
+            {
+                SceneWalkHooks.ClearCancel();
+            }
+        }
+
         // --- helpers ---
 
-        private static ActionExecutor Executor(IEvidenceScan scan, IEvidenceUploader uploader)
+        private static ActionExecutor Executor(
+            IEvidenceScan scan, IEvidenceUploader uploader, IEvidenceScanProgress progress = null)
         {
             var scanner = new SceneScanner();
             scanner.Scan();
@@ -122,7 +206,8 @@ namespace Artel.Tests.Evidence
                 null,
                 new PointerEventDispatcher(),
                 evidenceScan: scan,
-                evidenceUploader: uploader);
+                evidenceUploader: uploader,
+                scanProgress: progress);
         }
 
         private static ActionResultDto Run(ActionExecutor executor)
@@ -140,6 +225,53 @@ namespace Artel.Tests.Evidence
                 {
                     Drain(nested);
                 }
+            }
+        }
+
+        /// <summary>한 걸음 올리고 나서 취소가 도착한 척한다.</summary>
+        private sealed class CancellingEvidenceUploader : IEvidenceUploader
+        {
+            public int Attempts;
+
+            public IEnumerator Upload(
+                byte[] document,
+                IReadOnlyList<SceneThumbnail> thumbnails,
+                Action<EvidenceUpload> completed,
+                Action<int, int> stepped = null)
+            {
+                Attempts++;
+                SceneWalkHooks.RequestCancel();
+                completed(new EvidenceUpload
+                {
+                    ObjectKey = "k",
+                    EvidenceDigest = "d",
+                    ByteSize = 1,
+                    SchemaVersion = 1
+                });
+                yield break;
+            }
+        }
+
+        private sealed class RecordingProgress : IEvidenceScanProgress
+        {
+            public readonly List<string> Reports = new List<string>();
+
+            public void Report(string stage, int done, int total, string scene)
+            {
+                Reports.Add(stage + " " + done + "/" + total + " " + (scene ?? "-"));
+            }
+        }
+
+        /// <summary>씬을 셋 여는 척하는 스캔. 순회가 하듯 hook 을 부른다.</summary>
+        private sealed class WalkingEvidenceScan : IEvidenceScan
+        {
+            public IEnumerator Run(Action<ScannedEvidence> completed)
+            {
+                SceneWalkHooks.SceneOpening?.Invoke(0, 2, "Title");
+                SceneWalkHooks.SceneOpening?.Invoke(1, 2, "Stage");
+                SceneWalkHooks.SceneOpening?.Invoke(2, 2, null);
+                completed(new ScannedEvidence { Document = new byte[] { 1 }, SceneCount = 2 });
+                yield break;
             }
         }
 
@@ -176,10 +308,16 @@ namespace Artel.Tests.Evidence
             public IEnumerator Upload(
                 byte[] document,
                 System.Collections.Generic.IReadOnlyList<SceneThumbnail> thumbnails,
-                Action<EvidenceUpload> completed)
+                Action<EvidenceUpload> completed,
+                Action<int, int> stepped = null)
             {
                 Attempts++;
                 Thumbnails = thumbnails;
+                if (stepped != null)
+                {
+                    stepped(0, 1);
+                }
+
                 completed(upload);
                 yield break;
             }

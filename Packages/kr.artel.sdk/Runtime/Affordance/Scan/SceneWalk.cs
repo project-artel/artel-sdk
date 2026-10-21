@@ -53,6 +53,9 @@ namespace Artel.Affordances.Scan
 
         private IEnumerator Visit()
         {
+            // 돌지 않는 동안 도착한 취소가 남아 이 순회를 첫 씬에서 죽이지 않게, 시작할 때 지운다.
+            SceneWalkHooks.ClearCancel();
+
             var count = SceneManager.sceneCountInBuildSettings;
             var addressed = Addressed();
 
@@ -77,19 +80,39 @@ namespace Artel.Affordances.Scan
             // 게임을 되돌려 놓을 자리. 씬은 다른 폴더의 다른 씬과 이름을 나눠 가질 수 있으므로 빌드 인덱스로 잡는다.
             var origin = SceneManager.GetActiveScene().buildIndex;
 
+            // 빌드 설정 씬과 주소로 된 씬을 한 줄로 센다. 바깥에서 보면 둘 다 "열 씬" 이다.
+            var total = count + addressed.Count;
+
             for (var index = 0; index < count; index++)
             {
+                if (SceneWalkHooks.CancelRequested)
+                {
+                    yield return Abandon(origin);
+                    yield break;
+                }
+
                 Debug.Log("[Artel] Walking scene " + (index + 1) + " of " + count + ".");
+                SceneWalkHooks.OnSceneOpening(index, total,
+                    System.IO.Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(index)));
                 strays.Capture();
                 yield return Read(index);
             }
 
             for (var index = 0; index < addressed.Count; index++)
             {
+                if (SceneWalkHooks.CancelRequested)
+                {
+                    yield return Abandon(origin);
+                    yield break;
+                }
+
                 Debug.Log("[Artel] Walking addressed scene " + (index + 1) + " of " + addressed.Count + ".");
+                SceneWalkHooks.OnSceneOpening(count + index, total, addressed[index]);
                 strays.Capture();
                 yield return Read(addressed[index]);
             }
+
+            SceneWalkHooks.OnSceneOpening(total, total, null);
 
             if (origin >= 0)
             {
@@ -257,6 +280,25 @@ namespace Artel.Affordances.Scan
             {
                 yield return null;
             }
+        }
+
+        /// <summary>
+        /// 멈추라는 말을 듣고 그만둔다. 게임을 원래 씬으로 돌려놓고 끝낸다(ARTEL-1182).
+        /// </summary>
+        /// <remarks>
+        /// 근거 문서를 저장하지 않는다. 반쯤 돈 순회의 문서는 "이 게임에 씬이 이것뿐" 이라고 말하는 것과 같아서, 적재되면
+        /// 지도에서 나머지 씬이 사라진다. 서버에는 실패로 답하고 아무것도 안 남기는 쪽이 맞다.
+        /// </remarks>
+        private IEnumerator Abandon(int origin)
+        {
+            Debug.Log("[Artel] Walk cancelled. Returning to the scene it started from.");
+
+            if (origin >= 0)
+            {
+                yield return Load(origin);
+            }
+
+            Finish();
         }
 
         private void Finish()

@@ -40,8 +40,12 @@ namespace Artel.Evidence
     internal interface IEvidenceUploader
     {
         /// <param name="thumbnails">씬 대표 이미지들. null 이거나 비어 있으면 캡처 없이 등록한다.</param>
+        /// <param name="stepped">걸음 하나를 시작할 때마다 (앞서 끝낸 걸음 수, 걸음 전부) 로 부른다. null 이면 안 부른다.</param>
         IEnumerator Upload(
-            byte[] document, IReadOnlyList<SceneThumbnail> thumbnails, Action<EvidenceUpload> completed);
+            byte[] document,
+            IReadOnlyList<SceneThumbnail> thumbnails,
+            Action<EvidenceUpload> completed,
+            Action<int, int> stepped = null);
     }
 
     /// <summary>
@@ -78,8 +82,14 @@ namespace Artel.Evidence
             this.gameBuildId = gameBuildId ?? throw new ArgumentNullException(nameof(gameBuildId));
         }
 
+        /// <summary>티켓 · PUT · 화면 · 등록. 문서가 커서 PUT 이 길어도 도넛이 멈춰 보이지 않게 걸음마다 알린다.</summary>
+        private const int UploadSteps = 4;
+
         public IEnumerator Upload(
-            byte[] document, IReadOnlyList<SceneThumbnail> thumbnails, Action<EvidenceUpload> completed)
+            byte[] document,
+            IReadOnlyList<SceneThumbnail> thumbnails,
+            Action<EvidenceUpload> completed,
+            Action<int, int> stepped = null)
         {
             if (completed == null)
             {
@@ -114,6 +124,7 @@ namespace Artel.Evidence
             EvidenceUploadTicketResponseDto ticket = null;
             string failure = null;
 
+            Step(stepped, 0);
             using (var ticketRequest = CreateTicketRequest(sdkToken, registeredBuildId, document.LongLength))
             {
                 yield return ticketRequest.SendWebRequest();
@@ -139,6 +150,7 @@ namespace Artel.Evidence
                 yield break;
             }
 
+            Step(stepped, 1);
             using (var put = CreatePutRequest(ticket, document))
             {
                 yield return put.SendWebRequest();
@@ -152,11 +164,13 @@ namespace Artel.Evidence
 
             // 문서가 스토리지에 앉은 뒤, 등록 전. 캡처의 objectKey 는 등록 body 에 실려야 하므로 그 전에 올라가 있어야 하고,
             // 등록보다 앞서야 실패했을 때 아무것도 붙지 않은 상태로 끝난다.
+            Step(stepped, 2);
             var captures = new List<SceneCaptureRegistrationDto>();
             yield return UploadThumbnails(sdkToken, registeredBuildId, thumbnails, captures);
 
             RegisterEvidenceDocumentResponseDto registration = null;
 
+            Step(stepped, 3);
             using (var register = CreateRegisterRequest(sdkToken, registeredBuildId, ticket.ObjectKey, captures))
             {
                 yield return register.SendWebRequest();
@@ -194,6 +208,24 @@ namespace Artel.Evidence
                 SchemaVersion = registration.SchemaVersion,
                 AlreadyRegistered = registration.AlreadyRegistered
             });
+        }
+
+        private static void Step(Action<int, int> stepped, int done)
+        {
+            if (stepped == null)
+            {
+                return;
+            }
+
+            try
+            {
+                stepped(done, UploadSteps);
+            }
+            catch (Exception exception)
+            {
+                // 알림이 터져도 업로드는 간다.
+                UnityEngine.Debug.LogWarning("[Artel] An upload progress callback threw and was skipped: " + exception.Message);
+            }
         }
 
         private UnityWebRequest CreateTicketRequest(

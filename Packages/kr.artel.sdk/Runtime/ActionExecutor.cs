@@ -45,6 +45,7 @@ namespace Artel
         /// <summary>원격 스캔 명령이 부르는 두 이음매. 이것들 없이 만들어진 실행기에서는 null 이고, 그러면 그 액션은 거절된다.</summary>
         private readonly IEvidenceScan evidenceScan;
         private readonly IEvidenceUploader evidenceUploader;
+        private readonly IEvidenceScanProgress scanProgress;
 
         /// <summary>
         /// 게임이 등록한 cheat 와 behavior 를 부르는 네 action. 출시 빌드에서는 그 네 action 을 거절하는 껍데기다.
@@ -75,7 +76,8 @@ namespace Artel
             IReadingChannel readings = null,
             IEvidenceScan evidenceScan = null,
             IEvidenceUploader evidenceUploader = null,
-            GameFunctionActions gameFunctions = null)
+            GameFunctionActions gameFunctions = null,
+            IEvidenceScanProgress scanProgress = null)
         {
             this.gameFunctions = gameFunctions ?? new GameFunctionActions();
             this.readings = readings;
@@ -87,6 +89,7 @@ namespace Artel
             defaultUploader = uploader;
             this.evidenceScan = evidenceScan;
             this.evidenceUploader = evidenceUploader;
+            this.scanProgress = scanProgress;
 
             var startupScene = SceneManager.GetActiveScene();
             startupSceneBuildIndex = startupScene.buildIndex;
@@ -760,18 +763,57 @@ namespace Artel
             }
 
             var scanned = default(ScannedEvidence);
-            yield return evidenceScan.Run(result => scanned = result);
+            // 순회가 씬을 열 때마다 서버에 알린다(ARTEL-1177). 이 스캔 동안만 걸고 어떻게 끝나든 앞 구독자로 돌려놓는다.
+            var previousOpening = SceneWalkHooks.SceneOpening;
+
+            if (scanProgress != null)
+            {
+                SceneWalkHooks.SceneOpening = (done, total, scene) =>
+                    scanProgress.Report(WebSocketEvidenceScanProgress.Scanning, done, total, scene);
+            }
+
+            try
+            {
+                yield return evidenceScan.Run(result => scanned = result);
+            }
+            finally
+            {
+                SceneWalkHooks.SceneOpening = previousOpening;
+            }
             if (!scanned.IsSuccess)
             {
                 completed(ActionResultDto.Failure(actionId, ScanEvidence, scanned.Error));
                 yield break;
             }
 
+            // 순회는 끝났는데 그 사이 멈추라는 말이 왔다. 올리기 전에 그만둔다(ARTEL-1182).
+            if (SceneWalkHooks.CancelRequested)
+            {
+                completed(ActionResultDto.Failure(
+                    actionId, ScanEvidence, "cancelled: the scan was stopped before the upload started."));
+                yield break;
+            }
+
             var upload = default(EvidenceUpload);
-            yield return evidenceUploader.Upload(scanned.Document, scanned.Thumbnails, uploaded => upload = uploaded);
+            yield return evidenceUploader.Upload(
+                scanned.Document,
+                scanned.Thumbnails,
+                uploaded => upload = uploaded,
+                scanProgress == null
+                    ? (Action<int, int>)null
+                    : (done, total) => scanProgress.Report(WebSocketEvidenceScanProgress.Uploading, done, total, null));
             if (!upload.IsSuccess)
             {
                 completed(ActionResultDto.Failure(actionId, ScanEvidence, upload.Error));
+                yield break;
+            }
+
+            // 올리는 동안 멈추라는 말이 왔다. 올라간 것은 그대로 두되 성공으로 답하지 않는다 — 성공이라고 하면 서버가
+            // 취소된 스캔을 적재한다. 걸음 사이에서 끊을 수 없어 여기가 가장 이른 자리다.
+            if (SceneWalkHooks.CancelRequested)
+            {
+                completed(ActionResultDto.Failure(
+                    actionId, ScanEvidence, "cancelled: the scan was stopped while the evidence was uploading."));
                 yield break;
             }
 
