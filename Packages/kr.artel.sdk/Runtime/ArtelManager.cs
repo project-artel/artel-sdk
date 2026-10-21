@@ -130,29 +130,21 @@ namespace Artel
         }
 
         /// <summary>
-        /// 실행 인자와 <c>ARTEL_SDK_TOKEN</c> 이 실어 온 세션을 저장소에 넣는다 (ARTEL-787).
+        /// 실행 인자를 읽고 종료 전용 로그아웃을 처리한다.
+        /// 토큰은 매니저의 Awake에서 실제 서버 주소를 정한 다음 저장한다.
         /// </summary>
-        /// <remarks>
-        /// 무인 실행에는 오버레이를 누를 사람이 없으므로 로그인·프로젝트 선택·로그아웃이 인자로
-        /// 들어와야 한다.
-        ///
-        /// <c>BeforeSceneLoad</c> 인 것이 요점이다. 어떤 매니저의 <c>Awake</c> 보다도 먼저 돌기
-        /// 때문에, 씬이 들고 온 매니저와 <see cref="SpawnInDevelopmentBuilds"/> 가 띄운 매니저가
-        /// 똑같이 주입된 토큰과 프로젝트를 본다. README 는 씬에 매니저를 놓으라고 안내하므로,
-        /// 이 자리가 <see cref="SpawnInDevelopmentBuilds"/> 안이었다면 안내를 따른 게임은
-        /// 명령행으로 로그인할 길이 아예 없었다.
-        ///
-        /// <c>-artel-logout</c> 이 토큰·프로젝트보다 먼저 처리되는 것은
-        /// <see cref="ArtelLaunchArguments.InstallSession"/> 안에서 지킨다. 셋 다 여기서 끝나므로
-        /// 매니저가 하나라도 생기기 전에 세션은 이미 제 모습이다.
-        ///
-        /// 인자가 하나도 없으면 아무것도 쓰지 않는다. 그래서 지금까지의 동작이 그대로 남는다.
-        /// </remarks>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void InstallLaunchSession()
         {
             LaunchArguments.LogErrors();
-            LaunchArguments.InstallSession();
+            if (LaunchArguments.ClearsSessionOnly)
+            {
+                var logoutServer = new Server();
+                var savedUrl = PlayerPrefs.GetString(ArtelOwnedPlayerPrefs.ServerUrl, "");
+                if (!string.IsNullOrEmpty(savedUrl)) logoutServer = new Server(savedUrl);
+                LaunchArguments.ConfigureServer(logoutServer);
+                LaunchArguments.InstallSession(logoutServer);
+            }
 
             // -artel-window-label 은 세션이 아니라 이번 실행 하나만의 값이므로
             // ArtelSdkSession 을 거치지 않고 ArtelWindowLabel 에 직접 둔다. 오버레이는
@@ -181,16 +173,10 @@ namespace Artel
         {
             if (instance != null)
             {
-                // 세션은 InstallLaunchSession 이 이미 넣었으므로 이 매니저도 인자로 받은 토큰과
-                // 프로젝트를 쓴다. 닿지 않는 것은 -artel-server 하나다 — 씬이 들고 온 매니저는
-                // 자기 Server 를 직렬화해 갖고 있고, 그 설정이 이기는 것이 이 early return 의
-                // 목적이다. 그 게임을 다른 오케스트레이션으로 붙이려면 인스펙터의 Server 를
-                // 채워야 한다. 인자로 서버까지 정하려면 씬에서 매니저를 빼면 된다.
+                // 씬의 매니저가 Awake에서 주소와 인증 상태를 설정했다.
                 return;
             }
 
-            var configuredServer = new Server();
-            LaunchArguments.ConfigureServer(configuredServer);
 
             // 우리가 만든 오브젝트라 통째로 계기다 (ARTEL-698). 사용자가 자기 씬 오브젝트에
             // 매니저를 붙이는 경우(README 가 안내하는 쪽)에는 이 표시를 달 수 없다 — 그 오브젝트는
@@ -198,7 +184,7 @@ namespace Artel
             // 각자 자기 캔버스에 표시를 단다.
             var host = new GameObject("Artel");
             host.AddComponent<Instrument>();
-            host.AddComponent<ArtelManager>().SetServer(configuredServer);
+            host.AddComponent<ArtelManager>();
         }
 #endif
 
@@ -217,6 +203,14 @@ namespace Artel
                 return;
             }
 
+            var savedServerUrl = PlayerPrefs.GetString(ArtelOwnedPlayerPrefs.ServerUrl, "");
+            if (!string.IsNullOrEmpty(savedServerUrl)) server = new Server(savedServerUrl);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            LaunchArguments.ConfigureServer(server);
+            LaunchArguments.InstallSession(server);
+#else
+            ArtelSdkSession.UseServer(server);
+#endif
             instance = this;
             transform.SetParent(null);
             DontDestroyOnLoad(gameObject);
@@ -280,7 +274,7 @@ namespace Artel
                 new CaptureUploader(
                     jsonCodec,
                     () => server,
-                    ArtelSdkSession.LoadToken,
+                    () => ArtelSdkSession.IsFor(server) ? ArtelSdkSession.LoadToken() : string.Empty,
                     ArtelSdkSession.LoadInstanceId),
                 this,
                 // 순회가 씬을 하나씩 띄우는 그 자리에서 화면도 한 장씩 뜬다. 같은 capturer 를 쓰는 이유는 back buffer 를
@@ -290,7 +284,7 @@ namespace Artel
                 new EvidenceUploader(
                     jsonCodec,
                     () => server,
-                    ArtelSdkSession.LoadToken,
+                    () => ArtelSdkSession.IsFor(server) ? ArtelSdkSession.LoadToken() : string.Empty,
                     ArtelSdkSession.LoadGameBuildId));
             frameTimeRecorder = new FrameTimeRecorder();
             frameTimingSampler = new FrameTimingSampler();
@@ -420,7 +414,7 @@ namespace Artel
         {
             if (webSocketTransport == null)
             {
-                if (!ArtelSdkSession.TryLoadToken(out _) ||
+                if (!ArtelSdkSession.IsFor(server) || !ArtelSdkSession.TryLoadToken(out _) ||
                     !ArtelSdkSession.TryLoadInstanceId(out _))
                 {
                     Debug.LogWarning(
@@ -708,14 +702,18 @@ namespace Artel
             BeginDiscovery();
         }
 
+        internal bool CanChangeServer => !processingActions && ownsTransport;
+
         public void SetServer(Server configuredServer)
         {
-            if (webSocketTransport != null)
+            if (webSocketTransport != null || processingActions)
             {
                 throw new InvalidOperationException("Server cannot change after WebSocket transport is configured.");
             }
 
-            server = configuredServer ?? throw new ArgumentNullException(nameof(configuredServer));
+            if (configuredServer == null) throw new ArgumentNullException(nameof(configuredServer));
+            ArtelSdkSession.UseServer(configuredServer);
+            server = new Server(configuredServer.HttpBaseUri.AbsoluteUri);
         }
 
         private void HandleMessage(ArtelWebSocketMessage message)

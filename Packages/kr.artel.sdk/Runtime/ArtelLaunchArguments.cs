@@ -11,11 +11,7 @@ namespace Artel
     /// 실행 인자와 <c>ARTEL_SDK_TOKEN</c> 환경 변수가 실어 온 세션 (ARTEL-787).
     /// </summary>
     /// <remarks>
-    /// 무인 실행에는 오버레이를 누를 사람이 없다. 그래서 로그인·프로젝트 선택·로그아웃을
-    /// 프로세스가 뜰 때 인자로 받는다. <c>ArtelManager.InstallLaunchSession</c> 이 첫 씬이
-    /// 열리기 전에, 그러니까 어떤 매니저의 <c>Awake</c> 보다도 먼저 이 값을 세션에 넣는다.
-    /// 서버 주소만 <c>ArtelManager.SpawnInDevelopmentBuilds</c> 가 자기가 띄우는 매니저에
-    /// 적용한다 — 씬이 들고 온 매니저는 자기 <c>Server</c> 설정이 이긴다.
+    /// 서버 주소를 먼저 정한 뒤 매니저의 Awake에서 해당 서버의 인증 저장소에 적용한다.
     ///
     /// 토큰만 환경 변수로 받는다. 실행 인자는 같은 기계의 다른 사용자가 프로세스 목록에서
     /// 그대로 읽으므로, 명령행에 실은 토큰은 곧 새어 나간 토큰이다. 같은 이유로 잘못된 값을
@@ -30,7 +26,6 @@ namespace Artel
 
         public const string ServerArgument = "-artel-server";
         public const string SecureArgument = "-artel-secure";
-        public const string FrontendArgument = "-artel-frontend";
         public const string ProjectArgument = "-artel-project";
         public const string LogoutArgument = "-artel-logout";
         public const string WindowLabelArgument = "-artel-window-label";
@@ -84,9 +79,6 @@ namespace Artel
 
         /// <summary><c>-artel-server</c> 의 port. 없거나 값이 잘못됐으면 null.</summary>
         public int? Port { get; private set; }
-
-        /// <summary><c>-artel-frontend</c> 가 정한 로그인 중계 페이지 주소. 없으면 null.</summary>
-        public string FrontendOrigin { get; private set; }
 
         /// <summary><c>-artel-window-label</c> 이 정한 값. 없으면 null.</summary>
         public string WindowLabel { get; private set; }
@@ -157,16 +149,6 @@ namespace Artel
                     continue;
                 }
 
-                if (Matches(argument, FrontendArgument))
-                {
-                    if (parsed.TryTakeValue(commandLineArguments, FrontendArgument, ref index, out var value))
-                    {
-                        parsed.ReadFrontend(value);
-                    }
-
-                    continue;
-                }
-
                 if (Matches(argument, ProjectArgument))
                 {
                     if (parsed.TryTakeValue(commandLineArguments, ProjectArgument, ref index, out var value))
@@ -211,8 +193,14 @@ namespace Artel
         /// 저장은 <see cref="ArtelSdkSession"/> 만 거친다. PlayerPrefs 나 보안 저장소에 직접
         /// 쓰면 오버레이가 쓰는 길과 두 갈래가 되고, 키 하나가 어긋나도 드러나지 않는다.
         /// </remarks>
-        public void InstallSession()
+        public void InstallSession(Server server = null)
         {
+            if (server == null)
+            {
+                server = new Server();
+                ConfigureServer(server);
+            }
+            ArtelSdkSession.UseServer(server);
             if (ClearsSession)
             {
                 ArtelSdkSession.Clear();
@@ -220,6 +208,7 @@ namespace Artel
 
             if (!string.IsNullOrWhiteSpace(Token))
             {
+                if (ArtelSdkSession.LoadToken() != Token) ArtelSdkSession.Clear();
                 ArtelSdkSession.SaveToken(Token, UnknownExpiresAt, TokenSourceDisplayName);
             }
 
@@ -257,7 +246,7 @@ namespace Artel
                 throw new ArgumentNullException(nameof(server));
             }
 
-            server.OverrideEndpoints(Secure, Host, Port, FrontendOrigin);
+            server.OverrideEndpoints(Secure, Host, Port);
         }
 
         // 대소문자를 가리지 않는다. 인자 이름이 조금 달라 조용히 무시되는 것이 이 기능의 가장
@@ -294,6 +283,21 @@ namespace Artel
         // 인자와 기본값에 반씩 걸린다.
         private void ReadServer(string value)
         {
+            if (value.Contains("://"))
+            {
+                try
+                {
+                    var address = Server.NormalizeUrl(value);
+                    Host = address.Host;
+                    Port = address.Port;
+                    Secure = address.Scheme == "https";
+                }
+                catch (ArgumentException)
+                {
+                    errors.Add(ServerArgument + " 는 경로 없는 HTTP(S) 서버 주소여야 합니다.");
+                }
+                return;
+            }
             var separator = value.LastIndexOf(':');
             if (separator <= 0 || separator == value.Length - 1)
             {
@@ -327,20 +331,6 @@ namespace Artel
             }
 
             Secure = parsedSecure;
-        }
-
-        // scheme 까지 본다. `home.stage.artel.kr` 처럼 scheme 없이 적은 값은 Uri 가 절대 주소로
-        // 받아 주지 않고, 받아 준다 해도 로그인 중계 페이지를 열 수 없다.
-        private void ReadFrontend(string value)
-        {
-            if (!Uri.TryCreate(value, UriKind.Absolute, out var parsedOrigin)
-                || (parsedOrigin.Scheme != Uri.UriSchemeHttp && parsedOrigin.Scheme != Uri.UriSchemeHttps))
-            {
-                errors.Add(FrontendArgument + " 는 http 나 https 로 시작하는 절대 주소여야 합니다: " + value);
-                return;
-            }
-
-            FrontendOrigin = value;
         }
 
         // 변수가 없는 것과 비어 있는 것은 다르다. 없는 것은 인자를 주지 않은 실행이고, 비어 있는

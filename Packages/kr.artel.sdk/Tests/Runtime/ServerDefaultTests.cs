@@ -25,13 +25,6 @@ namespace Artel.Tests
             Assert.That(server.WebSocketBaseUri, Is.Not.Null);
         }
 
-        [Test]
-        public void 기본값만으로_로그인_중계_주소가_선다()
-        {
-            // 이 값은 오케스트레이션 호스트에서 유도할 수 없다 — 중계 페이지는 웹 콘솔에 있고
-            // 호스트도 포트도 다르다. 그래서 따로 기본값을 갖는다.
-            Assert.That(new Server().FrontendBaseUri, Is.Not.Null);
-        }
 
         [Test]
         public void 기본값이_로컬을_가리키지_않는다()
@@ -41,7 +34,6 @@ namespace Artel.Tests
             var server = new Server();
 
             Assert.That(server.HttpBaseUri.Host, Is.Not.EqualTo("localhost"));
-            Assert.That(server.FrontendBaseUri.Host, Is.Not.EqualTo("localhost"));
         }
 
         [Test]

@@ -44,7 +44,6 @@ namespace Artel.Tests
             Assert.That(parsed.Secure, Is.Null);
             Assert.That(parsed.Host, Is.Null);
             Assert.That(parsed.Port, Is.Null);
-            Assert.That(parsed.FrontendOrigin, Is.Null);
             Assert.That(parsed.Errors, Is.Empty);
         }
 
@@ -127,16 +126,6 @@ namespace Artel.Tests
             Assert.That(parsed.Errors[0], Does.Contain("-artel-secure"));
         }
 
-        [Test]
-        public void frontend_가_절대_주소가_아니면_오류를_남긴다()
-        {
-            var parsed = ArtelLaunchArguments.Parse(
-                new[] { "-artel-frontend", "home.stage.artel.kr" }, null);
-
-            Assert.That(parsed.FrontendOrigin, Is.Null);
-            Assert.That(parsed.Errors.Count, Is.EqualTo(1));
-            Assert.That(parsed.Errors[0], Does.Contain("-artel-frontend"));
-        }
 
         [Test]
         public void 값이_빠진_인자는_오류를_남긴다()
@@ -222,23 +211,8 @@ namespace Artel.Tests
             Assert.That(server.HttpBaseUri.Scheme, Is.EqualTo("http"));
             Assert.That(server.WebSocketBaseUri.Scheme, Is.EqualTo("ws"));
 
-            // -artel-frontend 를 주지 않았으므로 로그인 중계 주소는 기본값이 남는다.
-            Assert.That(server.FrontendBaseUri, Is.Not.Null);
         }
 
-        [Test]
-        public void frontend_만_주면_오케스트레이션_주소는_기본값이_남는다()
-        {
-            var defaultServer = new Server();
-            var server = new Server();
-
-            ArtelLaunchArguments.Parse(
-                    new[] { "-artel-frontend", "http://localhost:5173" }, null)
-                .ConfigureServer(server);
-
-            Assert.That(server.FrontendBaseUri, Is.EqualTo(new Uri("http://localhost:5173")));
-            Assert.That(server.HttpBaseUri, Is.EqualTo(defaultServer.HttpBaseUri));
-        }
 
         [Test]
         public void 인자가_없으면_서버가_그대로다()
@@ -249,7 +223,6 @@ namespace Artel.Tests
             ArtelLaunchArguments.Parse(new string[0], null).ConfigureServer(server);
 
             Assert.That(server.HttpBaseUri, Is.EqualTo(defaultServer.HttpBaseUri));
-            Assert.That(server.FrontendBaseUri, Is.EqualTo(defaultServer.FrontendBaseUri));
         }
 
         [Test]

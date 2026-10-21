@@ -20,13 +20,28 @@ https://github.com/project-artel/artel-sdk.git?path=/Packages/kr.artel.sdk
 https://github.com/project-artel/artel-sdk.git?path=/Packages/kr.artel.sdk#develop
 ```
 
+## 서버 주소 설정
+
+로그인 화면의 **서버 주소**에 HTTP(S) 주소를 입력하고 **적용**을 누른다.
+연결 후에는 고급 메뉴의 **서버 변경**에서 바꾼다. 기존 연결을 종료하고 새 서버의 인증 상태를 불러온다.
+주소는 origin만 지원한다. 예: `https://artel.example.com`, `http://localhost:8080`.
+경로·query·fragment·사용자 정보는 넣지 않는다. Inspector의 `Server URL`로도 설정할 수 있다.
+
+SDK는 console 주소를 받지 않는다. 서버 운영자가 `ARTEL_HOME_URL`에 console 주소를 설정한다.
+SDK는 `/api/auth/sdk/login`을 열고 서버는 console의 `/sdk-login`으로 redirect한다.
+console 자체의 API 설정도 같은 서버를 가리켜야 한다.
+
+주소 우선순위는 실행 인자 → 화면에서 저장한 주소 → Inspector 설정 → 기본 서버다.
+토큰·refresh token·표시 이름·프로젝트·인스턴스·빌드는 서버별로 보관하며,
+다른 서버에서 로그아웃해도 원래 서버의 로그인은 남는다. 기존 버전의 서버 정보 없는 토큰은
+재사용하지 않으므로 업데이트 후 한 번 다시 로그인해야 한다.
+
 ## 실행 인자
 
 | 인자 | 값 | 무엇 |
 | --- | --- | --- |
-| `-artel-server` | `host:port` | orchestration 주소 |
-| `-artel-secure` | `true` / `false` | `https`·`wss` 인지 |
-| `-artel-frontend` | `http`·`https` 절대 주소 | 로그인 중계 페이지 origin |
+| `-artel-server` | `http://localhost:8080` 같은 HTTP(S) URL | 연결할 서버 주소 |
+| `-artel-secure` | `true` / `false` | 이전 `host:port` 인자와 함께 쓰는 호환 옵션 |
 | `-artel-project` | project id | 이번 실행이 쓸 프로젝트 |
 | `-artel-logout` | 없음 | 저장된 세션을 지움 |
 | `-artel-window-label` | 문자열 | 오버레이에 그릴 이번 실행의 라벨 |
@@ -36,8 +51,8 @@ SDK 토큰은 인자가 아니라 환경 변수 `ARTEL_SDK_TOKEN` 으로 받음.
 | 규칙 | 이유 |
 | --- | --- |
 | 토큰은 환경 변수로만 받고 인자로는 받지 않음 | 실행 인자는 같은 기계의 다른 사용자가 프로세스 목록에서 그대로 읽음 |
-| 씬에 놓인 매니저가 `-artel-server` 보다 이김 | 매니저가 자기 `Server` 를 직렬화해 갖고 있음. 인자로 서버를 정하려면 씬에서 매니저를 빼야 함 |
-| 토큰과 프로젝트는 매니저와 무관 | 그 둘을 넣는 훅이 `BeforeSceneLoad` 라 어떤 매니저보다도 먼저 돌고, 두 매니저가 똑같이 그 값을 봄 |
+| 명시한 `-artel-server`가 우선 | 저장된 주소와 씬 설정을 덮어씀 |
+| 토큰과 프로젝트는 서버별로 저장 | 매니저의 `Awake`에서 실제 서버를 정한 뒤 적용 |
 | `-artel-logout` 하나만 준 실행은 세션을 지우고 끝남 | `Application.Quit(0)` |
 | 토큰이나 프로젝트를 함께 준 실행은 게임을 이어 감 | 계정을 바꾸러 온 실행 |
 
