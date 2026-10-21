@@ -307,7 +307,9 @@ namespace Artel
                     () => server,
                     ArtelSdkSession.LoadToken,
                     ArtelSdkSession.LoadGameBuildId),
-                gameFunctions);
+                gameFunctions,
+                // 스캔 진행은 액션 큐 밖에서 지금 연결로 바로 나간다(ARTEL-1177).
+                new WebSocketEvidenceScanProgress(jsonCodec, () => webSocketTransport));
             frameTimeRecorder = new FrameTimeRecorder();
             frameTimingSampler = new FrameTimingSampler();
 

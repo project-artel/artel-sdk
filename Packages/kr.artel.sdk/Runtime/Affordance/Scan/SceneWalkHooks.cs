@@ -25,6 +25,36 @@ namespace Artel.Affordances.Scan
         /// </summary>
         public static Func<string, IEnumerator> SceneRead;
 
+        /// <summary>
+        /// 순회가 씬 하나를 열기 직전에 부른다(ARTEL-1177). 인자는 앞서 연 씬 수 · 열 씬 전부 · 이제 열 씬의 이름이다.
+        /// 다 돈 뒤에 한 번 더, 두 수가 같고 이름이 null 인 채로 부른다.
+        /// </summary>
+        /// <remarks>
+        /// 큰 게임의 순회는 수 분이 걸리고, 그동안 서버는 결과 한 번만 받는다. 사람이 얼마나 남았는지 알려면 게임이 도중에
+        /// 알려야 하는데, 몇 번째인지를 아는 것은 순회뿐이다. 값만 넘기고 기다리지 않는다 — 보내는 쪽이 순회를 늦추면 안 된다.
+        /// </remarks>
+        public static Action<int, int, string> SceneOpening;
+
+        internal static void OnSceneOpening(int done, int total, string sceneName)
+        {
+            var hook = SceneOpening;
+
+            if (hook == null)
+            {
+                return;
+            }
+
+            try
+            {
+                hook(done, total, sceneName);
+            }
+            catch (Exception exception)
+            {
+                // 진행 알림은 곁다리다. 터져도 순회는 계속 간다.
+                UnityEngine.Debug.LogWarning("[Artel] A scene-opening hook threw and was skipped: " + exception.Message);
+            }
+        }
+
         /// <summary>순회가 이 자리에서 쓰는 코루틴. 구독자가 없거나 아무것도 하지 않으면 null.</summary>
         internal static IEnumerator OnSceneRead(string sceneName)
         {

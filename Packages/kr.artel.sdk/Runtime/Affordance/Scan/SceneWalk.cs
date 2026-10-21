@@ -77,9 +77,14 @@ namespace Artel.Affordances.Scan
             // 게임을 되돌려 놓을 자리. 씬은 다른 폴더의 다른 씬과 이름을 나눠 가질 수 있으므로 빌드 인덱스로 잡는다.
             var origin = SceneManager.GetActiveScene().buildIndex;
 
+            // 빌드 설정 씬과 주소로 된 씬을 한 줄로 센다. 바깥에서 보면 둘 다 "열 씬" 이다.
+            var total = count + addressed.Count;
+
             for (var index = 0; index < count; index++)
             {
                 Debug.Log("[Artel] Walking scene " + (index + 1) + " of " + count + ".");
+                SceneWalkHooks.OnSceneOpening(index, total,
+                    System.IO.Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(index)));
                 strays.Capture();
                 yield return Read(index);
             }
@@ -87,9 +92,12 @@ namespace Artel.Affordances.Scan
             for (var index = 0; index < addressed.Count; index++)
             {
                 Debug.Log("[Artel] Walking addressed scene " + (index + 1) + " of " + addressed.Count + ".");
+                SceneWalkHooks.OnSceneOpening(count + index, total, addressed[index]);
                 strays.Capture();
                 yield return Read(addressed[index]);
             }
+
+            SceneWalkHooks.OnSceneOpening(total, total, null);
 
             if (origin >= 0)
             {
