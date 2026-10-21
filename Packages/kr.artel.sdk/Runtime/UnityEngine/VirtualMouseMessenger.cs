@@ -180,7 +180,7 @@ namespace Artel
         /// not told anything.
         /// </summary>
         /// <summary>읽는 사람이 pulse 에서 본 이름과 맞출 수 있도록 계층 경로로 적는다.</summary>
-        private static string Path(GameObject target)
+        internal static string Path(GameObject target)
         {
             var name = target.name;
             for (var parent = target.transform.parent; parent != null; parent = parent.parent)

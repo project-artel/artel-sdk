@@ -628,6 +628,108 @@ Current limits:
 - HTTP URL: `http://127.0.0.1:17310/`
 - WebSocket URL: `ws://127.0.0.1:17311/ws`
 
+## Cheats and behaviors for the QA agent
+
+Mark a method with `[ArtelCheat]` to let the QA agent call it through `invoke_cheat`, or with
+`[ArtelBehavior]` to let it start a routine that runs every frame until it is stopped:
+
+```csharp
+public static class DebugCheats
+{
+    [ArtelCheat("Adds gold to the player's wallet.", when: nameof(HasWallet))]
+    static string GiveGold([CheatRange(1, 1_000_000)] int amount)
+    {
+        Wallet.Add(amount);
+        return $"gold={Wallet.Gold}";
+    }
+
+    // null means available; any other string is the reason it is not.
+    static string HasWallet() => Wallet.Instance != null ? null : "no wallet loaded";
+}
+
+public class PlayerController : MonoBehaviour
+{
+    [ArtelBehavior("Attacks the nearest enemy until none are in range.", group: "combat")]
+    IEnumerator AutoAttack([CheatRange(1, 20)] float range, ArtelBehaviorContext context)
+    {
+        try
+        {
+            while (true)
+            {
+                var enemy = Enemies.Nearest(transform.position, range);
+                if (enemy == null)
+                {
+                    context.Complete("no enemy in range");
+                    yield break;
+                }
+
+                Attack(enemy);
+                context.Report($"target={enemy.name}");
+                yield return null;
+            }
+        }
+        finally
+        {
+            StopAttackAnimation(); // runs however the behavior ends
+        }
+    }
+}
+```
+
+- Parameters may be `int`, `float`, `bool`, `string` or an enum. A cheat returns `void`, `string` or
+  `IEnumerator`; a behavior returns `IEnumerator`. Anything else is a compile error.
+- Names are the method name in snake_case (`GiveGold` → `give_gold`) unless `name:` overrides it.
+- Instance methods must live on a `MonoBehaviour`; the agent picks the object with a `target`
+  selector when more than one is live.
+- Registration is generated at compile time in the editor and development builds. In a release
+  build the attributes do nothing and the actions are refused.
+- `ArtelCheats.Register` / `Unregister` add and remove cheats at runtime, for cheats built from data.
+
+### Keep the game compiling without the SDK: `ARTEL_GAME_FUNCTIONS`
+
+Wrap every file that uses `[ArtelCheat]`, `[ArtelBehavior]`, `[CheatRange]` or `ArtelBehaviorContext`
+in `#if ARTEL_GAME_FUNCTIONS`:
+
+```csharp
+#if ARTEL_GAME_FUNCTIONS
+using Artel;
+
+public static class DebugCheats
+{
+    // ...
+}
+#endif
+```
+
+That is the only step on the game side. The package owns the define:
+
+- Every time the editor loads scripts, `Artel.GameFunctions.Editor.ArtelDefineSync` adds
+  `ARTEL_GAME_FUNCTIONS` to the scripting define symbols of Standalone, the active build target,
+  and every other build target that already has defines. It writes Player Settings only when the
+  list changes.
+- When the package is removed or changes version through the Package Manager while the editor is
+  open, it removes every `ARTEL_` define before the change is applied, so the wrapped code drops
+  out and the next compile succeeds. The new version, if any, adds its own defines back.
+- An SDK without cheats, or a project without the SDK, never defines it, so the wrapped files are
+  skipped and the game builds.
+
+`ARTEL_` is reserved for this package. On every load it also removes `ARTEL_` defines that this
+version does not know, which a newer version may have left behind. Do not define your own
+`ARTEL_*` symbols; defines without the prefix are never touched.
+
+The define lives in `ProjectSettings/ProjectSettings.asset`, and Unity runs no package code while
+a script has compile errors. Two cases therefore need a manual fix: the SDK removed by editing
+`Packages/manifest.json` with the editor closed, and a committed `ARTEL_GAME_FUNCTIONS` reaching a
+machine whose SDK has no cheats. Delete `ARTEL_GAME_FUNCTIONS` once in **Project Settings > Player >
+Other Settings > Scripting Define Symbols**, or update the SDK.
+
+Games that put this code in their own assembly definition can use the asmdef's **Version
+Defines** (`kr.artel.sdk`) and **Define Constraints** instead; `Assembly-CSharp` has no asmdef, so
+the scripting define is what covers it.
+
+The wire shapes and failure messages are in [`docs/protocol.md`](../../docs/protocol.md); the
+reasoning is in [ADR 0007](../../docs/adr/0007-game-registered-cheats-and-behaviors.md).
+
 ## Running while the window is not focused
 
 **The SDK changes one of the host game's global settings.** From the moment it

@@ -38,6 +38,19 @@ console 자체의 API 설정도 같은 서버를 가리켜야 한다.
 다른 서버에서 로그아웃해도 원래 서버의 로그인은 남는다. 기존 버전의 서버 정보 없는 토큰은
 재사용하지 않으므로 업데이트 후 한 번 다시 로그인해야 한다.
 
+## AI coding agent 로 설치
+
+- Claude Code, Codex, Cursor 같은 AI coding agent 에 [artel-skills](https://github.com/project-artel/artel-skills) 를 설치
+
+```bash
+npx skills add project-artel/artel-skills
+```
+
+- 기본은 현재 프로젝트에만 설치. 모든 프로젝트에 쓰려면 `-g`, skill 하나만 설치하려면 `--skill <name>`
+- `artel-unity-sdk` — 이 패키지 설치, 로그인, 개발 빌드, 등록
+- `artel-cheats` — `[ArtelCheat]` 치트 추가
+- `artel-behaviors` — `[ArtelBehavior]` behavior 추가
+
 ## 실행 인자
 
 | 인자 | 값 | 무엇 |

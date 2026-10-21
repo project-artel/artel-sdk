@@ -46,6 +46,11 @@ namespace Artel
         private readonly IEvidenceScan evidenceScan;
         private readonly IEvidenceUploader evidenceUploader;
 
+        /// <summary>
+        /// 게임이 등록한 cheat 와 behavior 를 부르는 네 action. 출시 빌드에서는 그 네 action 을 거절하는 껍데기다.
+        /// </summary>
+        private readonly GameFunctionActions gameFunctions;
+
         private readonly Action<Vector2> cursorMoved;
         private readonly Action<Vector2> pointerMoved;
 
@@ -69,8 +74,10 @@ namespace Artel
             ICaptureUploader uploader = null,
             IReadingChannel readings = null,
             IEvidenceScan evidenceScan = null,
-            IEvidenceUploader evidenceUploader = null)
+            IEvidenceUploader evidenceUploader = null,
+            GameFunctionActions gameFunctions = null)
         {
+            this.gameFunctions = gameFunctions ?? new GameFunctionActions();
             this.readings = readings;
             this.scanner = scanner;
             this.cursorController = cursorController;
@@ -182,6 +189,22 @@ namespace Artel
 
                 case "scan_evidence":
                     yield return ExecuteScanEvidence(actionId, completed);
+                    yield break;
+
+                case GameFunctionActions.InvokeCheatMethod:
+                    yield return gameFunctions.InvokeCheat(actionId, parameters, completed);
+                    yield break;
+
+                case GameFunctionActions.StartBehaviorMethod:
+                    completed(gameFunctions.StartBehavior(actionId, parameters));
+                    yield break;
+
+                case GameFunctionActions.StopBehaviorMethod:
+                    completed(gameFunctions.StopBehavior(actionId, parameters));
+                    yield break;
+
+                case GameFunctionActions.ExtendBehaviorMethod:
+                    completed(gameFunctions.ExtendBehavior(actionId, parameters));
                     yield break;
             }
 
@@ -343,6 +366,7 @@ namespace Artel
             }
 
             ArtelInput.ForgetLastPress();
+            pointerEvents.ForgetLastPress();
             SetButton(button, true);
 
             yield return null;
@@ -362,10 +386,18 @@ namespace Artel
         /// <c>pointerHeldByPerson</c> 이 "빈 곳이었다"와 "사람이 포인터를 도로 가져가 메신저가
         /// 아예 안 돌았다"를 가른다.
         /// </para>
+        /// <para>
+        /// 누름은 uGUI(<see cref="PointerEventDispatcher"/>)와 collider(<c>OnMouse*</c>) 두 길로
+        /// 함께 나간다. 처음에는 collider 쪽만 적어서 Canvas 버튼을 누르면 늘 null 이었고, 받는
+        /// 쪽은 씬을 바꾼 클릭을 빈 곳으로 읽었다(ARTEL-1175). uGUI 가 받은 것을 먼저 적는다 —
+        /// 화면 위에 그려지는 것이 UI 이고, 사람이 누른다고 보는 것도 그것이다.
+        /// </para>
         /// </remarks>
-        private static Dictionary<string, object> PressOutcome()
+        private Dictionary<string, object> PressOutcome()
         {
-            var reached = ArtelInput.LastPressReceiver;
+            var reached = string.IsNullOrEmpty(pointerEvents.LastPressReceiver)
+                ? ArtelInput.LastPressReceiver
+                : pointerEvents.LastPressReceiver;
             return new Dictionary<string, object>
             {
                 { "reached", string.IsNullOrEmpty(reached) ? null : reached },
@@ -532,6 +564,9 @@ namespace Artel
                     startupScenePath));
                 yield break;
             }
+
+            // behavior 는 리로드보다 먼저 끝낸다. 그래야 그 finally 가 아직 살아 있는 씬 위에서 돈다.
+            gameFunctions.EndRun("reset_game");
 
             // A pause and a held button belong to the run, not to the game. Carried across the
             // reload they would hand the fresh scene a frozen clock and a press it never saw begin.
