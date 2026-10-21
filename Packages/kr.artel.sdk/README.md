@@ -11,22 +11,21 @@ Release builds carry none of this. The spawn and the scan are compiled out
 (`#if UNITY_EDITOR || DEVELOPMENT_BUILD`), so a game shipped to players holds no
 subscription and no callback of ours.
 
-Put `ArtelManager` on a scene object only to override where it connects —
-`secure`, `host`, and `port` on its `Server` field, plus `frontendOrigin` for the
-login relay page. A manager the scene carries keeps the spot: the spawn steps
-aside when one already exists. The server builds the matching HTTP and WebSocket
-base URLs (`http`/`ws` or `https`/`wss`). API clients own their endpoint paths.
+기본 서버는 `https://stage-orch.artel.kr`이며 주소 입력 없이 로그인한다.
+다른 서버를 사용하려면 로그인 화면의 **고급 설정**을 열고 **서버 주소**에
+`https://artel.example.com` 또는 `http://localhost:8080`을 입력한 뒤 **적용**을 누른다.
+**ARTEL 서버로 복원**으로 기본 서버를 다시 선택할 수 있다. 고급 메뉴의 **서버 변경**으로 다른 서버를 선택할 수 있다.
+Inspector에서는 `Server URL` 하나를 설정한다. 기존 씬의 `secure`·`host`·`port` 값은
+새 URL이 없을 때 읽으며, HTTP와 WebSocket 주소는 같은 URL에서 만든다.
+경로·query·fragment·사용자 정보가 붙은 URL은 지원하지 않는다.
 
-Registration is authenticated with a **JWT obtained by browser login**. Since
-2026-07-31 there is no instance key to paste. The overlay's login button starts
-`ArtelLoopbackLogin`, which opens a short-lived loopback server and sends the
-browser to `<frontendOrigin>/sdk-login`. That page trades an existing console
-session for a one-time code, and the SDK exchanges that code — with its PKCE
-verifier — at `POST /api/auth/sdk/token` for an SDK token. The session cookie is
-HttpOnly and never reaches a loopback address, which is why the code exchange
-exists; the SDK is a public client with no secret, which is why PKCE replaces
-one. `HttpListener` ships only in the editor and standalone players, so login
-works there and nowhere else.
+console 주소는 서버의 `ARTEL_HOME_URL`에서 관리한다. 로그인 버튼은
+`<server>/api/auth/sdk/login`을 열고 서버가 console의 `/sdk-login`으로 redirect한다.
+기존 loopback callback과 PKCE code 교환은 유지한다. SDK는 console 주소를 저장하지 않는다.
+
+인증 상태는 정규화된 서버 주소별로 분리된다. 다른 서버를 선택하면 그 서버의 토큰과
+프로젝트를 불러오며, 원래 서버로 돌아오면 저장된 로그인을 다시 쓸 수 있다.
+서버 정보가 없는 이전 버전의 로그인은 재사용하지 않으므로 한 번 다시 로그인해야 한다.
 
 The JWT says who you are, not which instance you are. Instance identity is
 carried by `sdkUuid`, the SDK's per-installation UUID. After login the person

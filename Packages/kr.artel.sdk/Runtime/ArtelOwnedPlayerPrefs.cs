@@ -17,6 +17,10 @@ namespace Artel
     /// </remarks>
     internal static class ArtelOwnedPlayerPrefs
     {
+        // 서버 주소와 서버별 저장 키 목록은 게임 설정 초기화 뒤에도 보존한다.
+        public const string ServerUrl = "Artel.ServerUrl";
+        public const string ServerScopes = "Artel.ServerScopes";
+
         /// <summary>ArtelSdkIdentity 가 만드는 이 설치본의 식별자.</summary>
         public const string SdkId = "Artel.SdkId";
 
@@ -43,8 +47,10 @@ namespace Artel
         /// <c>HasKey</c> 가 판정한다 — macOS/Windows 에서는 그냥 없는 키이고,
         /// <c>PlayerPrefs.DeleteAll()</c> 은 Keychain 이나 DPAPI 에 닿지도 못한다.
         /// </remarks>
-        public static readonly IReadOnlyList<string> StringKeys = new[]
+        private static readonly string[] BaseStringKeys = new[]
         {
+            ServerUrl,
+            ServerScopes,
             SdkId,
             SdkTokenSecret,
             SdkTokenExpiresAt,
@@ -55,6 +61,21 @@ namespace Artel
             InstanceId,
             GameBuildId
         };
+
+        public static IReadOnlyList<string> StringKeys
+        {
+            get
+            {
+                var keys = new List<string>(BaseStringKeys);
+                foreach (var scope in PlayerPrefs.GetString(ServerScopes, "").Split(';'))
+                {
+                    if (scope.Length != 64) continue;
+                    foreach (var key in BaseStringKeys)
+                        if (key != SdkId && key != ServerScopes && key != ServerUrl) keys.Add(key + "." + scope);
+                }
+                return keys;
+            }
+        }
 
         /// <summary>정수로 저장되는 키 전부.</summary>
         /// <remarks>
@@ -94,14 +115,15 @@ namespace Artel
         /// </remarks>
         public static void DeleteAllExceptOwn()
         {
-            var stringValues = new string[StringKeys.Count];
-            var hadStringKey = new bool[StringKeys.Count];
-            for (var index = 0; index < StringKeys.Count; index++)
+            var stringKeys = StringKeys;
+            var stringValues = new string[stringKeys.Count];
+            var hadStringKey = new bool[stringKeys.Count];
+            for (var index = 0; index < stringKeys.Count; index++)
             {
-                hadStringKey[index] = PlayerPrefs.HasKey(StringKeys[index]);
+                hadStringKey[index] = PlayerPrefs.HasKey(stringKeys[index]);
                 if (hadStringKey[index])
                 {
-                    stringValues[index] = PlayerPrefs.GetString(StringKeys[index]);
+                    stringValues[index] = PlayerPrefs.GetString(stringKeys[index]);
                 }
             }
 
@@ -118,11 +140,11 @@ namespace Artel
 
             PlayerPrefs.DeleteAll();
 
-            for (var index = 0; index < StringKeys.Count; index++)
+            for (var index = 0; index < stringKeys.Count; index++)
             {
                 if (hadStringKey[index])
                 {
-                    PlayerPrefs.SetString(StringKeys[index], stringValues[index]);
+                    PlayerPrefs.SetString(stringKeys[index], stringValues[index]);
                 }
             }
 

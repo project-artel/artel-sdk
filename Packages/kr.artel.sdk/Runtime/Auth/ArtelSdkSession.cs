@@ -1,5 +1,8 @@
 using System;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using Artel.Domain;
 using UnityEngine;
 
 namespace Artel.Auth
@@ -14,14 +17,50 @@ namespace Artel.Auth
     /// </remarks>
     internal static class ArtelSdkSession
     {
-        private const string TokenSecretKey = ArtelOwnedPlayerPrefs.SdkTokenSecret;
-        private const string ExpiresAtPlayerPrefsKey = ArtelOwnedPlayerPrefs.SdkTokenExpiresAt;
-        private const string RefreshTokenSecretKey = ArtelOwnedPlayerPrefs.SdkRefreshTokenSecret;
-        private const string RefreshExpiresAtPlayerPrefsKey = ArtelOwnedPlayerPrefs.SdkRefreshTokenExpiresAt;
-        private const string DisplayNamePlayerPrefsKey = ArtelOwnedPlayerPrefs.SdkDisplayName;
-        private const string ProjectIdPlayerPrefsKey = ArtelOwnedPlayerPrefs.ProjectId;
-        private const string InstanceIdPlayerPrefsKey = ArtelOwnedPlayerPrefs.InstanceId;
-        private const string GameBuildIdPlayerPrefsKey = ArtelOwnedPlayerPrefs.GameBuildId;
+        private static string TokenSecretKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkTokenSecret);
+        private static string ExpiresAtPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkTokenExpiresAt);
+        private static string RefreshTokenSecretKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkRefreshTokenSecret);
+        private static string RefreshExpiresAtPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkRefreshTokenExpiresAt);
+        private static string DisplayNamePlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkDisplayName);
+        private static string ProjectIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.ProjectId);
+        private static string InstanceIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.InstanceId);
+        private static string GameBuildIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.GameBuildId);
+
+        private static string serverScope = ScopeFor(new Server());
+
+        internal static string ScopedKey(string key) => key + "." + serverScope;
+
+        internal static bool IsFor(Server server)
+        {
+            try { return serverScope == ScopeFor(server); }
+            catch (ArgumentException) { return false; }
+            catch (InvalidOperationException) { return false; }
+        }
+
+        internal static void UseServer(Server server)
+        {
+            serverScope = ScopeFor(server);
+            RegisterScope();
+            PlayerPrefs.Save();
+        }
+
+        private static void RegisterScope()
+        {
+            var scopes = PlayerPrefs.GetString(ArtelOwnedPlayerPrefs.ServerScopes, "");
+            var known = new System.Collections.Generic.HashSet<string>(scopes.Split(';'));
+            if (known.Add(serverScope))
+            {
+                known.Remove("");
+                PlayerPrefs.SetString(ArtelOwnedPlayerPrefs.ServerScopes, string.Join(";", known));
+            }
+        }
+
+        private static string ScopeFor(Server server)
+        {
+            using (var hash = SHA256.Create())
+                return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(server.HttpBaseUri.AbsoluteUri)))
+                    .Replace("-", "").ToLowerInvariant();
+        }
 
         /// <summary>로그인한 사람의 표시 이름. 없으면 빈 문자열.</summary>
         public static string DisplayName
@@ -75,6 +114,7 @@ namespace Artel.Auth
                 throw new ArgumentException("SDK token is required.", nameof(token));
             }
 
+            RegisterScope();
             ArtelSecretStore.Save(TokenSecretKey, token.Trim());
             PlayerPrefs.SetString(ExpiresAtPlayerPrefsKey, expiresAt ?? string.Empty);
             PlayerPrefs.SetString(DisplayNamePlayerPrefsKey, displayName ?? string.Empty);
@@ -112,6 +152,7 @@ namespace Artel.Auth
                 throw new ArgumentException("Refresh token is required.", nameof(refreshToken));
             }
 
+            RegisterScope();
             ArtelSecretStore.Save(RefreshTokenSecretKey, refreshToken.Trim());
             PlayerPrefs.SetString(RefreshExpiresAtPlayerPrefsKey, expiresAt ?? string.Empty);
             PlayerPrefs.Save();
@@ -129,6 +170,7 @@ namespace Artel.Auth
                 throw new ArgumentException("Project id is required.", nameof(projectId));
             }
 
+            RegisterScope();
             PlayerPrefs.SetString(ProjectIdPlayerPrefsKey, projectId.Trim());
             PlayerPrefs.Save();
         }
@@ -153,6 +195,7 @@ namespace Artel.Auth
                 throw new ArgumentException("Instance id is required.", nameof(instanceId));
             }
 
+            RegisterScope();
             PlayerPrefs.SetString(InstanceIdPlayerPrefsKey, instanceId.Trim());
             PlayerPrefs.Save();
         }
@@ -182,6 +225,7 @@ namespace Artel.Auth
                 throw new ArgumentException("Game build id is required.", nameof(gameBuildId));
             }
 
+            RegisterScope();
             PlayerPrefs.SetString(GameBuildIdPlayerPrefsKey, gameBuildId.Trim());
             PlayerPrefs.Save();
         }

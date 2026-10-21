@@ -44,7 +44,7 @@ namespace Artel.Auth
     {
         internal const string CallbackPath = "/callback";
 
-        private const string LoginPath = "/sdk-login";
+        private const string LoginPath = "/api/auth/sdk/login";
         private const float TimeoutSeconds = 180f;
 
         // 외부 리소스를 부르지 않는다. 로그인 직후라 네트워크는 살아 있겠지만, 이 페이지가
@@ -79,7 +79,7 @@ namespace Artel.Auth
         /// 브라우저를 열고 콜백을 기다린다. 성공하면 code와 verifier가, 실패하면 사람이 읽을
         /// 이유가 <paramref name="completed"/>로 온다.
         /// </summary>
-        public static IEnumerator Authorize(Uri frontendOrigin, Action<ArtelLoginCode> completed)
+        public static IEnumerator Authorize(Uri serverOrigin, Action<ArtelLoginCode> completed)
         {
             if (completed == null)
             {
@@ -87,7 +87,7 @@ namespace Artel.Auth
             }
 
 #if UNITY_EDITOR || UNITY_STANDALONE
-            if (frontendOrigin == null)
+            if (serverOrigin == null)
             {
                 completed(ArtelLoginCode.Failed("로그인 페이지 주소가 설정되지 않았습니다."));
                 yield break;
@@ -114,7 +114,7 @@ namespace Artel.Auth
 
                 waiter = new CallbackWaiter(listener, state);
                 waiter.Listen();
-                Application.OpenURL(BuildLoginUrl(frontendOrigin, port, state, CreateCodeChallenge(codeVerifier)));
+                Application.OpenURL(BuildLoginUrl(serverOrigin, port, state, CreateCodeChallenge(codeVerifier)));
             }
             catch (Exception exception)
             {
@@ -218,9 +218,9 @@ namespace Artel.Auth
             return true;
         }
 
-        internal static string BuildLoginUrl(Uri frontendOrigin, int port, string state, string codeChallenge)
+        internal static string BuildLoginUrl(Uri serverOrigin, int port, string state, string codeChallenge)
         {
-            return new Uri(frontendOrigin, LoginPath).AbsoluteUri +
+            return new Uri(serverOrigin, LoginPath).AbsoluteUri +
                    "?port=" + port.ToString(System.Globalization.CultureInfo.InvariantCulture) +
                    "&state=" + Uri.EscapeDataString(state) +
                    "&challenge=" + Uri.EscapeDataString(codeChallenge);

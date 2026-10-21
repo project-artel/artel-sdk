@@ -1,6 +1,8 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using Artel.Auth;
+using Artel.Domain;
 using Artel.Protocol.Dto;
 using Artel.Serialization;
 using Artel.Affordances.Scan;
@@ -73,6 +75,11 @@ namespace Artel
         private GameObject gateContent;
         private GameObject progressContent;
         private GameObject projectListObject;
+        private InputField serverUrlInput;
+        private Button applyServerButton;
+        private bool serverSettingsOpen;
+        private GameObject serverSettingsContent;
+        private Text serverSettingsToggleText;
         private Button loginButton;
         private Button reloadProjectsButton;
         private Button gateLogOutButton;
@@ -129,7 +136,7 @@ namespace Artel
 
         private void Start()
         {
-            viewModel.Initialize();
+            viewModel.Initialize(artelManager.Server);
             CreateGui();
             RefreshView();
 
@@ -459,15 +466,49 @@ namespace Artel
             }
         }
 
+        private void ApplyServer()
+        {
+            if (loginRunning || registrationRunning) return;
+            if (!artelManager.CanChangeServer)
+            {
+                gateErrorText.text = "진행 중인 작업이 끝난 뒤 서버를 변경해 주세요.";
+                return;
+            }
+            Server selected;
+            try
+            {
+                selected = new Server(serverUrlInput.text);
+            }
+            catch (ArgumentException exception)
+            {
+                gateErrorText.text = exception.Message;
+                return;
+            }
+
+            artelManager.StopTransport();
+            artelManager.SetServer(selected);
+            PlayerPrefs.SetString(ArtelOwnedPlayerPrefs.ServerUrl, selected.HttpBaseUri.AbsoluteUri);
+            PlayerPrefs.Save();
+            serverSettingsOpen = false;
+            gateDismissed = false;
+            viewModel.Initialize(selected);
+            serverUrlInput.text = selected.HttpBaseUri.AbsoluteUri;
+            if (viewModel.HasStoredSession) RegisterInstance();
+            else if (viewModel.HasToken) StartCoroutine(LoadProjectsThenRegister());
+        }
+
         private void LogOut()
         {
             gateDismissed = false;
+            if (loginRunning || registrationRunning) return;
+            artelManager.StopTransport();
             viewModel.LogOut();
             RefreshView();
         }
 
         private void DismissGate()
         {
+            serverSettingsOpen = false;
             gateDismissed = true;
             RefreshView();
         }
@@ -515,7 +556,7 @@ namespace Artel
             panelRect.anchorMax = new Vector2(1f, 1f);
             panelRect.pivot = new Vector2(1f, 1f);
             panelRect.anchoredPosition = new Vector2(-24f, -84f);
-            panelRect.sizeDelta = new Vector2(440f, 300f);
+            panelRect.sizeDelta = new Vector2(440f, 350f);
 
             // 로그인과 프로젝트 선택은 게이트가 소유한다. 진입 지점이 둘이면 처음 쓰는
             // 사람이 어느 쪽을 봐야 할지 모른다. 패널에는 상태 문구와 고급 섹션만 남는다.
@@ -691,6 +732,44 @@ namespace Artel
             gateContent.transform.SetParent(coverObject.transform, false);
             Inset(gateContent.GetComponent<RectTransform>(), 0f);
 
+            serverSettingsContent = new GameObject("Server Settings", typeof(RectTransform));
+            serverSettingsContent.transform.SetParent(gateContent.transform, false);
+            Inset(serverSettingsContent.GetComponent<RectTransform>(), 0f);
+            var settingsToggle = CreateButton(gateContent.transform, "고급 설정", new Vector2(180f, 36f));
+            CenterRect(settingsToggle.GetComponent<RectTransform>(), new Vector2(0f, -340f), new Vector2(180f, 36f));
+            serverSettingsToggleText = settingsToggle.GetComponentInChildren<Text>();
+            settingsToggle.onClick.AddListener(() =>
+            {
+                serverSettingsOpen = !serverSettingsOpen;
+                serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
+                RefreshView();
+            });
+            var serverLabel = CreateText(serverSettingsContent.transform, "서버 주소", 16, TextAnchor.MiddleLeft, textSecondary);
+            CenterRect(serverLabel.rectTransform, new Vector2(0f, 344f), new Vector2(640f, 24f));
+            var inputObject = new GameObject("Server URL", typeof(RectTransform), typeof(Image), typeof(InputField));
+            inputObject.transform.SetParent(serverSettingsContent.transform, false);
+            CenterRect(inputObject.GetComponent<RectTransform>(), new Vector2(-60f, 304f), new Vector2(520f, 44f));
+            inputObject.GetComponent<Image>().color = bgRaised;
+            serverUrlInput = inputObject.GetComponent<InputField>();
+            var addressText = CreateText(inputObject.transform, "", 16, TextAnchor.MiddleLeft);
+            Inset(addressText.rectTransform, 8f);
+            addressText.supportRichText = false;
+            serverUrlInput.textComponent = addressText;
+            serverUrlInput.targetGraphic = inputObject.GetComponent<Image>();
+            serverUrlInput.lineType = InputField.LineType.SingleLine;
+            serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
+            applyServerButton = CreateButton(serverSettingsContent.transform, "적용", new Vector2(108f, 44f));
+            CenterRect(applyServerButton.GetComponent<RectTransform>(), new Vector2(266f, 304f), new Vector2(108f, 44f));
+            applyServerButton.onClick.AddListener(ApplyServer);
+            var resetServer = CreateButton(serverSettingsContent.transform, "ARTEL 서버로 복원", new Vector2(180f, 32f));
+            CenterRect(resetServer.GetComponent<RectTransform>(), new Vector2(230f, 350f), new Vector2(180f, 32f));
+            resetServer.onClick.AddListener(() =>
+            {
+                serverUrlInput.text = Server.DefaultUrl;
+                ApplyServer();
+            });
+            serverSettingsContent.SetActive(false);
+
             CreateLogo(gateContent.transform, new Vector2(0f, 220f), 72f);
 
             var title = CreateText(gateContent.transform, "Artel SDK", 32, TextAnchor.MiddleCenter);
@@ -830,6 +909,16 @@ namespace Artel
             SetRect(logOutButton.GetComponent<RectTransform>(), new Vector2(240f, -96f), new Vector2(180f, 32f));
             logOutButton.onClick.AddListener(LogOut);
 
+            var changeServer = CreateButton(advancedObject.transform, "서버 변경", new Vector2(400f, 36f));
+            SetRect(changeServer.GetComponent<RectTransform>(), new Vector2(20f, -138f), new Vector2(400f, 36f));
+            changeServer.onClick.AddListener(() =>
+            {
+                if (loginRunning || registrationRunning) return;
+                serverSettingsOpen = true;
+                gateDismissed = false;
+                serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
+                RefreshView();
+            });
             advancedObject.SetActive(false);
         }
 
@@ -873,7 +962,11 @@ namespace Artel
             // State가 아직 NeedsLogin일 수 있다. ShowGate만 보면 그 동안 게이트가 버튼을 켠
             // 채 얼어 있다. 브라우저를 기다리는 동안도 같다.
             var busy = registrationRunning || loginRunning;
-            var showGate = viewModel.ShowGate && !busy && !gateDismissed;
+            serverSettingsContent.SetActive(serverSettingsOpen);
+            serverSettingsToggleText.text = serverSettingsOpen ? "고급 설정 닫기" : "고급 설정";
+            serverUrlInput.interactable = !busy;
+            applyServerButton.interactable = !busy;
+            var showGate = (viewModel.ShowGate || serverSettingsOpen) && !busy && !gateDismissed;
             coverObject.SetActive(showGate || busy);
             gateContent.SetActive(showGate);
             progressContent.SetActive(busy);

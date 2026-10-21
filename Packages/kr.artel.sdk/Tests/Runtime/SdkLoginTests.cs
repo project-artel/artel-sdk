@@ -25,12 +25,14 @@ namespace Artel.Tests.Auth
             // 세션 테스트는 실제 키체인이나 사용자 프로필을 건드리지 않는다. 실제 플랫폼
             // 구현은 PlatformSecretStore_RoundTripsAndDeletes 하나에서만 돈다.
             ArtelSecretStore.Current = new PlayerPrefsSecretStore();
+            ArtelSdkSession.Clear();
             ClearSession();
         }
 
         [TearDown]
         public void TearDown()
         {
+            ArtelSdkSession.Clear();
             ClearSession();
             ArtelSecretStore.Current = null;
         }
@@ -133,7 +135,7 @@ namespace Artel.Tests.Auth
 
             Assert.That(
                 url,
-                Is.EqualTo("http://localhost:5173/sdk-login?port=51234&state=state%2Bvalue&challenge=challenge"));
+                Is.EqualTo("http://localhost:5173/api/auth/sdk/login?port=51234&state=state%2Bvalue&challenge=challenge"));
         }
 
         [Test]
