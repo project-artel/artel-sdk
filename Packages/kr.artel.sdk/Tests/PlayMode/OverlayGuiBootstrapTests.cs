@@ -89,10 +89,19 @@ namespace Artel.Tests
             Assert.That(manager.InstanceName, Is.Not.Empty);
 
             // Artel 토글, 고급, 연결, 로그아웃, 로그인, 다시 시도, 게이트 로그아웃, 나중에.
-            Assert.That(buttons, Has.Length.EqualTo(8));
+            Assert.That(buttons, Has.Length.EqualTo(12));
 
-            // 키 입력창은 사라졌다. 남아 있으면 로그인 흐름과 두 입구가 공존한다.
-            Assert.That(canvas.GetComponentInChildren<InputField>(true), Is.Null);
+            var serverInput = canvas.GetComponentInChildren<InputField>(true);
+            Assert.That(serverInput, Is.Not.Null);
+            Assert.That(serverInput.gameObject.name, Is.EqualTo("Server URL"));
+            Assert.That(serverInput.text, Is.EqualTo(manager.Server.HttpBaseUri.AbsoluteUri));
+            Assert.That(serverInput.gameObject.activeInHierarchy, Is.False);
+            var settings = Array.Find(buttons, button => button.name == "고급 설정 Button");
+            settings.onClick.Invoke();
+            Assert.That(serverInput.gameObject.activeInHierarchy, Is.True);
+            settings.onClick.Invoke();
+            Assert.That(serverInput.gameObject.activeInHierarchy, Is.False);
+            Assert.That(new Artel.Domain.Server().HttpBaseUri.AbsoluteUri, Is.EqualTo(Artel.Domain.Server.DefaultUrl));
             Assert.That(loginButton, Is.Not.Null);
             Assert.That(loginButton.interactable, Is.True);
             Assert.That(connectButton, Is.Not.Null);
@@ -246,8 +255,27 @@ namespace Artel.Tests
                 Is.EqualTo("project WordVenture · test run 타이틀에서 전투까지 · agent session 기다리는 중"));
         }
 
+        [UnityTest]
+        public IEnumerator 주소_적용은_새_서버의_로그인_화면을_연다()
+        {
+            host = new GameObject("Artel server input test");
+            var manager = host.AddComponent<ArtelManager>();
+            yield return null;
+            var canvas = host.transform.Find("Artel Overlay Canvas");
+            var input = canvas.GetComponentInChildren<InputField>(true);
+            var apply = Array.Find(canvas.GetComponentsInChildren<Button>(true), button => button.name == "적용 Button");
+            input.text = "http://ui-test.example:8080";
+            apply.onClick.Invoke();
+            Assert.That(manager.Server.HttpBaseUri.AbsoluteUri, Is.EqualTo("http://ui-test.example:8080/"));
+            Assert.That(ArtelSdkSession.LoadToken(), Is.Empty);
+            Assert.That(canvas.Find("Artel Overlay Cover/Gate Content").gameObject.activeSelf, Is.True);
+            PlayerPrefs.DeleteKey(ArtelOwnedPlayerPrefs.ServerUrl);
+            ArtelSdkSession.UseServer(new Artel.Domain.Server());
+        }
+
         private static void ClearSession()
         {
+            ArtelSdkSession.Clear();
             foreach (var key in SessionPlayerPrefsKeys)
             {
                 PlayerPrefs.DeleteKey(key);

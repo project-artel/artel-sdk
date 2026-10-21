@@ -120,8 +120,11 @@ namespace Artel
         /// Loads the persisted session. Must run no earlier than <c>Start</c>, because
         /// <see cref="ArtelManager"/> adds the overlay controller before its own identity exists.
         /// </summary>
-        public void Initialize()
+        public void Initialize(Server server = null)
         {
+            if (server != null) ArtelSdkSession.UseServer(server);
+            HasAttemptedRegistration = false;
+            noticedPhase = ArtelTransportPhase.Idle;
             projects.Clear();
             // 만료된 access 토큰이라도 refresh 토큰이 살아 있으면 세션은 아직 있는 것이다.
             // 여기서 없다고 보면 재발급으로 넘어갈 기회 없이 브라우저 로그인부터 시킨다.
@@ -161,15 +164,16 @@ namespace Artel
         /// </summary>
         public IEnumerator LogIn(Server server)
         {
+            if (!ArtelSdkSession.IsFor(server)) yield break;
             if (State == ArtelConnectionState.LoggingIn || State == ArtelConnectionState.Registering)
             {
                 yield break;
             }
 
-            Uri frontendOrigin;
+            Uri serverOrigin;
             try
             {
-                frontendOrigin = server.FrontendBaseUri;
+                serverOrigin = server.HttpBaseUri;
             }
             catch (Exception exception)
             {
@@ -182,8 +186,9 @@ namespace Artel
             SetStatus("브라우저에서 로그인을 완료해 주세요.");
 
             var login = default(ArtelLoginCode);
-            yield return ArtelLoopbackLogin.Authorize(frontendOrigin, result => login = result);
+            yield return ArtelLoopbackLogin.Authorize(serverOrigin, result => login = result);
 
+            if (!ArtelSdkSession.IsFor(server)) yield break;
             if (!login.IsSuccess)
             {
                 Fail("로그인 실패: " + login.Error);
@@ -209,6 +214,7 @@ namespace Artel
             using (request)
             {
                 yield return request.SendWebRequest();
+                if (!ArtelSdkSession.IsFor(server)) yield break;
 
                 succeeded = request.result == UnityWebRequest.Result.Success;
                 responseCode = request.responseCode;
@@ -290,6 +296,7 @@ namespace Artel
             using (request)
             {
                 yield return request.SendWebRequest();
+                if (!ArtelSdkSession.IsFor(server)) yield break;
 
                 succeeded = request.result == UnityWebRequest.Result.Success;
                 responseCode = request.responseCode;
@@ -372,6 +379,13 @@ namespace Artel
                 yield break;
             }
 
+            try { _ = server.HttpBaseUri; }
+            catch (Exception exception)
+            {
+                Fail("설정 오류: " + exception.Message);
+                yield break;
+            }
+
             var token = string.Empty;
             var refreshRejected = false;
             yield return EnsureToken(server, (value, rejected) =>
@@ -425,6 +439,7 @@ namespace Artel
                 using (request)
                 {
                     yield return request.SendWebRequest();
+                    if (!ArtelSdkSession.IsFor(server)) yield break;
 
                     succeeded = request.result == UnityWebRequest.Result.Success;
                     responseCode = request.responseCode;
@@ -649,6 +664,11 @@ namespace Artel
         /// </remarks>
         private IEnumerator EnsureToken(Server server, Action<string, bool> onToken)
         {
+            if (!ArtelSdkSession.IsFor(server))
+            {
+                onToken(string.Empty, false);
+                yield break;
+            }
             if (ArtelSdkSession.TryLoadToken(out var token))
             {
                 onToken(token, false);
@@ -681,6 +701,7 @@ namespace Artel
             using (request)
             {
                 yield return request.SendWebRequest();
+                if (!ArtelSdkSession.IsFor(server)) yield break;
 
                 succeeded = request.result == UnityWebRequest.Result.Success;
                 responseCode = request.responseCode;

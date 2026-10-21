@@ -81,6 +81,7 @@ namespace Artel.Tests.Transport
 
         private static void ClearSession()
         {
+            ArtelSdkSession.Clear();
             foreach (var key in SessionPlayerPrefsKeys)
             {
                 PlayerPrefs.DeleteKey(key);
