@@ -66,6 +66,41 @@ namespace Artel.Tests
             Assert.That(source.Events, Is.EqualTo(new[] { "down", "up", "click" }));
         }
 
+        /// <summary>
+        /// uGUI 가 받은 누름의 대상을 남긴다. 이것이 없으면 Canvas 버튼을 눌러도 결과의
+        /// <c>reached</c> 가 비어, 받는 쪽이 눌린 버튼을 빈 곳으로 읽는다(ARTEL-1175).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Press_RemembersWhatTheUiPressReached()
+        {
+            BuildScene();
+            yield return null;
+
+            var dispatcher = new PointerEventDispatcher();
+            dispatcher.MoveTo(GrabPoint);
+            dispatcher.Press(0);
+
+            Assert.That(dispatcher.LastPressReceiver, Is.EqualTo("canvas/drag source"));
+
+            dispatcher.Release(0);
+            dispatcher.ForgetLastPress();
+            Assert.That(dispatcher.LastPressReceiver, Is.Empty);
+        }
+
+        [UnityTest]
+        public IEnumerator Press_OnNothingLeavesTheReceiverEmpty()
+        {
+            BuildScene();
+            yield return null;
+
+            var dispatcher = new PointerEventDispatcher();
+            dispatcher.MoveTo(new Vector2(2f, 2f));
+            dispatcher.Press(0);
+
+            Assert.That(dispatcher.LastPressReceiver, Is.Empty);
+            dispatcher.Release(0);
+        }
+
         [UnityTest]
         public IEnumerator Move_BelowTheDragThresholdIsNotADrag()
         {
