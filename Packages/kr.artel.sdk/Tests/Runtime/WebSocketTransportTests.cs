@@ -1128,7 +1128,7 @@ namespace Artel.Tests.Transport
         }
 
         [Test]
-        public void ArtelLogoGraphic_DrawsFiveCharcoalSegmentsAndOneCoralSegment()
+        public void ArtelLogoGraphic_DrawsBodyBandAndAccentTrapezoid()
         {
             var logoObject = new GameObject("Artel logo mesh test", typeof(RectTransform), typeof(ArtelLogoGraphic));
             var vertexHelper = new VertexHelper();
@@ -1145,7 +1145,7 @@ namespace Artel.Tests.Transport
                         null)
                     .Invoke(logoObject.GetComponent<ArtelLogoGraphic>(), new object[] { vertexHelper });
 
-                // 본체는 선분별 quad가 아니라 공유 miter join을 가진 하나의 strip이다.
+                // 본체는 5개 band quad(꼭짓점 12개, 삼각형 10개), 강조색은 사다리꼴 하나(꼭짓점 4개, 삼각형 2개)다.
                 Assert.That(vertexHelper.currentVertCount, Is.EqualTo(16));
                 Assert.That(vertexHelper.currentIndexCount, Is.EqualTo(36));
 
@@ -1154,23 +1154,28 @@ namespace Artel.Tests.Transport
                 Assert.That(Array.FindAll(mesh.colors32, color => color.Equals(ArtelLogoGraphic.Charcoal)), Has.Length.EqualTo(12));
                 Assert.That(Array.FindAll(mesh.colors32, color => color.Equals(ArtelLogoGraphic.Coral)), Has.Length.EqualTo(4));
 
-                var expectedControlPoints = new[]
-                {
-                    new Vector2(20f, -8f),
-                    new Vector2(20f, 14f),
-                    new Vector2(0f, 26f),
-                    new Vector2(-20f, 14f),
-                    new Vector2(-20f, -14f),
-                    new Vector2(-2f, -24f),
-                    new Vector2(4f, -24f),
-                    new Vector2(20f, -14f)
-                };
+                // 64x64 상자 안에서 원점이 중앙이다. 모든 꼭짓점은 rect 안에 있어야 한다.
+                var rect = logoObject.GetComponent<RectTransform>().rect;
                 var vertices = mesh.vertices;
-                for (var index = 0; index < expectedControlPoints.Length; index++)
+                foreach (var vertex in vertices)
                 {
-                    var midpoint = ((Vector2)vertices[index * 2] + (Vector2)vertices[(index * 2) + 1]) * 0.5f;
-                    Assert.That(midpoint.x, Is.EqualTo(expectedControlPoints[index].x).Within(0.001f));
-                    Assert.That(midpoint.y, Is.EqualTo(expectedControlPoints[index].y).Within(0.001f));
+                    Assert.That(rect.Contains(vertex), Is.True, vertex.ToString());
+                }
+
+                // SVG (32.00, 2.80)은 위쪽 꼭짓점이고, y를 뒤집어 중앙 기준 (0, 29.2)가 된다.
+                Assert.That(vertices[2].x, Is.EqualTo(0f).Within(0.001f));
+                Assert.That(vertices[2].y, Is.EqualTo(29.2f).Within(0.001f));
+                Assert.That(vertices[0].x, Is.EqualTo(25.28f).Within(0.001f));
+                Assert.That(vertices[0].y, Is.EqualTo(-13.10f).Within(0.001f));
+
+                // 모든 삼각형이 같은 방향(시계 방향)이어야 한다.
+                var triangles = mesh.triangles;
+                for (var index = 0; index < triangles.Length; index += 3)
+                {
+                    var a = vertices[triangles[index]];
+                    var b = vertices[triangles[index + 1]];
+                    var c = vertices[triangles[index + 2]];
+                    Assert.That(((b.x - a.x) * (c.y - a.y)) - ((b.y - a.y) * (c.x - a.x)), Is.LessThan(0f));
                 }
 
                 UnityEngine.Object.DestroyImmediate(mesh);
