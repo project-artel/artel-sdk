@@ -369,6 +369,7 @@ namespace Artel
             }
 
             ArtelInput.ForgetLastPress();
+            pointerEvents.ForgetLastPress();
             SetButton(button, true);
 
             yield return null;
@@ -388,10 +389,18 @@ namespace Artel
         /// <c>pointerHeldByPerson</c> 이 "빈 곳이었다"와 "사람이 포인터를 도로 가져가 메신저가
         /// 아예 안 돌았다"를 가른다.
         /// </para>
+        /// <para>
+        /// 누름은 uGUI(<see cref="PointerEventDispatcher"/>)와 collider(<c>OnMouse*</c>) 두 길로
+        /// 함께 나간다. 처음에는 collider 쪽만 적어서 Canvas 버튼을 누르면 늘 null 이었고, 받는
+        /// 쪽은 씬을 바꾼 클릭을 빈 곳으로 읽었다(ARTEL-1175). uGUI 가 받은 것을 먼저 적는다 —
+        /// 화면 위에 그려지는 것이 UI 이고, 사람이 누른다고 보는 것도 그것이다.
+        /// </para>
         /// </remarks>
-        private static Dictionary<string, object> PressOutcome()
+        private Dictionary<string, object> PressOutcome()
         {
-            var reached = ArtelInput.LastPressReceiver;
+            var reached = string.IsNullOrEmpty(pointerEvents.LastPressReceiver)
+                ? ArtelInput.LastPressReceiver
+                : pointerEvents.LastPressReceiver;
             return new Dictionary<string, object>
             {
                 { "reached", string.IsNullOrEmpty(reached) ? null : reached },
