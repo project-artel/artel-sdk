@@ -1,0 +1,23 @@
+{
+  "name": "Artel.GameFunctions.Editor.Tests",
+  "rootNamespace": "Artel.GameFunctions.Editor.Tests",
+  "references": [
+    "Artel.GameFunctions.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

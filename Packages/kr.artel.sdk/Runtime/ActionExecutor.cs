@@ -46,6 +46,11 @@ namespace Artel
         private readonly IEvidenceScan evidenceScan;
         private readonly IEvidenceUploader evidenceUploader;
 
+        /// <summary>
+        /// 게임이 등록한 cheat 와 behavior 를 부르는 네 action. 출시 빌드에서는 그 네 action 을 거절하는 껍데기다.
+        /// </summary>
+        private readonly GameFunctionActions gameFunctions;
+
         private readonly Action<Vector2> cursorMoved;
         private readonly Action<Vector2> pointerMoved;
 
@@ -69,8 +74,10 @@ namespace Artel
             ICaptureUploader uploader = null,
             IReadingChannel readings = null,
             IEvidenceScan evidenceScan = null,
-            IEvidenceUploader evidenceUploader = null)
+            IEvidenceUploader evidenceUploader = null,
+            GameFunctionActions gameFunctions = null)
         {
+            this.gameFunctions = gameFunctions ?? new GameFunctionActions();
             this.readings = readings;
             this.scanner = scanner;
             this.cursorController = cursorController;
@@ -182,6 +189,22 @@ namespace Artel
 
                 case "scan_evidence":
                     yield return ExecuteScanEvidence(actionId, completed);
+                    yield break;
+
+                case GameFunctionActions.InvokeCheatMethod:
+                    yield return gameFunctions.InvokeCheat(actionId, parameters, completed);
+                    yield break;
+
+                case GameFunctionActions.StartBehaviorMethod:
+                    completed(gameFunctions.StartBehavior(actionId, parameters));
+                    yield break;
+
+                case GameFunctionActions.StopBehaviorMethod:
+                    completed(gameFunctions.StopBehavior(actionId, parameters));
+                    yield break;
+
+                case GameFunctionActions.ExtendBehaviorMethod:
+                    completed(gameFunctions.ExtendBehavior(actionId, parameters));
                     yield break;
             }
 
@@ -532,6 +555,9 @@ namespace Artel
                     startupScenePath));
                 yield break;
             }
+
+            // behavior 는 리로드보다 먼저 끝낸다. 그래야 그 finally 가 아직 살아 있는 씬 위에서 돈다.
+            gameFunctions.EndRun("reset_game");
 
             // A pause and a held button belong to the run, not to the game. Carried across the
             // reload they would hand the fresh scene a frozen clock and a press it never saw begin.

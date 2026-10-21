@@ -29,7 +29,7 @@ sequenceDiagram
 - `ACTION_RESULT` 의 `Frame` 은 배치를 받은 프레임이 아니라 마지막 action 이 끝난 프레임 (ARTEL-620)
 - `RequestId` 로 어느 `ACTION` 에 대한 답인지 알림. `Id` 는 이 메시지 자신의 번호라 그 자리에 못 씀
 
-`ActionExecutor` 가 처리하는 17 개.
+`ActionExecutor` 가 처리하는 21 개.
 
 | method | params | 비고 |
 | --- | --- | --- |
@@ -50,6 +50,10 @@ sequenceDiagram
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
+| `invoke_cheat` | `[{ "name", "args"?, "target"? }]` | 게임이 등록한 cheat. 출시 빌드에서는 거절. 아래 |
+| `start_behavior` | `[{ "name", "args"?, "target"?, "maxSeconds"? }]` | 게임이 등록한 behavior 를 시작한다. 아래 |
+| `stop_behavior` | `[{ "behaviorId", "reason"? }]` · `[{ "all": true, "reason"? }]` | |
+| `extend_behavior` | `[{ "behaviorId", "seconds" }]` | |
 
 `ArtelManager` 가 배치 안에서 직접 처리하는 둘.
 
@@ -82,6 +86,55 @@ sequenceDiagram
 | `sceneCapturesRegistered` | 등록에 실린 씬 화면 수. 못 찍은 것과 못 올린 것도 사실로 세므로 씬 수보다 작을 수 있다 |
 | `alreadyRegistered` | 같은 문서가 이미 등록돼 있었는가 |
 
+### cheat 와 behavior
+
+- 게임 개발자가 `[ArtelCheat]`·`[ArtelBehavior]` 를 단 메서드, 또는 `ArtelCheats.Register` 로 더한 cheat 다.
+  왜 ADR 0002 의 예외인지는 [ADR 0007](adr/0007-game-registered-cheats-and-behaviors.md)
+- 모양의 기준은 워크스페이스의 `.plan/general/2026-10-14-game-functions-wire-contract.md` (ARTEL-1051) 이고,
+  아래는 SDK 가 그것을 어떻게 지키는지다
+
+| method | `returnValue` |
+| --- | --- |
+| `invoke_cheat` | `{ "message": string \| null }` — cheat 가 돌려준 문자열, coroutine cheat 면 마지막으로 `yield return` 한 문자열 |
+| `start_behavior` | `{ "behaviorId": int, "report": string \| null }` — 첫 `MoveNext()` 뒤의 report |
+| `stop_behavior` | `{ "stopped": [int] }` |
+| `extend_behavior` | `{ "maxSeconds": number }` |
+
+검사 순서와 실패 문장. 앞부분은 계약이 정한 그대로다.
+
+| 순서 | 실패 |
+| --- | --- |
+| 1. 빌드 | `cheats are not available in this build` · `behaviors are not available in this build` |
+| 2. 이름 | `unknown cheat: <name>` · `unknown behavior: <name>` |
+| 3. 대상 | `<name> is static and takes no target` · `Nothing at selector: <selector>` · `<Component> is not on <selector>` · `no active <Component>` · `<n> <Component> objects; pass target as one of: ...` (5 개까지) |
+| 4. 인자 | `bad argument <param>: <why>` — 타입, 범위, 모르는 키, 빠진 필수 인자. `maxSeconds` 도 여기 |
+| 5. `when` | `unavailable: <reason>` |
+| 6. 상한 | `too many behaviors running: <names>` (4 개. 같은 `group` 이라 바뀔 것은 세지 않는다) |
+| 실행 중 | `<ExceptionType>: <message>` (cheat 가 던짐) |
+
+- `target` 을 빼면 static 함수는 그대로, instance 함수는 살아 있는 instance 가 하나일 때만 그 위에서 돈다
+- 인자: `int` 는 정수와 소수 부분 없는 수, `float` 는 유한한 수, `bool` 은 JSON boolean, `string` 은 JSON
+  문자열, enum 은 멤버 이름 그대로. C# 기본값이 있는 parameter 만 생략할 수 있다
+- `maxSeconds` 는 1–300, 기본 30. `extend_behavior` 는 시작부터 300 초를 넘기지 못한다
+- `stop_behavior` 의 `reason` 은 `stopped`(기본) 또는 `not_allowed` 이고, 그대로 `BEHAVIOR_ENDED.reason` 이 된다
+
+behavior 가 끝나는 이유.
+
+| `reason` | 언제 |
+| --- | --- |
+| `stopped` · `not_allowed` | `stop_behavior` |
+| `completed` | 메서드가 끝났거나 `ctx.Complete` |
+| `failed` | `ctx.Fail` 이나 예외 |
+| `timeout` | 게임 시간으로 `maxSeconds` 가 지남 |
+| `replaced` | 같은 `group` 의 behavior 가 시작함 |
+| `target_gone` | 대상 객체가 파괴됨 (씬이 내려간 경우 포함) |
+| `unavailable` | `when` 이 false 가 됨. 1 초에 한 번 확인 |
+| `run_ended` | `reset_game`, `RUN_STATUS` `FINISHED`, 연결 끊김 |
+
+- 어떻게 끝나든 SDK 가 iterator 를 `Dispose()` 하므로 메서드 안의 `finally` 가 돈다
+- `yield return null` 은 한 프레임, `WaitForSeconds` 는 게임 시간 그 초, 그 밖의 값은 한 프레임과 경고 한 번
+- `pause_time` 중에는 걸음도 시간도 멈춘다
+
 ## Outbound messages (SDK → orchestration)
 
 | type | 언제 |
@@ -90,13 +143,20 @@ sequenceDiagram
 | `GAME_STATE` | 스냅샷 해시가 달라졌을 때, 그리고 `scan_scene` 에 대한 답으로. **`ArtelManager.SendsGameState` 가 기본으로 `false` 다** |
 | `ALL_SCENES` | `scan_all_scenes` 를 마친 뒤 |
 | `DEVICE_CONTEXT` | 연결이 열린 뒤 한 번. 끊기면 표시를 내려 다음 연결에서 다시 보낸다 |
+| `GAME_FUNCTION_CATALOG` | `DEVICE_CONTEXT` 바로 뒤에 한 번, 그 뒤 목록이 바뀌면 1 초에 한 번까지. `{type, revision, cheats, behaviors}`. 출시 빌드는 보내지 않는다 |
+| `BEHAVIOR_ENDED` | behavior 하나가 끝날 때 한 번. `{type, behaviorId, name, target, reason, detail, seconds, frame}`. 연결이 없을 때 끝난 것은 버린다 |
 | `PERFORMANCE` | 1 초마다 (`PerformanceReportIntervalSeconds`) |
-| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때 |
+| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions` 와 `behaviors` 는 아래 |
 | `STREAM_STATE` | 스트림 상태가 바뀔 때. 값은 `CONNECTING`·`LIVE`·`FAILED`·`STOPPED` |
 | `WEBRTC_OFFER` | 스트림 세션이 offer 를 만들었을 때 |
 | `WEBRTC_ICE` | ICE candidate 가 모였을 때 |
 | `ERROR` | 알 수 없는 메시지에 대한 답 |
 
+- `PULSE.functions`: 함수가 지금 쓸 수 있는지. `whole` 인 `pulse` 에는 전량, 그 밖에는 1 초에 한 번 평가해 바뀐
+  항목과 사라진 키(`removed: true`)만 싣는다. 키는 `(kind, name, target)` 이고, instance 가 없는 instance 함수는
+  `target: null` 항목 하나로 선다
+- `PULSE.behaviors`: 도는 behavior 전부. behavior 가 하나라도 등록돼 있으면 모든 `pulse` 에 싣는다. 감시 대상 값이
+  가만히 있어도 behavior 가 도는 동안은 1 초에 한 번 `pulse` 를 보낸다
 - `PERFORMANCE` 가 나르는 지표군 이름은 서버가 정한 계약
 - 지금 `MetricGroupNames.Collected()` 가 선언하는 것은 `frameTiming` 과 `editorRender` 둘
 
