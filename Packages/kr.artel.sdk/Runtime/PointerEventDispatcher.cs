@@ -17,6 +17,20 @@ namespace Artel
         private readonly PointerEventData[] pointers =
             new PointerEventData[VirtualMouseState.ButtonCount];
 
+        /// <summary>
+        /// 마지막 누름을 uGUI 에서 받은 것의 계층 경로. 받은 것이 없으면 빈 문자열이다.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="VirtualMouseMessenger.LastPressReceiver"/> 는 collider 로 <c>OnMouse*</c> 를
+        /// 받는 것만 안다. Canvas 의 <c>Button</c> 은 collider 가 없어 거기 안 잡히므로, 이것이
+        /// 없으면 눌려서 씬을 바꾼 버튼도 결과에는 "아무것도 안 받았다"로 나간다(ARTEL-1175).
+        /// <para>
+        /// 처리기(<c>pointerPress</c>)가 있으면 그것을, 없으면 raycast 가 집은 것을 적는다.
+        /// 처리기 없이 집힌 것은 대개 위를 덮은 패널이고, 그 이름이 겨냥이 왜 빗나갔는지 말한다.
+        /// </para>
+        /// </remarks>
+        internal string LastPressReceiver { get; private set; } = string.Empty;
+
         private PointerEventData hoverData;
         private EventSystem hoverEventSystem;
         private GameObject hovered;
@@ -112,6 +126,7 @@ namespace Artel
                     target, data, ExecuteEvents.pointerDownHandler)
                     ?? ExecuteEvents.GetEventHandler<IPointerClickHandler>(target);
                 data.pointerDrag = ExecuteEvents.GetEventHandler<IDragHandler>(target);
+                LastPressReceiver = VirtualMouseMessenger.Path(data.pointerPress ?? target);
             }
 
             if (data.pointerDrag != null)
@@ -188,6 +203,12 @@ namespace Artel
             data.pointerPress = null;
             data.pointerDrag = null;
             UpdateHover(target);
+        }
+
+        /// <summary>다음 누름을 재기 전에 지난 것을 지운다.</summary>
+        internal void ForgetLastPress()
+        {
+            LastPressReceiver = string.Empty;
         }
 
         /// <summary>

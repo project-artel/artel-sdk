@@ -140,6 +140,31 @@ namespace Artel.Tests
             Assert.That(destination.Events, Is.EqualTo(new[] { "drop" }));
         }
 
+        /// <summary>
+        /// Canvas 의 대상을 누르면 결과의 <c>reached</c> 가 그 대상을 댄다. collider 쪽만 적던
+        /// 때는 늘 null 이었고, 씬을 바꾼 버튼 클릭이 빈 곳 클릭으로 읽혔다(ARTEL-1175).
+        /// </summary>
+        [UnityTest]
+        public IEnumerator MouseDown_OnAUiTargetSaysWhatItReached()
+        {
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            yield return null;
+            CreateDragTarget("drag source", UnityPointOf(GrabPoint));
+            yield return null;
+            IsolateFixtureRaycaster();
+
+            yield return RunBatch(
+                manager,
+                NewAction(1, "move_mouse", Coordinates(GrabPoint)),
+                NewAction(2, "mouse_down", new List<object>()),
+                NewAction(3, "mouse_up", new List<object>()));
+
+            var results = transport.FirstActionResult()["results"];
+            Assert.That((bool)results[1]["success"], Is.True);
+            Assert.That((string)results[1]["returnValue"]["reached"], Does.EndWith("drag source"));
+        }
+
         [UnityTest]
         public IEnumerator MouseDown_HeldButtonIsReleasedWhenTheConnectionStops()
         {
