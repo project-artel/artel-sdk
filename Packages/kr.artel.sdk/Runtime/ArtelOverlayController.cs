@@ -78,6 +78,8 @@ namespace Artel
         private InputField serverUrlInput;
         private Button applyServerButton;
         private bool serverSettingsOpen;
+        private GameObject serverSettingsContent;
+        private Text serverSettingsToggleText;
         private Button loginButton;
         private Button reloadProjectsButton;
         private Button gateLogOutButton;
@@ -730,10 +732,22 @@ namespace Artel
             gateContent.transform.SetParent(coverObject.transform, false);
             Inset(gateContent.GetComponent<RectTransform>(), 0f);
 
-            var serverLabel = CreateText(gateContent.transform, "서버 주소", 16, TextAnchor.MiddleLeft, textSecondary);
+            serverSettingsContent = new GameObject("Server Settings", typeof(RectTransform));
+            serverSettingsContent.transform.SetParent(gateContent.transform, false);
+            Inset(serverSettingsContent.GetComponent<RectTransform>(), 0f);
+            var settingsToggle = CreateButton(gateContent.transform, "고급 설정", new Vector2(180f, 36f));
+            CenterRect(settingsToggle.GetComponent<RectTransform>(), new Vector2(0f, -340f), new Vector2(180f, 36f));
+            serverSettingsToggleText = settingsToggle.GetComponentInChildren<Text>();
+            settingsToggle.onClick.AddListener(() =>
+            {
+                serverSettingsOpen = !serverSettingsOpen;
+                serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
+                RefreshView();
+            });
+            var serverLabel = CreateText(serverSettingsContent.transform, "서버 주소", 16, TextAnchor.MiddleLeft, textSecondary);
             CenterRect(serverLabel.rectTransform, new Vector2(0f, 344f), new Vector2(640f, 24f));
             var inputObject = new GameObject("Server URL", typeof(RectTransform), typeof(Image), typeof(InputField));
-            inputObject.transform.SetParent(gateContent.transform, false);
+            inputObject.transform.SetParent(serverSettingsContent.transform, false);
             CenterRect(inputObject.GetComponent<RectTransform>(), new Vector2(-60f, 304f), new Vector2(520f, 44f));
             inputObject.GetComponent<Image>().color = bgRaised;
             serverUrlInput = inputObject.GetComponent<InputField>();
@@ -744,9 +758,17 @@ namespace Artel
             serverUrlInput.targetGraphic = inputObject.GetComponent<Image>();
             serverUrlInput.lineType = InputField.LineType.SingleLine;
             serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
-            applyServerButton = CreateButton(gateContent.transform, "적용", new Vector2(108f, 44f));
+            applyServerButton = CreateButton(serverSettingsContent.transform, "적용", new Vector2(108f, 44f));
             CenterRect(applyServerButton.GetComponent<RectTransform>(), new Vector2(266f, 304f), new Vector2(108f, 44f));
             applyServerButton.onClick.AddListener(ApplyServer);
+            var resetServer = CreateButton(serverSettingsContent.transform, "ARTEL 서버로 복원", new Vector2(180f, 32f));
+            CenterRect(resetServer.GetComponent<RectTransform>(), new Vector2(230f, 350f), new Vector2(180f, 32f));
+            resetServer.onClick.AddListener(() =>
+            {
+                serverUrlInput.text = Server.DefaultUrl;
+                ApplyServer();
+            });
+            serverSettingsContent.SetActive(false);
 
             CreateLogo(gateContent.transform, new Vector2(0f, 220f), 72f);
 
@@ -940,6 +962,8 @@ namespace Artel
             // State가 아직 NeedsLogin일 수 있다. ShowGate만 보면 그 동안 게이트가 버튼을 켠
             // 채 얼어 있다. 브라우저를 기다리는 동안도 같다.
             var busy = registrationRunning || loginRunning;
+            serverSettingsContent.SetActive(serverSettingsOpen);
+            serverSettingsToggleText.text = serverSettingsOpen ? "고급 설정 닫기" : "고급 설정";
             serverUrlInput.interactable = !busy;
             applyServerButton.interactable = !busy;
             var showGate = (viewModel.ShowGate || serverSettingsOpen) && !busy && !gateDismissed;

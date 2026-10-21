@@ -89,12 +89,19 @@ namespace Artel.Tests
             Assert.That(manager.InstanceName, Is.Not.Empty);
 
             // Artel 토글, 고급, 연결, 로그아웃, 로그인, 다시 시도, 게이트 로그아웃, 나중에.
-            Assert.That(buttons, Has.Length.EqualTo(10));
+            Assert.That(buttons, Has.Length.EqualTo(12));
 
             var serverInput = canvas.GetComponentInChildren<InputField>(true);
             Assert.That(serverInput, Is.Not.Null);
             Assert.That(serverInput.gameObject.name, Is.EqualTo("Server URL"));
             Assert.That(serverInput.text, Is.EqualTo(manager.Server.HttpBaseUri.AbsoluteUri));
+            Assert.That(serverInput.gameObject.activeInHierarchy, Is.False);
+            var settings = Array.Find(buttons, button => button.name == "고급 설정 Button");
+            settings.onClick.Invoke();
+            Assert.That(serverInput.gameObject.activeInHierarchy, Is.True);
+            settings.onClick.Invoke();
+            Assert.That(serverInput.gameObject.activeInHierarchy, Is.False);
+            Assert.That(new Artel.Domain.Server().HttpBaseUri.AbsoluteUri, Is.EqualTo(Artel.Domain.Server.DefaultUrl));
             Assert.That(loginButton, Is.Not.Null);
             Assert.That(loginButton.interactable, Is.True);
             Assert.That(connectButton, Is.Not.Null);

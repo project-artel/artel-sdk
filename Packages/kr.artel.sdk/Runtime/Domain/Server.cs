@@ -6,6 +6,7 @@ namespace Artel.Domain
     [Serializable]
     public sealed class Server
     {
+        public const string DefaultUrl = "https://stage-orch.artel.kr/";
         [SerializeField, Tooltip("Artel 서버의 HTTP(S) 주소")]
         private string serverUrl = "";
 

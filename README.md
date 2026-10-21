@@ -22,7 +22,9 @@ https://github.com/project-artel/artel-sdk.git?path=/Packages/kr.artel.sdk#devel
 
 ## 서버 주소 설정
 
-로그인 화면의 **서버 주소**에 HTTP(S) 주소를 입력하고 **적용**을 누른다.
+기본 서버는 `https://stage-orch.artel.kr`이다. 별도 설정 없이 로그인할 수 있다.
+다른 서버를 사용하려면 로그인 화면의 **고급 설정**을 열고 **서버 주소**에 HTTP(S) 주소를 입력한 뒤 **적용**을 누른다.
+**ARTEL 서버로 복원**을 누르면 기본 서버로 돌아간다.
 연결 후에는 고급 메뉴의 **서버 변경**에서 바꾼다. 기존 연결을 종료하고 새 서버의 인증 상태를 불러온다.
 주소는 origin만 지원한다. 예: `https://artel.example.com`, `http://localhost:8080`.
 경로·query·fragment·사용자 정보는 넣지 않는다. Inspector의 `Server URL`로도 설정할 수 있다.

@@ -11,8 +11,10 @@ Release builds carry none of this. The spawn and the scan are compiled out
 (`#if UNITY_EDITOR || DEVELOPMENT_BUILD`), so a game shipped to players holds no
 subscription and no callback of ours.
 
-로그인 화면의 **서버 주소**에 `https://artel.example.com` 또는 `http://localhost:8080`을
-입력하고 **적용**을 누른다. 고급 메뉴의 **서버 변경**으로 다른 서버를 선택할 수 있다.
+기본 서버는 `https://stage-orch.artel.kr`이며 주소 입력 없이 로그인한다.
+다른 서버를 사용하려면 로그인 화면의 **고급 설정**을 열고 **서버 주소**에
+`https://artel.example.com` 또는 `http://localhost:8080`을 입력한 뒤 **적용**을 누른다.
+**ARTEL 서버로 복원**으로 기본 서버를 다시 선택할 수 있다. 고급 메뉴의 **서버 변경**으로 다른 서버를 선택할 수 있다.
 Inspector에서는 `Server URL` 하나를 설정한다. 기존 씬의 `secure`·`host`·`port` 값은
 새 URL이 없을 때 읽으며, HTTP와 WebSocket 주소는 같은 URL에서 만든다.
 경로·query·fragment·사용자 정보가 붙은 URL은 지원하지 않는다.
