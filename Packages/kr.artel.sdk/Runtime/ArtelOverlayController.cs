@@ -17,10 +17,7 @@ namespace Artel
     {
         private const string DarkThemePlayerPrefsKey = ArtelOwnedPlayerPrefs.DarkTheme;
 
-        // 게이트가 세로로 그릴 수 있는 프로젝트 수. 고정 좌표 배치라 이보다 많으면 화면을
-        // 벗어난다.
-        // ponytail: 프로젝트가 이보다 많은 사람이 나오면 그때 스크롤을 붙인다.
-        private const int MaxListedProjects = 4;
+        private const int VisibleProjectRows = 4;
         private const float ProjectRowHeight = 60f;
 
         // -artel-window-label 판의 치수. 폭만 문구를 따라가고 높이는 한 줄로 고정이다
@@ -75,12 +72,15 @@ namespace Artel
         private GameObject gateContent;
         private GameObject progressContent;
         private GameObject projectListObject;
+        private RectTransform projectListContent;
+        private ScrollRect projectScrollRect;
         private InputField serverUrlInput;
         private Button applyServerButton;
         private bool serverSettingsOpen;
         private GameObject serverSettingsContent;
         private Text serverSettingsToggleText;
         private Button loginButton;
+        private Button cancelLoginButton;
         private Button reloadProjectsButton;
         private Button gateLogOutButton;
         private Button connectButton;
@@ -718,6 +718,10 @@ namespace Artel
             coverStatusText = CreateText(
                 progressContent.transform, string.Empty, 16, TextAnchor.MiddleCenter, textMuted);
             CenterRect(coverStatusText.rectTransform, new Vector2(0f, -84f), new Vector2(900f, 28f));
+
+            cancelLoginButton = CreateButton(progressContent.transform, "취소", new Vector2(240f, 44f));
+            CenterRect(cancelLoginButton.GetComponent<RectTransform>(), new Vector2(0f, -148f), new Vector2(240f, 44f));
+            cancelLoginButton.onClick.AddListener(viewModel.CancelLogin);
         }
 
         // 게임 화면 거리에서 읽히도록 artel-home의 타이포보다 한 단계 크게 잡는다.
@@ -799,12 +803,24 @@ namespace Artel
             CenterRect(reloadProjectsButton.GetComponent<RectTransform>(), new Vector2(0f, 4f), new Vector2(640f, 56f));
             reloadProjectsButton.onClick.AddListener(ReloadProjects);
 
-            projectListObject = new GameObject("Project List", typeof(RectTransform));
+            projectListObject = new GameObject(
+                "Project List", typeof(RectTransform), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
             projectListObject.transform.SetParent(gateContent.transform, false);
             CenterRect(
                 projectListObject.GetComponent<RectTransform>(),
-                new Vector2(0f, 4f),
-                new Vector2(640f, MaxListedProjects * ProjectRowHeight));
+                new Vector2(0f, -86f),
+                new Vector2(640f, VisibleProjectRows * ProjectRowHeight));
+            projectListObject.GetComponent<Image>().color = bgCanvas;
+            projectListContent = new GameObject("Content", typeof(RectTransform)).GetComponent<RectTransform>();
+            projectListContent.SetParent(projectListObject.transform, false);
+            SetRect(projectListContent, Vector2.zero, new Vector2(640f, 0f));
+            listedProjectIds.Clear();
+            projectScrollRect = projectListObject.GetComponent<ScrollRect>();
+            projectScrollRect.viewport = projectListObject.GetComponent<RectTransform>();
+            projectScrollRect.content = projectListContent;
+            projectScrollRect.horizontal = false;
+            projectScrollRect.movementType = ScrollRect.MovementType.Clamped;
+            projectScrollRect.scrollSensitivity = ProjectRowHeight;
 
             gateLogOutButton = CreateButton(gateContent.transform, "로그아웃", new Vector2(640f, 44f));
             // 고급 섹션에도 같은 라벨의 버튼이 있다. GameObject 이름이 겹치면 어느 쪽을
@@ -829,9 +845,10 @@ namespace Artel
             }
 
             listedProjectIds.Clear();
-            for (var index = projectListObject.transform.childCount - 1; index >= 0; index--)
+            for (var index = projectListContent.childCount - 1; index >= 0; index--)
             {
-                var child = projectListObject.transform.GetChild(index).gameObject;
+                var child = projectListContent.GetChild(index).gameObject;
+                child.SetActive(false);
                 if (Application.isPlaying)
                 {
                     Destroy(child);
@@ -842,15 +859,18 @@ namespace Artel
                 }
             }
 
-            var rowCount = Mathf.Min(projects.Count, MaxListedProjects);
+            var rowCount = projects.Count;
+            projectListContent.sizeDelta = new Vector2(640f, rowCount * ProjectRowHeight);
+            projectScrollRect.StopMovement();
+            projectListContent.anchoredPosition = Vector2.zero;
             for (var index = 0; index < rowCount; index++)
             {
                 var project = projects[index];
                 var button = CreateButton(
-                    projectListObject.transform, project.Name ?? project.Id, new Vector2(640f, 52f));
-                CenterRect(
+                    projectListContent, project.Name ?? project.Id, new Vector2(640f, 52f));
+                SetRect(
                     button.GetComponent<RectTransform>(),
-                    new Vector2(0f, ((rowCount - 1) * ProjectRowHeight * 0.5f) - (index * ProjectRowHeight)),
+                    new Vector2(0f, -(index * ProjectRowHeight)),
                     new Vector2(640f, 52f));
                 var projectId = project.Id;
                 button.onClick.AddListener(() => ChooseProject(projectId));
@@ -860,7 +880,7 @@ namespace Artel
 
         private bool MatchesListedProjects(IReadOnlyList<SdkProjectDto> projects)
         {
-            var rowCount = Mathf.Min(projects.Count, MaxListedProjects);
+            var rowCount = projects.Count;
             if (listedProjectIds.Count != rowCount)
             {
                 return false;
@@ -948,6 +968,7 @@ namespace Artel
             var choosingProject = viewModel.HasToken && viewModel.Projects.Count > 0;
             loginButton.gameObject.SetActive(!viewModel.HasToken);
             loginButton.interactable = viewModel.CanLogIn && !loginRunning;
+            cancelLoginButton.gameObject.SetActive(loginRunning && viewModel.CanCancelLogin);
             reloadProjectsButton.gameObject.SetActive(viewModel.HasToken && !choosingProject);
             reloadProjectsButton.interactable = !loginRunning;
             projectListObject.SetActive(choosingProject);

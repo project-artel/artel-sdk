@@ -89,7 +89,8 @@ namespace Artel.Tests
             Assert.That(manager.InstanceName, Is.Not.Empty);
 
             // Artel 토글, 고급, 연결, 로그아웃, 로그인, 다시 시도, 게이트 로그아웃, 나중에.
-            Assert.That(buttons, Has.Length.EqualTo(12));
+            Assert.That(buttons, Has.Length.EqualTo(13));
+            Assert.That(Array.Find(buttons, button => button.name == "취소 Button").gameObject.activeInHierarchy, Is.False);
 
             var serverInput = canvas.GetComponentInChildren<InputField>(true);
             Assert.That(serverInput, Is.Not.Null);
@@ -271,6 +272,49 @@ namespace Artel.Tests
             Assert.That(canvas.Find("Artel Overlay Cover/Gate Content").gameObject.activeSelf, Is.True);
             PlayerPrefs.DeleteKey(ArtelOwnedPlayerPrefs.ServerUrl);
             ArtelSdkSession.UseServer(new Artel.Domain.Server());
+        }
+
+        [UnityTest]
+        public IEnumerator 프로젝트_목록은_마지막_항목까지_스크롤하고_테마_변경_후에도_유지된다()
+        {
+            host = new GameObject("Artel project scroll test");
+            host.AddComponent<ArtelManager>();
+            yield return null;
+
+            var controller = host.GetComponent<ArtelOverlayController>();
+            var viewModel = (ArtelOverlayViewModel)typeof(ArtelOverlayController)
+                .GetField("viewModel", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(controller);
+            var projects = (System.Collections.Generic.List<Artel.Protocol.Dto.SdkProjectDto>)viewModel.Projects;
+            for (var index = 0; index < 10; index++)
+            {
+                projects.Add(new Artel.Protocol.Dto.SdkProjectDto { Id = index.ToString(), Name = "Project " + index });
+            }
+            typeof(ArtelOverlayViewModel).GetProperty("HasToken").SetValue(viewModel, true);
+            typeof(ArtelOverlayController).GetMethod("RefreshView", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(controller, null);
+
+            for (var theme = 0; theme < 2; theme++)
+            {
+                var canvas = host.transform.Find("Artel Overlay Canvas");
+                var scroll = canvas.GetComponentInChildren<ScrollRect>(true);
+                Assert.That(scroll.gameObject.activeInHierarchy, Is.True);
+                Assert.That(scroll.content.GetComponentsInChildren<Button>(), Has.Length.EqualTo(10));
+                Canvas.ForceUpdateCanvases();
+                scroll.verticalNormalizedPosition = 0f;
+                yield return null;
+
+                var last = scroll.content.GetChild(9).GetComponent<RectTransform>();
+                var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(scroll.viewport, last);
+                Assert.That(bounds.min.y, Is.GreaterThanOrEqualTo(scroll.viewport.rect.yMin - 1f));
+                Assert.That(bounds.max.y, Is.LessThanOrEqualTo(scroll.viewport.rect.yMax + 1f));
+
+                if (theme == 0)
+                {
+                    var toggle = Array.Find(canvas.GetComponentsInChildren<Toggle>(true), value => value.name == "다크 모드 Toggle");
+                    toggle.isOn = !toggle.isOn;
+                    yield return null;
+                }
+            }
         }
 
         private static void ClearSession()

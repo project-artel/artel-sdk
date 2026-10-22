@@ -38,6 +38,33 @@ namespace Artel.Tests.Auth
         }
 
         [Test]
+        public void 로그인_대기를_취소하면_토큰_없이_재시도할_수_있다()
+        {
+            var jsonCodec = new Artel.Serialization.NewtonsoftJsonCodec();
+            var viewModel = new ArtelOverlayViewModel(
+                new ArtelSdkRegistrationClient(jsonCodec), new ArtelSdkAuthClient(jsonCodec), jsonCodec);
+            var server = new Artel.Domain.Server();
+            viewModel.Initialize(server);
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var login = viewModel.LogIn(server);
+                Assert.That(login.MoveNext(), Is.True);
+                Assert.That(viewModel.CanCancelLogin, Is.True);
+                var authorization = (System.Collections.IEnumerator)login.Current;
+                viewModel.CancelLogin();
+                Assert.That(viewModel.CanCancelLogin, Is.False);
+                // 취소된 요청은 브라우저를 열거나 토큰 교환 요청을 만들지 않는다.
+                Assert.That(authorization.MoveNext(), Is.False);
+                Assert.That(login.MoveNext(), Is.False);
+                Assert.That(viewModel.State, Is.EqualTo(ArtelConnectionState.NeedsLogin));
+                Assert.That(viewModel.HasError, Is.False);
+                Assert.That(viewModel.HasToken, Is.False);
+                Assert.That(ArtelSdkSession.LoadToken(), Is.Empty);
+            }
+        }
+
+        [Test]
         public void Callback_YieldsCodeWhenStateMatches()
         {
             var read = ArtelLoopbackLogin.TryReadCallback(

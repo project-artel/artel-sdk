@@ -20,6 +20,7 @@ namespace Artel
         private readonly ArtelSdkAuthClient authClient;
         private readonly IJsonCodec jsonCodec;
         private readonly List<SdkProjectDto> projects = new List<SdkProjectDto>();
+        private bool loginCancelled;
 
         // 마지막으로 화면에 옮긴 전송 상태. NoticeTransport 는 프레임마다 불리므로, 달라졌을 때만
         // Changed 를 올려야 오버레이가 매 프레임 다시 그려지지 않는다.
@@ -56,6 +57,7 @@ namespace Artel
         public bool HasAttemptedRegistration { get; private set; }
 
         public bool HasToken { get; private set; }
+        public bool CanCancelLogin { get; private set; }
         public string DisplayName { get; private set; } = string.Empty;
         public string SelectedProjectId { get; private set; } = string.Empty;
 
@@ -181,14 +183,29 @@ namespace Artel
                 yield break;
             }
 
+            loginCancelled = false;
+            CanCancelLogin = true;
             State = ArtelConnectionState.LoggingIn;
             HasError = false;
             SetStatus("브라우저에서 로그인을 완료해 주세요.");
 
             var login = default(ArtelLoginCode);
-            yield return ArtelLoopbackLogin.Authorize(serverOrigin, result => login = result);
+            try
+            {
+                yield return ArtelLoopbackLogin.Authorize(
+                    serverOrigin, result => login = result, () => loginCancelled);
+            }
+            finally
+            {
+                CanCancelLogin = false;
+            }
 
             if (!ArtelSdkSession.IsFor(server)) yield break;
+            if (loginCancelled)
+            {
+                Initialize(server);
+                yield break;
+            }
             if (!login.IsSuccess)
             {
                 Fail("로그인 실패: " + login.Error);
@@ -254,6 +271,14 @@ namespace Artel
             DisplayName = token.DisplayName ?? string.Empty;
 
             yield return LoadProjects(server);
+        }
+
+        public void CancelLogin()
+        {
+            if (!CanCancelLogin) return;
+            loginCancelled = true;
+            CanCancelLogin = false;
+            NotifyChanged();
         }
 
         /// <summary>
