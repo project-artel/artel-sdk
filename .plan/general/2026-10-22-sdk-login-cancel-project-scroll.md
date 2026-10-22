@@ -8,7 +8,7 @@
 브라우저 로그인 대기를 취소하고 로그인 화면으로 돌아간다. 4개를 넘는 프로젝트도 스크롤하여 선택한다.
 
 ## Non-goals
-인증 API, 토큰 저장 방식, 기존 테마는 변경하지 않는다.
+인증 API와 토큰 저장 방식은 변경하지 않는다. 저장된 테마 선호는 유지한다.
 
 ## Context / Constraints
 Unity uGUI 오버레이의 기존 변경 사항을 유지한다. Hindsight는 DNS 오류로 조회할 수 없었다.
@@ -33,3 +33,12 @@ Unity uGUI 오버레이의 기존 변경 사항을 유지한다. Hindsight는 DN
 
 ## Open Questions
 없음.
+
+## 브라우저 스타일 적용
+- 웹 콘솔의 크림색 표면, 얇은 테두리와 코랄 버튼을 SDK 로그인·대기·프로젝트 선택 카드에 적용했다.
+- 프로젝트 행에 첫 글자 아이콘과 스크롤바를 추가하고, 기본 테마를 라이트로 변경했다.
+- CanvasRenderer가 없어 표시되지 않던 로고를 수정했다. 토글 라벨 클릭을 유지하고 CanvasScaler의 Expand 설정으로 카드가 화면 높이를 넘지 않게 했다.
+- Unity 2022.3.34f1에서 라이트 로그인 화면, 로고, 검증용 프로젝트 10개, 마우스 휠 및 스크롤바 드래그를 직접 확인했다.
+- 재디자인 후 PlayMode OverlayGuiBootstrapTests 9/9 통과. 재검토 VERDICT: PASS. git diff --check 통과.
+- 마지막 토글·scaling 보완 후 수동 검증은 Esc 입력으로 중단됐다. 다크 테마와 실제 브라우저 로그인 취소의 최종 수동 검증은 남아 있다. 기존 PNG는 재디자인 이전 fixture 화면이다.
+- 실행 중 스크립트 reload 과정에서 ArtelManager.RecordFrameTime 및 StopTransport의 NullReferenceException이 기록됐다. 새 세션 재실행 검증은 중단되어 이 조건의 확인이 남아 있다.
