@@ -71,7 +71,7 @@ namespace Artel.Tests
             {
                 var target = legacy.gameObject;
                 Object.DestroyImmediate(legacy);
-                target.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>().AssignDefaultActions();
+                InputModuleFixture.AddNativeModule(target);
             }
         }
 #endif

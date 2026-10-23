@@ -225,7 +225,7 @@ What that cannot undo:
 
 ## Agent keyboard input
 
-마우스 QA 명령(`move_mouse`, `mouse_down`, `mouse_up`, `Mouse0/1/2` 별칭)은 Legacy와 New Input System을 지원한다. SDK는 `com.unity.inputsystem` 1.7.0 이상을 의존성으로 사용하며, New 또는 Both 설정에서는 가상 `Mouse`의 상태를 Input System 업데이트에 전달한다. 게임의 `InputAction`과 `Mouse.current`에서 읽을 수 있다. Legacy 설정의 기존 입력 경로는 유지한다.
+마우스 QA 명령(`move_mouse`, `mouse_down`, `mouse_up`, `Mouse0/1/2` 별칭)은 Legacy와 New Input System을 지원한다. Input System 패키지는 선택 사항이며 SDK 설치 시 자동으로 추가하지 않는다. 패키지가 없는 Legacy 프로젝트는 기존 입력 경로를 사용한다. `com.unity.inputsystem` 1.7.0 이상이 설치되어 있고 New 또는 Both 설정인 경우에만 별도 `Artel.InputSystem` assembly가 활성화되며, 가상 `Mouse`의 상태를 Input System 업데이트에 전달한다. 게임의 `InputAction`과 `Mouse.current`에서 읽을 수 있다. New/Both에서 패키지 버전이 1.7.0 미만이거나 adapter가 등록되지 않았다면 마우스 명령은 오류를 반환한다. Legacy 설정의 기존 입력 경로는 유지한다.
 
 `InputSystemUIInputModule`을 사용하는 UI는 native 입력으로 처리하므로 SDK의 직접 이벤트 전달과 중복되지 않는다. `StandaloneInputModule`은 기존 dispatcher를 사용한다. native UI 경로의 `mouse_down` 결과는 실제 수신 대상을 추측하지 않아 `reached=null`이며, `pointerHeldByPerson`은 포인터 소유권으로 판단한다.
 

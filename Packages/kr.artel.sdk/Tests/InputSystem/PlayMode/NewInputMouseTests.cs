@@ -18,6 +18,7 @@ namespace Artel.Tests
     public sealed class NewInputMouseTests
     {
         private GameObject host;
+        private GameObject[] pausedManagers;
         private GameObject eventSystemObject;
         private GameObject canvasObject;
         private Mouse physicalMouse;
@@ -30,8 +31,10 @@ namespace Artel.Tests
         [SetUp]
         public void SetUp()
         {
-            foreach (var manager in Object.FindObjectsOfType<ArtelManager>(true))
-                Object.DestroyImmediate(manager.gameObject);
+            // 다른 assembly의 bootstrap 검증을 위해 기존 manager는 파괴하지 않는다.
+            pausedManagers = Object.FindObjectsOfType<ArtelManager>(true)
+                .Select(manager => manager.gameObject).Where(target => target.activeSelf).ToArray();
+            foreach (var target in pausedManagers) target.SetActive(false);
             ArtelInput.ResetVirtualKeyboard();
             previousUpdateMode = InputSystem.settings.updateMode;
             previousBackgroundBehavior = InputSystem.settings.backgroundBehavior;
@@ -57,6 +60,7 @@ namespace Artel.Tests
             InputSystem.settings.backgroundBehavior = previousBackgroundBehavior;
             Time.timeScale = 1f;
             Time.fixedDeltaTime = previousFixedDeltaTime;
+            foreach (var target in pausedManagers) if (target != null) target.SetActive(true);
         }
 
         [UnityTest]

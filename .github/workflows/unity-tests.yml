@@ -84,7 +84,7 @@ jobs:
           echo "run-tests=true" >> "$GITHUB_OUTPUT"
 
   test:
-    name: Test (${{ matrix.testMode }}, input ${{ matrix.inputHandling }})
+    name: Test (${{ matrix.testMode }}, input ${{ matrix.inputHandling }}, package ${{ matrix.inputPackage }})
     needs: preflight
     if: needs.preflight.outputs.run-tests == 'true'
     runs-on: ubuntu-latest
@@ -92,6 +92,12 @@ jobs:
       fail-fast: false
       matrix:
         inputHandling: [0, 1, 2]
+        inputPackage: [absent, present]
+        exclude:
+          - inputHandling: 1
+            inputPackage: absent
+          - inputHandling: 2
+            inputPackage: absent
         testMode:
           - editmode
           - playmode
@@ -111,7 +117,7 @@ jobs:
       # needs — com.unity.modules.physics among them — so the package would not
       # compile.)
       - name: Assemble Unity test project
-        run: .github/scripts/setup-unity-test-project.sh "${TEST_PROJECT_PATH}" "${{ matrix.inputHandling }}"
+        run: .github/scripts/setup-unity-test-project.sh "${TEST_PROJECT_PATH}" "${{ matrix.inputHandling }}" "${{ matrix.inputPackage }}"
 
       # Library/ is ~210 MB, most of it PackageCache — restoring it is what turns
       # a cold "resolve every package and reimport everything" run into an
@@ -124,10 +130,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.TEST_PROJECT_PATH }}/Library
-          key: UnityLibrary-${{ matrix.inputHandling }}-${{ matrix.testMode }}-${{ hashFiles('.github/unity-test-project/Packages/manifest.json', 'Packages/kr.artel.sdk/package.json') }}
+          key: UnityLibrary-${{ matrix.inputPackage }}-${{ matrix.inputHandling }}-${{ matrix.testMode }}-${{ hashFiles('.github/unity-test-project/Packages/manifest.json', 'Packages/kr.artel.sdk/package.json') }}
           restore-keys: |
-            UnityLibrary-${{ matrix.inputHandling }}-${{ matrix.testMode }}-
-            UnityLibrary-
+            UnityLibrary-${{ matrix.inputPackage }}-${{ matrix.inputHandling }}-${{ matrix.testMode }}-
 
       - name: Run ${{ matrix.testMode }} tests
         id: tests
@@ -154,7 +159,7 @@ jobs:
           testMode: ${{ matrix.testMode }}
           artifactsPath: artifacts/${{ matrix.testMode }}
           githubToken: ${{ secrets.GITHUB_TOKEN }}
-          checkName: ${{ matrix.testMode }} Input ${{ matrix.inputHandling }} Test Results
+          checkName: ${{ matrix.testMode }} Input ${{ matrix.inputHandling }} Package ${{ matrix.inputPackage }} Test Results
 
       # Unity runs as root inside the container, so Library/ and artifacts/ come
       # back root-owned. The cache post-step and the artifact upload both run as
@@ -180,7 +185,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unity-test-results-${{ matrix.inputHandling }}-${{ matrix.testMode }}
+          name: unity-test-results-${{ matrix.inputPackage }}-${{ matrix.inputHandling }}-${{ matrix.testMode }}
           path: artifacts/${{ matrix.testMode }}
           if-no-files-found: warn
 
@@ -204,6 +209,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: unity-editor-log-${{ matrix.inputHandling }}-${{ matrix.testMode }}
+          name: unity-editor-log-${{ matrix.inputPackage }}-${{ matrix.inputHandling }}-${{ matrix.testMode }}
           path: artifacts/unity-log-${{ matrix.testMode }}
           if-no-files-found: ignore

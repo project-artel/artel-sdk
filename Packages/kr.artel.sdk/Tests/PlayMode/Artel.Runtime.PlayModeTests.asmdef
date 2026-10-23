@@ -5,8 +5,7 @@
     "Artel.Runtime",
     "Artel.GameFunctions.Fixtures",
     "Artel.Affordances.Scan",
-    "Unity.TextMeshPro",
-    "Unity.InputSystem"
+    "Unity.TextMeshPro"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
@@ -17,7 +16,13 @@
   ],
   "autoReferenced": false,
   "defineConstraints": [],
-  "versionDefines": [],
+  "versionDefines": [
+    {
+      "name": "com.unity.inputsystem",
+      "expression": "",
+      "define": "ARTEL_INPUT_SYSTEM_INSTALLED"
+    }
+  ],
   "noEngineReferences": false,
   "optionalUnityReferences": [
     "TestAssemblies"

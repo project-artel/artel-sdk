@@ -148,7 +148,7 @@ namespace Artel.Tests
 #if ENABLE_LEGACY_INPUT_MANAGER
                 eventSystemObject.AddComponent<StandaloneInputModule>();
 #elif ENABLE_INPUT_SYSTEM
-                eventSystemObject.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>().AssignDefaultActions();
+                InputModuleFixture.AddNativeModule(eventSystemObject);
 #endif
             }
 
