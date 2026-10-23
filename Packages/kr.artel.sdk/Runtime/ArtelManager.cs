@@ -890,11 +890,11 @@ namespace Artel
         /// </summary>
         private static bool IsPointerTakeoverPressed()
         {
-            var control = global::UnityEngine.Input.GetKey(KeyCode.LeftControl) ||
-                          global::UnityEngine.Input.GetKey(KeyCode.RightControl);
-            var shift = global::UnityEngine.Input.GetKey(KeyCode.LeftShift) ||
-                        global::UnityEngine.Input.GetKey(KeyCode.RightShift);
-            return control && shift && global::UnityEngine.Input.GetKeyDown(KeyCode.M);
+            var control = LegacyInput.GetKey(KeyCode.LeftControl) ||
+                          LegacyInput.GetKey(KeyCode.RightControl);
+            var shift = LegacyInput.GetKey(KeyCode.LeftShift) ||
+                        LegacyInput.GetKey(KeyCode.RightShift);
+            return control && shift && LegacyInput.GetKeyDown(KeyCode.M);
         }
 
         /// <summary>
