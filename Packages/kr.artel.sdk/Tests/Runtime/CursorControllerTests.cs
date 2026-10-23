@@ -39,14 +39,16 @@ namespace Artel.Tests
             Assert.That(cursor.position.y, Is.EqualTo(240f).Within(0.01f));
         }
 
-        [Test]
-        public void Cursor_UsesArtelCoralWithHighContrastBorder()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void Cursor_저장값이_없으면_라이트를_사용하고_테마_변경을_반영(bool savedDark)
         {
             var hadTheme = PlayerPrefs.HasKey("Artel.DarkTheme");
             var previousTheme = PlayerPrefs.GetInt("Artel.DarkTheme");
             try
             {
-                PlayerPrefs.SetInt("Artel.DarkTheme", 1);
+                if (savedDark) PlayerPrefs.SetInt("Artel.DarkTheme", 1);
+                else PlayerPrefs.DeleteKey("Artel.DarkTheme");
                 var controller = CreateController();
 
                 var texture = controllerObject.transform
@@ -54,10 +56,10 @@ namespace Artel.Tests
                     .GetComponent<Image>().sprite.texture;
                 var pixels = texture.GetPixels32();
 
-                Assert.That(pixels, Has.Some.EqualTo(ArtelLogoGraphic.CoralDark));
-                Assert.That(pixels, Has.Some.EqualTo(ArtelLogoGraphic.Ink));
+                Assert.That(pixels, Has.Some.EqualTo(savedDark ? ArtelLogoGraphic.CoralDark : ArtelLogoGraphic.Coral));
+                Assert.That(pixels, Has.Some.EqualTo(savedDark ? ArtelLogoGraphic.Ink : ArtelLogoGraphic.Charcoal));
 
-                PlayerPrefs.SetInt("Artel.DarkTheme", 0);
+                PlayerPrefs.DeleteKey("Artel.DarkTheme");
                 typeof(CursorController)
                     .GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic)
                     .Invoke(controller, null);

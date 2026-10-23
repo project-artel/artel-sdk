@@ -37,7 +37,7 @@ namespace Artel
         private void Awake()
         {
             CacheKeyboardKeys();
-            darkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 1) != 0;
+            darkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 0) != 0;
             CreateGui();
             ApplyTheme();
             RefreshText();
@@ -45,7 +45,7 @@ namespace Artel
 
         private void Update()
         {
-            var currentDarkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 1) != 0;
+            var currentDarkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 0) != 0;
             if (darkTheme != currentDarkTheme)
             {
                 darkTheme = currentDarkTheme;
