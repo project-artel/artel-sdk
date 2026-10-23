@@ -15,6 +15,7 @@ namespace Artel.Tracking
         private readonly Vector3[] corners = new Vector3[4];
 
         private Camera sceneCamera;
+        private readonly BlockVisibility visibility = new BlockVisibility();
 
         /// <summary>
         /// Resolves the camera the non-UI blocks project through, once per scan rather than once
@@ -23,9 +24,30 @@ namespace Artel.Tracking
         public void BeginScan()
         {
             sceneCamera = Camera.main;
+            visibility.BeginScan();
         }
 
         public BlockTransform Read(Transform transform)
+        {
+            var measured = Measure(transform);
+            if (!measured.OnScreen)
+            {
+                return measured;
+            }
+
+            return measured.WithVisible(visibility.IsVisible(transform, measured.ScreenRect, ScreenRectOf));
+        }
+
+        /// <summary>mask 의 영역을 블록과 같은 좌표계(좌상단 원점 픽셀)로 잰다. 잴 수 없으면 null.</summary>
+        private Rect? ScreenRectOf(RectTransform rectTransform)
+        {
+            var measured = ReadRect(rectTransform);
+            return measured.ScreenRect.width > 0f || measured.ScreenRect.height > 0f || measured.OnScreen
+                ? measured.ScreenRect
+                : (Rect?)null;
+        }
+
+        private BlockTransform Measure(Transform transform)
         {
             var rectTransform = transform as RectTransform;
             if (rectTransform != null)

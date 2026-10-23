@@ -48,6 +48,9 @@ namespace Artel
         /// </summary>
         private GameFunctionActions gameFunctions;
 
+        /// <summary>게임이 찍은 예외와 Error 로그. <c>PULSE</c> 와 <c>ACTION_RESULT</c> 가 함께 읽는다(ARTEL-1218).</summary>
+        private LoggedErrors loggedErrors;
+
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         /// <summary>이 연결에 마지막으로 보낸 catalog 의 revision. 0 이면 이 연결에는 아직 보내지 않았다.</summary>
         private long sentCatalogRevision;
@@ -273,8 +276,13 @@ namespace Artel
             pointerEvents = new PointerEventDispatcher();
             jsonCodec = new NewtonsoftJsonCodec();
             gameFunctions = new GameFunctionActions();
+            loggedErrors = new LoggedErrors();
+            loggedErrors.Listen();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            Affordances.Live.LiveState.Attachment = new GameFunctionPulse(gameFunctions);
+            Affordances.Live.LiveState.Attachment = new PulseAttachmentSet(
+                new GameFunctionPulse(gameFunctions),
+                new ErrorPulse(loggedErrors),
+                new AudioPulse());
 #endif
             actionExecutor = new ActionExecutor(
                 scanner,
@@ -369,6 +377,9 @@ namespace Artel
 
         private void OnDestroy()
         {
+            // 로그 구독은 이 객체가 만든 것이므로 살아남은 매니저인지와 상관없이 푼다.
+            loggedErrors?.Dispose();
+
             // Only the surviving manager clears the slot. A duplicate destroying
             // itself in Awake must not blank the reference to the live one, or the
             // next scene load would let a third instance through.
@@ -879,11 +890,11 @@ namespace Artel
         /// </summary>
         private static bool IsPointerTakeoverPressed()
         {
-            var control = global::UnityEngine.Input.GetKey(KeyCode.LeftControl) ||
-                          global::UnityEngine.Input.GetKey(KeyCode.RightControl);
-            var shift = global::UnityEngine.Input.GetKey(KeyCode.LeftShift) ||
-                        global::UnityEngine.Input.GetKey(KeyCode.RightShift);
-            return control && shift && global::UnityEngine.Input.GetKeyDown(KeyCode.M);
+            var control = LegacyInput.GetKey(KeyCode.LeftControl) ||
+                          LegacyInput.GetKey(KeyCode.RightControl);
+            var shift = LegacyInput.GetKey(KeyCode.LeftShift) ||
+                        LegacyInput.GetKey(KeyCode.RightShift);
+            return control && shift && LegacyInput.GetKeyDown(KeyCode.M);
         }
 
         /// <summary>
@@ -916,6 +927,9 @@ namespace Artel
         private IEnumerator ExecuteActionRequest(ArtelRequestDto request)
         {
             var results = new List<ActionResultDto>();
+
+            // 배치를 꺼낸 frame. 이 frame 부터 찍힌 예외를 답에 붙인다(ARTEL-1218).
+            var startFrame = Time.frameCount;
 
             foreach (var action in request.Actions ?? new List<ActionRequestDto>())
             {
@@ -972,13 +986,26 @@ namespace Artel
                 // 여러 프레임에 걸치는 액션이 있고, 그때 둘이 갈린다. 기다리는 쪽이 궁금한 것은 배치가
                 // 끝난 뒤의 화면이므로 끝난 프레임이라야 답이 된다(ARTEL-620).
                 Frame = Time.frameCount,
-                Results = results
+                Results = results,
+                Errors = ErrorsSince(startFrame)
             };
 
             if (webSocketTransport != null)
             {
                 webSocketTransport.Send(jsonCodec.Serialize(response));
             }
+        }
+
+        /// <summary>배치가 도는 동안 찍힌 예외 묶음. 없으면 null 이라 필드가 빠진다.</summary>
+        private List<LoggedErrorDto> ErrorsSince(int startFrame)
+        {
+            if (loggedErrors == null)
+            {
+                return null;
+            }
+
+            var seen = loggedErrors.SeenSince(startFrame, ActionResultMessage.MaxErrors);
+            return seen.Count == 0 ? null : seen;
         }
 
         /// <summary>
