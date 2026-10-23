@@ -225,6 +225,18 @@ namespace Artel.Affordances.CodeGen
 
                 flow.Milliseconds = clock.ElapsedMilliseconds;
 
+                // 접기 전에 한다. 버튼에 잘못 묶이는 기록이 다른 기록 밑으로 접혀 들어가면 지울 수 없다(ARTEL-1229).
+                var rootNames = new HashSet<string>();
+
+                foreach (var root in roots)
+                {
+                    rootNames.Add(root.FullName);
+                }
+
+                flow.Dropped = ButtonJoin.DropHandedRoots(variants, rootNames) +
+                               ButtonJoin.DropValueConstructors(variants, name =>
+                                   AnalysisScope.Inspect(assembly.MainModule.GetType(name)) == TypeVerdict.Behaviour);
+
                 // 아래의 공백들이 그것들에 매달리기 전에 한다. 결국 같은 공백을 나르게 될 두 경우가 여전히 같은 경우로
                 // 인식되도록.
                 flow.Folded = DuplicateVariants.Fold(variants);
@@ -463,6 +475,9 @@ namespace Artel.Affordances.CodeGen
             /// <summary>메서드가 불린 것이 아니라 건네진 경우들.</summary>
             internal int Handed;
 
+            /// <summary>버튼 click 에 잘못 묶이는 기록이라 지운 경우들(ARTEL-1229).</summary>
+            internal int Dropped;
+
             internal string Describe()
             {
                 if (Methods == 0 && Abandoned == 0)
@@ -492,6 +507,12 @@ namespace Artel.Affordances.CodeGen
                 if (Handed > 0)
                 {
                     text += " " + Handed + " were handed over rather than called.";
+                }
+
+                if (Dropped > 0)
+                {
+                    text += " " + Dropped + " were dropped: a listener's body already recorded from its own entry, " +
+                            "or a value type's constructor.";
                 }
 
                 // 합계에 접어 넣지 않고 따로 말한다. 해내지 못한 것을 조용히 빼놓은 개수는 완전한 답으로 읽힌다.
