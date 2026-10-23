@@ -86,6 +86,7 @@ namespace Artel
 
         public void Press(int button)
         {
+            ForgetLastPress();
             var eventSystem = EventSystem.current;
             if (eventSystem == null)
             {
@@ -120,13 +121,17 @@ namespace Artel
             if (target != null)
             {
                 data.rawPointerPress = target;
+                // 핸들러가 대상을 제거하기 전에 이번 입력의 수신 경로를 보존한다.
+                var receiver = ExecuteEvents.GetEventHandler<IPointerDownHandler>(target)
+                    ?? ExecuteEvents.GetEventHandler<IPointerClickHandler>(target)
+                    ?? target;
+                LastPressReceiver = VirtualMouseMessenger.Path(receiver);
                 // The object that answers the press is rarely the one the ray hit — a Button's
                 // handler sits on the parent of the graphic that was actually under the pointer.
                 data.pointerPress = ExecuteEvents.ExecuteHierarchy(
                     target, data, ExecuteEvents.pointerDownHandler)
                     ?? ExecuteEvents.GetEventHandler<IPointerClickHandler>(target);
                 data.pointerDrag = ExecuteEvents.GetEventHandler<IDragHandler>(target);
-                LastPressReceiver = VirtualMouseMessenger.Path(data.pointerPress ?? target);
             }
 
             if (data.pointerDrag != null)
