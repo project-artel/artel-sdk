@@ -8,17 +8,19 @@ namespace Artel
 {
     internal sealed class ArtelWebSocketMessage
     {
-        public ArtelWebSocketMessage(string text, Action<string> reply)
+        public ArtelWebSocketMessage(string text, Action<string> reply, Func<bool> isCurrent = null)
         {
             Text = text;
             Reply = reply;
+            IsCurrent = isCurrent ?? (() => true);
         }
 
         public string Text { get; private set; }
         public Action<string> Reply { get; private set; }
+        internal Func<bool> IsCurrent { get; private set; }
     }
 
-    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport
+    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport, IArtelConnectionEpoch
     {
         private readonly string bindAddress;
         private readonly int port;
@@ -27,6 +29,8 @@ namespace Artel
         private readonly Dictionary<string, Action<string>> sendByConnectionId =
             new Dictionary<string, Action<string>>();
         private WebSocketServer server;
+        private long connectionEpoch;
+        public long ConnectionEpoch => System.Threading.Interlocked.Read(ref connectionEpoch);
 
         public ArtelWebSocketServer(string bindAddress, int port)
         {
@@ -99,22 +103,37 @@ namespace Artel
         private ArtelWebSocketBehavior CreateBehavior()
         {
             var behavior = new ArtelWebSocketBehavior();
+            string currentConnectionId = null;
             behavior.Configure(
                 (connectionId, send) =>
                 {
                     lock (sendByConnectionId)
                     {
                         sendByConnectionId[connectionId] = send;
+                        currentConnectionId = connectionId;
+                        System.Threading.Interlocked.Increment(ref connectionEpoch);
                     }
+                    send(Newtonsoft.Json.JsonConvert.SerializeObject(
+                        new Artel.Protocol.Dto.DemonstrationCapabilitiesDto()));
                 },
                 connectionId =>
                 {
                     lock (sendByConnectionId)
                     {
                         sendByConnectionId.Remove(connectionId);
+                        System.Threading.Interlocked.Increment(ref connectionEpoch);
                     }
                 },
-                (text, reply) => incomingMessages.Enqueue(new ArtelWebSocketMessage(text, reply)));
+                (text, reply) =>
+                {
+                    var messageEpoch = ConnectionEpoch;
+                    incomingMessages.Enqueue(new ArtelWebSocketMessage(text, reply, () =>
+                    {
+                        lock (sendByConnectionId)
+                            return currentConnectionId != null && sendByConnectionId.ContainsKey(currentConnectionId) &&
+                                   messageEpoch == ConnectionEpoch;
+                    }));
+                });
             return behavior;
         }
     }
