@@ -139,14 +139,14 @@ behavior 가 끝나는 이유.
 
 | type | 언제 |
 | --- | --- |
-| `ACTION_RESULT` | `ACTION` 배치 하나를 다 돈 뒤. 항목은 `{id, success, error?, action?, returnValue?}` |
+| `ACTION_RESULT` | `ACTION` 배치 하나를 다 돈 뒤. 항목은 `{id, success, error?, action?, returnValue?}`. 배치 중 예외가 찍혔으면 `errors` 도 실린다 |
 | `GAME_STATE` | 스냅샷 해시가 달라졌을 때, 그리고 `scan_scene` 에 대한 답으로. **`ArtelManager.SendsGameState` 가 기본으로 `false` 다** |
 | `ALL_SCENES` | `scan_all_scenes` 를 마친 뒤 |
 | `DEVICE_CONTEXT` | 연결이 열린 뒤 한 번. 끊기면 표시를 내려 다음 연결에서 다시 보낸다 |
 | `GAME_FUNCTION_CATALOG` | `DEVICE_CONTEXT` 바로 뒤에 한 번, 그 뒤 목록이 바뀌면 1 초에 한 번까지. `{type, revision, cheats, behaviors}`. 출시 빌드는 보내지 않는다 |
 | `BEHAVIOR_ENDED` | behavior 하나가 끝날 때 한 번. `{type, behaviorId, name, target, reason, detail, seconds, frame}`. 연결이 없을 때 끝난 것은 버린다 |
 | `PERFORMANCE` | 1 초마다 (`PerformanceReportIntervalSeconds`) |
-| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions` 와 `behaviors` 는 아래 |
+| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions`·`behaviors`·`errors` 는 아래 |
 | `STREAM_STATE` | 스트림 상태가 바뀔 때. 값은 `CONNECTING`·`LIVE`·`FAILED`·`STOPPED` |
 | `WEBRTC_OFFER` | 스트림 세션이 offer 를 만들었을 때 |
 | `WEBRTC_ICE` | ICE candidate 가 모였을 때 |
@@ -157,8 +157,38 @@ behavior 가 끝나는 이유.
   `target: null` 항목 하나로 선다
 - `PULSE.behaviors`: 도는 behavior 전부. behavior 가 하나라도 등록돼 있으면 모든 `pulse` 에 싣는다. 감시 대상 값이
   가만히 있어도 behavior 가 도는 동안은 1 초에 한 번 `pulse` 를 보낸다
+- `PULSE.errors`: 직전 `pulse` 이후 새로 생기거나 `count` 가 늘어난 예외·Error 로그 묶음. 아래 「예외와 Error 로그」
 - `PERFORMANCE` 가 나르는 지표군 이름은 서버가 정한 계약
 - 지금 `MetricGroupNames.Collected()` 가 선언하는 것은 `frameTiming` 과 `editorRender` 둘
+
+### 예외와 Error 로그
+
+- `Application.logMessageReceived` 로 `LogType.Exception`·`Error`·`Assert` 만 모은다. `Warning` 과 `Log` 는 버린다
+- 게임이 잡아서 `Debug.LogException` 으로 찍은 예외도 `Exception` 으로 들어온다
+- type, message, stack 첫 줄이 같으면 한 묶음이다. 매 frame 같은 예외를 던지는 게임도 묶음 하나로 온다
+- 메인 스레드에서 찍힌 로그만 모은다
+
+항목 하나의 모양. `PULSE.errors` 와 `ACTION_RESULT.errors` 가 같다.
+
+| 필드 | 뜻 |
+| --- | --- |
+| `type` | `Exception` · `Error` · `Assert` |
+| `message` | 로그 문장. 200 자에서 자른다 |
+| `stackHead` | stack trace 첫 줄. 비어 있으면 `null` (release build 의 `Debug.LogError` 가 대개 그렇다) |
+| `firstFrame` · `lastFrame` | 이 묶음이 처음과 마지막으로 찍힌 `Time.frameCount` |
+| `count` | 프로세스가 시작한 뒤의 누적 횟수 |
+| `truncated` | `message` 가 잘렸을 때만 `true` 로 실린다 |
+
+| 어디 | 무엇을 싣나 | 상한 |
+| --- | --- | --- |
+| `PULSE.errors` | 직전 `pulse` 이후 새로 생기거나 `count` 가 늘어난 묶음. 실을 것이 있으면 감시 대상 값이 가만히 있어도 `pulse` 가 나간다 | `pulse` 하나에 20 개. 넘친 묶음은 다음 `pulse` 로 밀린다 |
+| `ACTION_RESULT.errors` | 배치를 꺼낸 frame 이후 한 번이라도 찍힌 묶음. 없으면 필드가 빠진다 | 20 개 |
+
+- 묶음은 100 개까지 둔다. 넘치면 이미 `pulse` 로 보낸 것 중 가장 오래전에 찍힌 것부터 버리고, 그것이 다시 찍히면 새
+  묶음으로 `count` 1 부터 센다
+- 전량 `pulse` 에도 이미 보낸 묶음을 다시 싣지 않는다. 예외는 상태가 아니라 일어난 일이라서다. 그래서 전달에 실패한
+  `pulse` 에 실렸던 묶음은 다시 찍히기 전까지 다시 오지 않는다
+- live readings 가 꺼져 있는 동안 찍힌 묶음은 쌓여 있다가 켜진 뒤 첫 `pulse` 부터 나간다
 
 ## Inbound messages (orchestration → SDK)
 

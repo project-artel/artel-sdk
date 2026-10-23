@@ -1,7 +1,8 @@
 # ADR 0003 — 상태 관측을 text scraping 과 attribute 로 하고 SDK 안에 vision 판정을 두지 않는다
 
 - 상태: 확정
-- 근거: Notion `3960bce5-474c-808b-a907-c0524b995d03`, Notion `3b50bce5-474c-81de-be32-f98008c0494b`, `Packages/kr.artel.sdk/Runtime/SceneScanner.cs`, `Packages/kr.artel.sdk/Runtime/Tracking/SceneStatePoller.cs`
+- 근거: Notion `3960bce5-474c-808b-a907-c0524b995d03`, Notion `3b50bce5-474c-81de-be32-f98008c0494b`, `Packages/kr.artel.sdk/Runtime/SceneScanner.cs`, `Packages/kr.artel.sdk/Runtime/Tracking/SceneStatePoller.cs`, `Packages/kr.artel.sdk/Runtime/Observation/LoggedErrors.cs`
+- 갱신: 2026-10-23 ARTEL-1218 — 예외와 Error 로그를 세 번째 통로로 더함. 아래 「갱신: log hooking」
 
 ## 결정
 
@@ -21,9 +22,20 @@ Notion 원문과 실제로 나간 것이 세 자리에서 다릅니다.
 
 | Notion 원문 | 이 저장소 | 확인한 것 |
 | --- | --- | --- |
-| 세 번째 통로로 log hooking | 없음 | `Application.logMessageReceived` 를 거는 자리가 하나도 없고, `ArtelLoggerBehaviour` 는 시작할 때 `Debug.Log` 한 줄을 쓸 뿐 |
+| 세 번째 통로로 log hooking | ARTEL-1218 전까지 없었음. 지금은 예외·Error·Assert 만 | 아래 「갱신: log hooking」 |
 | `[QAAction]` | `[ArtelAction]` | 원문 이름으로 저장소를 검색하면 아무것도 안 나옴 |
 | `[QAWatch]` | `[ArtelState]` | 같음 |
+
+### 갱신: log hooking (ARTEL-1218)
+
+- 2026-10-22 결함 주입 측정에서 "오프닝 대사마다 예외 로그" 를 심은 빌드 3 런 중 1 런만 잡혔습니다. 그 1 런도
+  development build 의 개발자 콘솔이 화면을 가려 screen capture 에 찍힌 덕분이었습니다. 예외가 agent 에게 닿는 통로가
+  없었습니다.
+- 그래서 `LoggedErrors` 가 `Application.logMessageReceived` 를 걸고, `LogType.Exception`·`Error`·`Assert` 만 모아
+  `PULSE.errors` 와 `ACTION_RESULT.errors` 로 보냅니다. 모양과 상한은 [`docs/protocol.md`](../protocol.md) 의
+  「예외와 Error 로그」 에 있습니다.
+- `Warning` 과 `Log` 는 모으지 않습니다. 게임마다 양이 크게 다르고, 대부분 결함이 아니라 개발자의 메모입니다.
+- 이 통로도 이 ADR 의 선을 지킵니다. SDK 는 찍힌 문장과 횟수를 보고할 뿐이고, 그것이 결함인지는 agent 가 정합니다.
 
 ## 왜
 
