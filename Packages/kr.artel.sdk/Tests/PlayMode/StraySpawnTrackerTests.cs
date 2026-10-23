@@ -104,6 +104,31 @@ namespace Artel.Tests
             Assert.IsTrue(inside == null, "곧 죽을 씬의 root가 언로드에서 살아남았다.");
         }
 
+        /// <summary>
+        /// 방문 scene 의 <c>Awake</c> 가 <c>DontDestroyOnLoad</c> 로 보낸 root 를 옮기기 전에 그대로 돌려준다(ARTEL-1228).
+        /// scan 은 이 목록을 방문한 scene 의 것으로 읽는다.
+        /// </summary>
+        [UnityTest]
+        public IEnumerator Strays_ListsRootSentToDontDestroyOnLoadAfterCapture()
+        {
+            var visited = SceneManager.CreateScene("Artel Stray Test Visited");
+            var before = new GameObject("Preexisting Persistent", typeof(GameObjectPersistFixture));
+
+            var tracker = new StraySpawnTracker();
+            tracker.Capture();
+
+            var stray = new GameObject("Tutorial Like Stray", typeof(GameObjectPersistFixture));
+            var strays = tracker.Strays(visited);
+
+            CollectionAssert.AreEqual(new[] { stray }, strays, "방문 뒤에 생긴 root 만 돌려주지 않았다.");
+            Assert.AreEqual(
+                StraySpawnTracker.DontDestroyOnLoadScene(), stray.scene, "Strays 가 root 를 옮겼다.");
+
+            Object.DestroyImmediate(stray);
+            Object.DestroyImmediate(before);
+            yield return SceneManager.UnloadSceneAsync(visited);
+        }
+
         private static IEnumerator AssertStrayIsDoomed(System.Type fixtureType)
         {
             // 실제 워크에서 곧 언로드될 방문 씬 자리를 맡는다. Build Settings 없이 만들 수 있고

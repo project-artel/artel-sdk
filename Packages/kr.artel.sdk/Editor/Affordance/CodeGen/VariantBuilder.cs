@@ -143,7 +143,7 @@ namespace Artel.Affordances.CodeGen
                     Entry = entry.FullName,
                     EntryId = MethodIdentity.Of(entry),
                     TriggerKind = triggerKind,
-                    Owner = Owning(method.DeclaringType) ?? Owning(entry.DeclaringType),
+                    Owner = OwnerOf(method, entry, sameObject),
                     When = when
                 };
 
@@ -221,6 +221,30 @@ namespace Artel.Affordances.CodeGen
             byte[] state)
         {
             return Reach(graph, dependence, block, reached, state);
+        }
+
+        /// <summary>
+        /// 기록을 실을 type. 보통은 effect 가 있는 메서드의 type 이다.
+        /// </summary>
+        /// <remarks>
+        /// 자식 class 의 진입점이 같은 객체 위에서 부모 class 의 메서드를 불렀으면 자식 type 이다(ARTEL-1228). 그 메서드는
+        /// 자식 컴포넌트 위에서 돌고, 그 자식이 놓인 scene 에서만 일어난다. 부모 type 으로 실으면 WordVenture 의
+        /// <c>TutorialController.Update</c> → <c>StoryController.IsAdvanceKeyDown</c> 기록이 <c>StoryController</c> 가 놓인
+        /// StoryScene 과 EndingScene 에 들어가고, tutorial 이 실제로 도는 scene 에는 오지 않았다. static 메서드는 객체가
+        /// 없으므로 부른 쪽에 싣는다.
+        /// </remarks>
+        internal static TypeDefinition OwnerOf(MethodDefinition method, MethodDefinition entry, bool sameObject)
+        {
+            var callee = Owning(method.DeclaringType);
+            var caller = Owning(entry.DeclaringType);
+
+            if (callee != null && caller != null && (sameObject || method.IsStatic) &&
+                InheritedEvidence.Derives(caller, callee))
+            {
+                return caller;
+            }
+
+            return callee ?? caller;
         }
 
         /// <summary>
