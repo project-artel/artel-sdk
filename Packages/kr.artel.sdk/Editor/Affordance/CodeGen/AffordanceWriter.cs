@@ -37,6 +37,9 @@ namespace Artel.Affordances.CodeGen
             internal int ResourceBytes;
             internal int Anchored;
 
+            /// <summary>부모 class 에서 물려받아 자식 type 에 함께 실은 기록 수(ARTEL-1228).</summary>
+            internal int Inherited;
+
             /// <summary>근거가 누군가에게 감시하라고 청하는 서로 다른 멤버의 수.</summary>
             internal int Watched;
 
@@ -127,6 +130,7 @@ namespace Artel.Affordances.CodeGen
             var payloadsByOwner = new Dictionary<TypeDefinition, List<string>>();
 
             var callers = Callers(module, variants);
+            var heirs = InheritedEvidence.Heirs(module, variants);
 
             foreach (var variant in variants)
             {
@@ -153,15 +157,28 @@ namespace Artel.Affordances.CodeGen
                     continue;
                 }
 
-                if (!payloadsByOwner.TryGetValue(variant.Owner, out var list))
+                Carry(variant.Owner, payload, byOwner, payloadsByOwner);
+                result.Written++;
+
+                if (!heirs.TryGetValue(variant, out var inheritors))
                 {
-                    list = new List<string>();
-                    payloadsByOwner[variant.Owner] = list;
-                    byOwner.Add(variant.Owner);
+                    continue;
                 }
 
-                list.Add(payload);
-                result.Written++;
+                // 부모의 진입점을 다시 선언하지 않은 자식 type 에도 같은 기록을 싣는다. owner 만 자식 이름이다.
+                foreach (var heir in inheritors)
+                {
+                    var inherited = EvidenceJson.Write(variant, callers, heir.FullName, out _);
+
+                    if (inherited.Length > MaxPayloadCharacters)
+                    {
+                        result.Oversized++;
+                        continue;
+                    }
+
+                    Carry(heir, inherited, byOwner, payloadsByOwner);
+                    result.Inherited++;
+                }
             }
 
             var blob = new StringBuilder(1024);
@@ -196,7 +213,22 @@ namespace Artel.Affordances.CodeGen
             return result;
         }
 
-        /// <summary>이 어셈블리에 대한 앞선 패스의 근거를 걷어낸다.</summary>
+        private static void Carry(
+            TypeDefinition owner,
+            string payload,
+            List<TypeDefinition> byOwner,
+            Dictionary<TypeDefinition, List<string>> payloadsByOwner)
+        {
+            if (!payloadsByOwner.TryGetValue(owner, out var list))
+            {
+                list = new List<string>();
+                payloadsByOwner[owner] = list;
+                byOwner.Add(owner);
+            }
+
+            list.Add(payload);
+        }
+
         /// <summary>
         /// 기록이 시작하는 각 메서드를 누가 부르는가. 어셈블리 전체에서 읽는다.
         /// </summary>

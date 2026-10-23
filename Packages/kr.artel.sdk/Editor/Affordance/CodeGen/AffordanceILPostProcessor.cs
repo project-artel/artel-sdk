@@ -305,6 +305,12 @@ namespace Artel.Affordances.CodeGen
                 message += written.Unattached > 0
                     ? "; " + written.Unattached + " belong to no component and were dropped."
                     : ".";
+
+                if (written.Inherited > 0)
+                {
+                    message += " " + written.Inherited + " were also baked onto subclasses that inherit their entry point.";
+                }
+
                 message += " " + written.ResourceBytes + " bytes as a resource.";
 
                 // 두 숫자를 함께 내거나 둘 다 내지 않는다. 목록만 있으면 게임이 도는 동안 확인할 수 있는 것의 전부처럼
