@@ -359,6 +359,25 @@ namespace Artel.Affordances.Scan
 
         private static void WalkGap(string gap) => _walkGaps.Add(gap);
 
+        /// <summary>
+        /// 마지막 walk 한 번에 대한 사실. 게임 코드의 예외 수, <c>PlayerPrefs</c> 를 되돌린 수 같은 것이다(ARTEL-1231).
+        /// </summary>
+        /// <remarks>
+        /// <see cref="_walkGaps"/> 와 따로 두는 이유는 수명이다. 이것들은 walk 마다 새로 정해지는 수라서, 앞선 walk 의
+        /// 값이 남으면 같은 이름의 gap 이 값만 다르게 둘 실린다. walk 이 시작할 때 <see cref="ForgetWalkNotes"/> 로 비운다.
+        /// </remarks>
+        private static readonly List<string> _walkNotes = new List<string>();
+
+        internal static void NoteWalk(string gap)
+        {
+            if (!string.IsNullOrEmpty(gap) && !_walkNotes.Contains(gap))
+            {
+                _walkNotes.Add(gap);
+            }
+        }
+
+        internal static void ForgetWalkNotes() => _walkNotes.Clear();
+
         /// <summary>이미 읽은 씬에 대해 할 말을 하나 더한다.</summary>
         internal static void Note(string scene, string gap)
         {
@@ -423,6 +442,7 @@ namespace Artel.Affordances.Scan
             _persistentRead = false;
             _persistentGaps.Clear();
             _walkGaps.Clear();
+            _walkNotes.Clear();
             SerializedReferences.Forget();
         }
 
@@ -797,6 +817,17 @@ namespace Artel.Affordances.Scan
             }
 
             foreach (var gap in _walkGaps)
+            {
+                if (!first)
+                {
+                    text.Append(',');
+                }
+
+                Json.String(text, gap);
+                first = false;
+            }
+
+            foreach (var gap in _walkNotes)
             {
                 if (!first)
                 {
