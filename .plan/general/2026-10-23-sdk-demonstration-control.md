@@ -52,3 +52,11 @@ ACQUIRE는 StartReadings 성공 이후 승인한다. 시연이 시작한 reading
 이 결과는 버튼 카운터 fixture와 로컬 연결의 통합 검증이다. 여러 게임의 입력 시스템, 장시간 네트워크 장애, 실제 서비스 환경의 latency까지 검증한 결과는 아니다. 8초 만료, 연결 epoch 변경, 실행·대기 입력 중단, 기존 QA 호환은 위 Unity 자동 테스트로 별도 확인했다. 독립 SDK diff 검토는 PASS이며 추가 수정 사항은 없었다.
 
 backend의 시연 기능을 반영하기 전에 이 SDK 변경을 먼저 merge하고 게임 build에 포함해야 한다. capability가 없는 SDK에는 backend가 시연 시작을 허용하지 않는다.
+
+## 시연 pointer 직접 적용
+
+실제 브라우저 검증에서 연속 pointermove가 QA용 0.4초 glide로 실행되어 커서가 뒤늦게 따라오고 대기 입력이 누적되는 문제가 발견됐다. 시연 ACTION만 `ActionExecutor.Execute(glideMouse: false)`로 실행한다. `CursorController.MoveTo(immediate: true)`는 smoothMovement 설정에도 보간을 건너뛰되 기존 callback으로 virtual input과 PointerEvents를 함께 갱신한다. QA의 기본 glide, normalized 좌표의 현재 해상도 변환과 단일 Y flip은 유지한다.
+
+smoothMovement=true와 이동 시간 10초에서도 시연 목표 좌표에 바로 도달하는 검사와 35개 연속 move 완료 검사를 추가했다. 기존 실행·대기 입력 해제 검사는 직접 이동이 RELEASE 전에 완료될 수 있음을 반영하고, 해제 뒤 입력이 다시 적용되지 않는 조건을 유지한다. Unity 회귀 및 새 fixture build 결과는 완료 후 아래에 기록한다.
+
+최종 Unity EditMode 562/562, PlayMode 78/78 PASS. direct pointer로 uGUI drag/drop이 목적지까지 전달되는 검사도 포함했다. 첫 PlayMode 실행은 fixture build가 UiToolkitSample scene 등록을 덮어써 기존 4개 테스트가 실패했으며, 로컬 테스트 scene 등록을 복원한 뒤 전체 회귀가 통과했다. 결과는 `.tmp/unity-tests/EditMode-direct-final.xml`과 `PlayMode-direct-final.xml`에 남겼다. 새 Development fixture는 `.tmp/demo-build-direct/ArtelDemo.exe`에 build했고 기존 실행 파일은 덮어쓰지 않았다. 새 build의 실제 브라우저 연속 이동 검증은 통합 작업에서 이어간다.

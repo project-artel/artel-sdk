@@ -1123,7 +1123,8 @@ namespace Artel
                     action.Id,
                     action.Method,
                     parameters,
-                    result => results.Add(result));
+                    result => results.Add(result),
+                    glideMouse: request.Demonstration == null);
                 if (request.Demonstration == null) yield return execution;
                 else
                 {

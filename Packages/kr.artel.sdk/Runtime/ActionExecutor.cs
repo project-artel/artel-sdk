@@ -122,7 +122,8 @@ namespace Artel
             int actionId,
             string method,
             List<object> parameters,
-            Action<ActionResultDto> completed)
+            Action<ActionResultDto> completed,
+            bool glideMouse = true)
         {
             switch (method)
             {
@@ -135,7 +136,7 @@ namespace Artel
                     yield break;
 
                 case "move_mouse":
-                    yield return ExecuteMoveMouse(actionId, parameters, completed);
+                    yield return ExecuteMoveMouse(actionId, parameters, completed, glideMouse);
                     yield break;
 
                 case "mouse_down":
@@ -319,7 +320,8 @@ namespace Artel
         private IEnumerator ExecuteMoveMouse(
             int actionId,
             List<object> parameters,
-            Action<ActionResultDto> completed)
+            Action<ActionResultDto> completed,
+            bool glide)
         {
             if (!PointerAimParser.TryParse(parameters, out var aim, out var parseError))
             {
@@ -336,7 +338,8 @@ namespace Artel
             yield return cursorController.MoveTo(
                 new Vector2(reportedPosition.x, Screen.height - reportedPosition.y),
                 pointerMoved,
-                glide: true);
+                glide: glide,
+                immediate: !glide);
             completed(ActionResultDto.Success(actionId));
         }
 

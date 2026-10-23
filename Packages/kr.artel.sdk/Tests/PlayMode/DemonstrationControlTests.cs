@@ -52,7 +52,7 @@ namespace Artel.Tests
             var answers = transport.Sent.Select(JObject.Parse)
                 .Where(message => (string)message["type"] == "ACTION_RESULT").ToList();
             Assert.That(answers.Select(answer => (long)answer["requestId"]), Is.EquivalentTo(new long[] { 11, 12 }));
-            Assert.That(answers.All(answer => !(bool)answer["results"][0]["success"]), Is.True);
+            // 직접 이동은 RELEASE 전에 끝날 수 있지만 해제 후 입력을 다시 적용하지 않는다.
         }
 
         [UnityTest] public IEnumerator ConnectionEpochChange_ReleasesHeldInputAndRejectsOldGeneration()
@@ -124,13 +124,32 @@ namespace Artel.Tests
             Assert.That(Control("ACQUIRE"), Is.True);
             var cursor = (CursorController)typeof(ArtelManager)
                 .GetField("cursorController", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(manager);
+            typeof(CursorController).GetField("smoothMovement", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(cursor, true);
             typeof(CursorController).GetField("movementDurationSeconds", BindingFlags.Instance | BindingFlags.NonPublic)
-                .SetValue(cursor, 0f);
+                .SetValue(cursor, 10f);
             SendActions(60, "move_mouse", new List<object> { 0.25, 0.75 });
             yield return null;
             yield return null;
             Assert.That(ArtelInput.mousePosition.x, Is.EqualTo(Screen.width * 0.25f).Within(0.01));
             Assert.That(ArtelInput.mousePosition.y, Is.EqualTo(Screen.height * 0.25f).Within(0.01));
+        }
+
+        [UnityTest] public IEnumerator DemonstrationPointer_BurstCompletesWithoutGlideBacklog()
+        {
+            Assert.That(Control("ACQUIRE"), Is.True);
+            for (var index = 0; index < 35; index++)
+            {
+                SendActions(100 + index, "move_mouse", new List<object> { index / 34d, 0.25 });
+                yield return null;
+            }
+            for (var frame = 0; frame < 4; frame++) yield return null;
+            var answers = transport.Sent.Select(JObject.Parse)
+                .Where(message => (string)message["type"] == "ACTION_RESULT").ToList();
+            Assert.That(answers.Count, Is.EqualTo(35));
+            Assert.That(answers.All(answer => (bool)answer["results"][0]["success"]), Is.True);
+            Assert.That(ArtelInput.mousePosition.x, Is.EqualTo(Screen.width).Within(0.01));
+            Assert.That(ArtelInput.mousePosition.y, Is.EqualTo(Screen.height * 0.75f).Within(0.01));
         }
 
         private bool Control(string operation, long generation = 1)
