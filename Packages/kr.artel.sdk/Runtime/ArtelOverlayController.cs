@@ -91,6 +91,7 @@ namespace Artel
         private Button serverSettingsButton;
         private Button connectButton;
         private Text statusText;
+        private Text selectedProjectText;
         private Text accountText;
         private Text gateMessageText;
         private Text gateErrorText;
@@ -562,18 +563,25 @@ namespace Artel
             panelRect.anchorMax = new Vector2(1f, 1f);
             panelRect.pivot = new Vector2(1f, 1f);
             panelRect.anchoredPosition = new Vector2(-24f, -84f);
-            panelRect.sizeDelta = new Vector2(440f, 350f);
+            panelRect.sizeDelta = new Vector2(440f, 402f);
 
             // 로그인과 프로젝트 선택은 게이트가 소유한다. 진입 지점이 둘이면 처음 쓰는
-            // 사람이 어느 쪽을 봐야 할지 모른다. 패널에는 상태 문구와 고급 섹션만 남는다.
+            // 사람이 어느 쪽을 봐야 할지 모른다. 패널에는 선택 프로젝트, 상태와 고급 섹션을 둔다.
             var title = CreateText(panelObject.transform, "Artel SDK", 24, TextAnchor.MiddleLeft);
             SetRect(title.rectTransform, new Vector2(20f, -16f), new Vector2(400f, 36f));
 
+            selectedProjectText = CreateText(panelObject.transform, string.Empty, 16, TextAnchor.UpperLeft);
+            selectedProjectText.name = "Selected Project";
+            selectedProjectText.supportRichText = false;
+            selectedProjectText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            selectedProjectText.verticalOverflow = VerticalWrapMode.Truncate;
+            SetRect(selectedProjectText.rectTransform, new Vector2(20f, -60f), new Vector2(400f, 44f));
+
             statusText = CreateText(panelObject.transform, string.Empty, 15, TextAnchor.UpperLeft, textSecondary);
-            SetRect(statusText.rectTransform, new Vector2(20f, -60f), new Vector2(400f, 66f));
+            SetRect(statusText.rectTransform, new Vector2(20f, -112f), new Vector2(400f, 66f));
 
             var advancedButton = CreateButton(panelObject.transform, "고급", new Vector2(400f, 34f));
-            SetRect(advancedButton.GetComponent<RectTransform>(), new Vector2(20f, -132f), new Vector2(400f, 34f));
+            SetRect(advancedButton.GetComponent<RectTransform>(), new Vector2(20f, -184f), new Vector2(400f, 34f));
             advancedButton.onClick.AddListener(() => advancedObject.SetActive(!advancedObject.activeSelf));
 
             CreateAdvancedSection();
@@ -914,7 +922,7 @@ namespace Artel
         {
             advancedObject = new GameObject("Advanced Section", typeof(RectTransform));
             advancedObject.transform.SetParent(panelObject.transform, false);
-            SetRect(advancedObject.GetComponent<RectTransform>(), new Vector2(0f, -170f), new Vector2(440f, 128f));
+            SetRect(advancedObject.GetComponent<RectTransform>(), new Vector2(0f, -222f), new Vector2(440f, 128f));
 
             var details = CreateText(
                 advancedObject.transform,
@@ -964,6 +972,10 @@ namespace Artel
                 return;
             }
 
+            var projectLabel = string.IsNullOrWhiteSpace(viewModel.SelectedProjectName)
+                ? viewModel.SelectedProjectId
+                : viewModel.SelectedProjectName;
+            selectedProjectText.text = "프로젝트 · " + (string.IsNullOrEmpty(projectLabel) ? "미선택" : projectLabel);
             statusText.text = viewModel.Status;
             // 실패를 문장으로만 알리면 눈에 걸리지 않는다.
             statusText.color = StatusColor();

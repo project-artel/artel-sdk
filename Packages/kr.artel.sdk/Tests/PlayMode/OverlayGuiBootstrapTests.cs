@@ -317,6 +317,59 @@ namespace Artel.Tests
             }
         }
 
+        [UnityTest]
+        public IEnumerator 선택_프로젝트는_패널에_표시되고_테마를_바꿔도_유지된다()
+        {
+            host = new GameObject("Artel selected project test");
+            host.AddComponent<ArtelManager>();
+            yield return null;
+
+            var controller = host.GetComponent<ArtelOverlayController>();
+            var viewModel = (ArtelOverlayViewModel)typeof(ArtelOverlayController)
+                .GetField("viewModel", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(controller);
+            var canvas = host.transform.Find("Artel Overlay Canvas");
+            var label = canvas.Find("Artel Panel/Selected Project").GetComponent<Text>();
+            Assert.That(label.text, Is.EqualTo("프로젝트 · 미선택"));
+
+            const string projectName = "계몽 <테스트> 긴 프로젝트 이름으로 패널 줄바꿈과 상태 영역을 확인합니다";
+            var projects = (System.Collections.Generic.List<Artel.Protocol.Dto.SdkProjectDto>)viewModel.Projects;
+            projects.Add(new Artel.Protocol.Dto.SdkProjectDto { Id = "project-1", Name = projectName });
+            typeof(ArtelOverlayViewModel).GetProperty("HasToken").SetValue(viewModel, true);
+            typeof(ArtelOverlayViewModel).GetProperty("State").SetValue(viewModel, ArtelConnectionState.Connected);
+            viewModel.SelectProject("project-1");
+
+            for (var theme = 0; theme < 2; theme++)
+            {
+                canvas = host.transform.Find("Artel Overlay Canvas");
+                label = canvas.Find("Artel Panel/Selected Project").GetComponent<Text>();
+                Assert.That(label.gameObject.activeInHierarchy, Is.True);
+                Assert.That(label.text, Is.EqualTo("프로젝트 · " + projectName));
+                Assert.That(label.supportRichText, Is.False);
+                Assert.That(label.horizontalOverflow, Is.EqualTo(HorizontalWrapMode.Wrap));
+                Assert.That(label.verticalOverflow, Is.EqualTo(VerticalWrapMode.Truncate));
+                var status = (Text)typeof(ArtelOverlayController)
+                    .GetField("statusText", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(controller);
+                var panel = canvas.Find("Artel Panel").GetComponent<RectTransform>();
+                var labelBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(panel, label.rectTransform);
+                var statusBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(panel, status.rectTransform);
+                Assert.That(labelBounds.min.y, Is.GreaterThan(statusBounds.max.y));
+                Assert.That(labelBounds.min.x, Is.GreaterThanOrEqualTo(panel.rect.xMin));
+                Assert.That(labelBounds.max.x, Is.LessThanOrEqualTo(panel.rect.xMax));
+
+                if (theme == 0)
+                {
+                    var toggle = Array.Find(canvas.GetComponentsInChildren<Toggle>(true), value => value.name == "다크 모드 Toggle");
+                    toggle.isOn = true;
+                    yield return null;
+                }
+            }
+
+            viewModel.SelectProject("legacy-id");
+            Assert.That(label.text, Is.EqualTo("프로젝트 · legacy-id"));
+            viewModel.LogOut();
+            Assert.That(label.text, Is.EqualTo("프로젝트 · 미선택"));
+        }
+
         private static void ClearSession()
         {
             ArtelSdkSession.Clear();

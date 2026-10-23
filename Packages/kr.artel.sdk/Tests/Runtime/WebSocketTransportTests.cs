@@ -597,6 +597,46 @@ namespace Artel.Tests.Transport
         }
 
         [Test]
+        public void 선택한_프로젝트_이름은_재실행해도_복원되고_로그아웃하면_사라진다()
+        {
+            SignIn();
+            var viewModel = CreateViewModel();
+            viewModel.Initialize();
+            var projects = (System.Collections.Generic.List<SdkProjectDto>)viewModel.Projects;
+            projects.Add(new SdkProjectDto { Id = "project-1", Name = "계몽" });
+
+            viewModel.SelectProject("project-1");
+            Assert.That(viewModel.SelectedProjectName, Is.EqualTo("계몽"));
+            var restored = CreateViewModel();
+            restored.Initialize();
+            Assert.That(restored.SelectedProjectId, Is.EqualTo("project-1"));
+            Assert.That(restored.SelectedProjectName, Is.EqualTo("계몽"));
+
+            restored.LogOut();
+            Assert.That(restored.SelectedProjectName, Is.Empty);
+            Assert.That(ArtelSdkSession.ProjectName, Is.Empty);
+            restored.Initialize();
+            Assert.That(restored.SelectedProjectId, Is.Empty);
+            Assert.That(restored.SelectedProjectName, Is.Empty);
+        }
+
+        [Test]
+        public void 이름이_없는_프로젝트를_선택하면_이전_이름을_지운다()
+        {
+            SignIn();
+            var viewModel = CreateViewModel();
+            viewModel.Initialize();
+            var projects = (System.Collections.Generic.List<SdkProjectDto>)viewModel.Projects;
+            projects.Add(new SdkProjectDto { Id = "named", Name = "계몽" });
+            projects.Add(new SdkProjectDto { Id = "unnamed", Name = " " });
+            viewModel.SelectProject("named");
+            viewModel.SelectProject("unnamed");
+            Assert.That(viewModel.SelectedProjectId, Is.EqualTo("unnamed"));
+            Assert.That(viewModel.SelectedProjectName, Is.Empty);
+            Assert.That(ArtelSdkSession.ProjectName, Is.Empty);
+        }
+
+        [Test]
         public void OverlayViewModel_StartsInNeedsLoginWithoutSession()
         {
             var viewModel = CreateViewModel();

@@ -38,6 +38,27 @@ namespace Artel.Tests.Auth
         }
 
         [Test]
+        public void 프로젝트_ID만_저장하면_이전_이름을_남기지_않는다()
+        {
+            ArtelSdkSession.SaveProjectId("first", "첫 프로젝트");
+            ArtelSdkSession.SaveProjectId("second");
+            Assert.That(ArtelSdkSession.TryLoadProjectId(out var projectId), Is.True);
+            Assert.That(projectId, Is.EqualTo("second"));
+            Assert.That(ArtelSdkSession.ProjectName, Is.Empty);
+        }
+
+        [Test]
+        public void 프로젝트_선택을_지우면_ID와_이름만_삭제한다()
+        {
+            ArtelSdkSession.SaveToken("token", "", "user");
+            ArtelSdkSession.SaveProjectId("project", "계몽");
+            ArtelSdkSession.ClearProject();
+            Assert.That(ArtelSdkSession.TryLoadProjectId(out _), Is.False);
+            Assert.That(ArtelSdkSession.ProjectName, Is.Empty);
+            Assert.That(ArtelSdkSession.LoadToken(), Is.EqualTo("token"));
+        }
+
+        [Test]
         public void 로그인_대기를_취소하면_토큰_없이_재시도할_수_있다()
         {
             var jsonCodec = new Artel.Serialization.NewtonsoftJsonCodec();
