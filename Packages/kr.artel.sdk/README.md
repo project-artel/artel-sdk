@@ -1,5 +1,17 @@
 # Artel SDK
 
+## WebGL player 제외
+
+WebGL player에서는 `Artel.Runtime`을 컴파일하지 않는다. WebGL용 `Unity.WebRTC`가
+없으므로 SDK 연결, 화면 스트리밍, overlay와 가상 입력은 WebGL에서 지원하지 않는다.
+입력 ILPostProcessor도 WebGL player에는 `ArtelInput` 참조를 추가하지 않는다.
+WebGL을 Build Target으로 선택한 Unity Editor에서는 기존 SDK 기능을 사용할 수 있다.
+별도 affordance 메타데이터·scan 어셈블리는 유지한다.
+
+게임 코드에서 `Artel.Runtime` 타입을 직접 참조한다면 해당 코드에도
+`#if UNITY_EDITOR || !UNITY_WEBGL` 조건이 필요하다. WebGL에서도 필요한 게임 로직은
+SDK 참조와 분리해야 한다.
+
 ## Runtime connection
 
 Install the package. Nothing else is required — in the editor and in
