@@ -281,7 +281,8 @@ namespace Artel
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Affordances.Live.LiveState.Attachment = new PulseAttachmentSet(
                 new GameFunctionPulse(gameFunctions),
-                new ErrorPulse(loggedErrors));
+                new ErrorPulse(loggedErrors),
+                new AudioPulse());
 #endif
             actionExecutor = new ActionExecutor(
                 scanner,
