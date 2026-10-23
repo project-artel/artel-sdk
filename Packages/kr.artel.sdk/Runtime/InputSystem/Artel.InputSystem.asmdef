@@ -9,7 +9,8 @@
   "autoReferenced": false,
   "defineConstraints": [
     "ARTEL_INPUT_SYSTEM_AVAILABLE",
-    "ENABLE_INPUT_SYSTEM"
+    "ENABLE_INPUT_SYSTEM",
+    "UNITY_EDITOR || !UNITY_WEBGL"
   ],
   "versionDefines": [
     {
