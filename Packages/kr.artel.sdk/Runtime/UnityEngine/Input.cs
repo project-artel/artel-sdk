@@ -18,7 +18,7 @@ namespace Artel
         /// </summary>
         public static bool GetKeyDown(KeyCode key)
         {
-            return global::UnityEngine.Input.GetKeyDown(key) ||
+            return LegacyInput.GetKeyDown(key) ||
                    VirtualKeyboard.GetKeyDown(key, Time.frameCount, Time.unscaledTime) ||
                    MouseButtonKeyCode.TryGetButton(key, out var button) &&
                    VirtualMouse.GetButtonDown(button, Time.frameCount);
@@ -27,14 +27,14 @@ namespace Artel
         /// <inheritdoc cref="GetKeyDown(KeyCode)"/>
         public static bool GetKeyDown(string name)
         {
-            return global::UnityEngine.Input.GetKeyDown(name) ||
+            return LegacyInput.GetKeyDown(name) ||
                    TryParseKeyCode(name, out var key) && GetKeyDown(key);
         }
 
         /// <inheritdoc cref="GetKeyDown(KeyCode)"/>
         public static bool GetKey(KeyCode key)
         {
-            return global::UnityEngine.Input.GetKey(key) ||
+            return LegacyInput.GetKey(key) ||
                    VirtualKeyboard.GetKey(key, Time.frameCount, Time.unscaledTime) ||
                    MouseButtonKeyCode.TryGetButton(key, out var button) &&
                    VirtualMouse.GetButton(button, Time.frameCount);
@@ -43,14 +43,14 @@ namespace Artel
         /// <inheritdoc cref="GetKeyDown(KeyCode)"/>
         public static bool GetKey(string name)
         {
-            return global::UnityEngine.Input.GetKey(name) ||
+            return LegacyInput.GetKey(name) ||
                    TryParseKeyCode(name, out var key) && GetKey(key);
         }
 
         /// <inheritdoc cref="GetKeyDown(KeyCode)"/>
         public static bool GetKeyUp(KeyCode key)
         {
-            return global::UnityEngine.Input.GetKeyUp(key) ||
+            return LegacyInput.GetKeyUp(key) ||
                    VirtualKeyboard.GetKeyUp(key, Time.frameCount, Time.unscaledTime) ||
                    MouseButtonKeyCode.TryGetButton(key, out var button) &&
                    VirtualMouse.GetButtonUp(button, Time.frameCount);
@@ -59,7 +59,7 @@ namespace Artel
         /// <inheritdoc cref="GetKeyDown(KeyCode)"/>
         public static bool GetKeyUp(string name)
         {
-            return global::UnityEngine.Input.GetKeyUp(name) ||
+            return LegacyInput.GetKeyUp(name) ||
                    TryParseKeyCode(name, out var key) && GetKeyUp(key);
         }
 
@@ -67,7 +67,7 @@ namespace Artel
         {
             get
             {
-                return global::UnityEngine.Input.anyKey ||
+                return LegacyInput.anyKey ||
                        VirtualKeyboard.AnyKey(Time.frameCount, Time.unscaledTime) ||
                        VirtualMouse.IsAnyButtonHeld(Time.frameCount);
             }
@@ -77,7 +77,7 @@ namespace Artel
         {
             get
             {
-                return global::UnityEngine.Input.anyKeyDown ||
+                return LegacyInput.anyKeyDown ||
                        VirtualKeyboard.AnyKeyDown(Time.frameCount, Time.unscaledTime) ||
                        VirtualMouse.IsAnyButtonDown(Time.frameCount);
             }
@@ -91,7 +91,7 @@ namespace Artel
         {
             get
             {
-                var physical = global::UnityEngine.Input.mousePosition;
+                var physical = LegacyInput.mousePosition;
                 if (!VirtualMouse.OwnsPointer(physical))
                 {
                     return physical;
@@ -104,19 +104,19 @@ namespace Artel
 
         public static bool GetMouseButton(int button)
         {
-            return global::UnityEngine.Input.GetMouseButton(button) ||
+            return LegacyInput.GetMouseButton(button) ||
                    VirtualMouse.GetButton(button, Time.frameCount);
         }
 
         public static bool GetMouseButtonDown(int button)
         {
-            return global::UnityEngine.Input.GetMouseButtonDown(button) ||
+            return LegacyInput.GetMouseButtonDown(button) ||
                    VirtualMouse.GetButtonDown(button, Time.frameCount);
         }
 
         public static bool GetMouseButtonUp(int button)
         {
-            return global::UnityEngine.Input.GetMouseButtonUp(button) ||
+            return LegacyInput.GetMouseButtonUp(button) ||
                    VirtualMouse.GetButtonUp(button, Time.frameCount);
         }
 
@@ -132,7 +132,7 @@ namespace Artel
                 return value;
             }
 
-            return global::UnityEngine.Input.GetAxis(axisName);
+            return LegacyInput.GetAxis(axisName);
         }
 
         /// <summary>
@@ -151,24 +151,24 @@ namespace Artel
                 return value;
             }
 
-            return global::UnityEngine.Input.GetAxisRaw(axisName);
+            return LegacyInput.GetAxisRaw(axisName);
         }
 
         public static bool GetButton(string axisName)
         {
-            return global::UnityEngine.Input.GetButton(axisName) ||
+            return LegacyInput.GetButton(axisName) ||
                    VirtualAxes.GetButton(axisName, Time.frameCount);
         }
 
         public static bool GetButtonDown(string axisName)
         {
-            return global::UnityEngine.Input.GetButtonDown(axisName) ||
+            return LegacyInput.GetButtonDown(axisName) ||
                    VirtualAxes.GetButtonDown(axisName, Time.frameCount);
         }
 
         public static bool GetButtonUp(string axisName)
         {
-            return global::UnityEngine.Input.GetButtonUp(axisName) ||
+            return LegacyInput.GetButtonUp(axisName) ||
                    VirtualAxes.GetButtonUp(axisName, Time.frameCount);
         }
 
@@ -199,7 +199,7 @@ namespace Artel
 
         internal static void MoveMouse(Vector2 screenPosition)
         {
-            VirtualMouse.MoveTo(screenPosition, global::UnityEngine.Input.mousePosition);
+            VirtualMouse.MoveTo(screenPosition, LegacyInput.mousePosition);
         }
 
         internal static void PressMouseButton(int button)
@@ -269,7 +269,7 @@ namespace Artel
 
             // Only while the agent holds the pointer. The engine keeps sending its own OnMouse*
             // from the real cursor, so driving ours at the same time would deliver everything twice.
-            if (VirtualMouse.OwnsPointer(global::UnityEngine.Input.mousePosition))
+            if (VirtualMouse.OwnsPointer(LegacyInput.mousePosition))
             {
                 MouseMessenger.Tick(VirtualMouse.Position, VirtualMouse.GetButton(0, Time.frameCount));
             }

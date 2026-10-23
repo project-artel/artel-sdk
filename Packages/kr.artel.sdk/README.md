@@ -225,6 +225,16 @@ What that cannot undo:
 
 ## Agent keyboard input
 
+A project whose Active Input Handling is "Input System Package (New)" alone is
+not supported. Its game code never calls `UnityEngine.Input`, so the agent's keys
+and clicks do not reach it. The SDK still runs there without exceptions: its own
+`UnityEngine.Input` reads are compiled out when `ENABLE_LEGACY_INPUT_MANAGER` is
+not defined, the overlay's `EventSystem` gets the Input System package's
+`InputSystemUIInputModule`, the overlay status line says
+`신 Input System은 지원하지 않습니다.`, and `set_axis` fails with a message. Setting
+Active Input Handling to "Both" keeps the game's Input System code and makes
+Artel's input work for code that reads `UnityEngine.Input`.
+
 Keep using `UnityEngine.Input` for keyboard polling. Artel's IL post-processor
 rewrites supported calls to the `ArtelInput` proxy during compilation:
 
