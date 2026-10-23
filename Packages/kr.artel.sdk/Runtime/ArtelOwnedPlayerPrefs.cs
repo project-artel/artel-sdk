@@ -21,7 +21,10 @@ namespace Artel
         public const string ServerUrl = "Artel.ServerUrl";
         public const string ServerScopes = "Artel.ServerScopes";
 
-        /// <summary>ArtelSdkIdentity 가 만드는 이 설치본의 식별자.</summary>
+        /// <summary>
+        /// ArtelSdkIdentity 가 예전에 식별자를 두던 키. 지금은 <c>identity.json</c> 으로 옮기려고 읽기만 한다(ARTEL-1232).
+        /// 옮기기 전에 리셋이 오면 지워지지 않도록 목록에 남겨 둔다. <see cref="InstanceId"/> 도 같다.
+        /// </summary>
         public const string SdkId = "Artel.SdkId";
 
         /// <summary>오버레이·커서·키보드 표시가 공유하는 테마 스위치. 유일한 int 키다.</summary>
