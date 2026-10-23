@@ -17,11 +17,10 @@ namespace Artel
     {
         private const string DarkThemePlayerPrefsKey = ArtelOwnedPlayerPrefs.DarkTheme;
 
-        // 게이트가 세로로 그릴 수 있는 프로젝트 수. 고정 좌표 배치라 이보다 많으면 화면을
-        // 벗어난다.
-        // ponytail: 프로젝트가 이보다 많은 사람이 나오면 그때 스크롤을 붙인다.
-        private const int MaxListedProjects = 4;
-        private const float ProjectRowHeight = 60f;
+        private const int VisibleProjectRows = 4;
+        private const float ProjectRowHeight = 64f;
+        private const float GateWidth = 560f;
+        private const float GateContentWidth = 488f;
 
         // -artel-window-label 판의 치수. 폭만 문구를 따라가고 높이는 한 줄로 고정이다
         // (CreateWindowLabel 참조).
@@ -49,6 +48,8 @@ namespace Artel
         private Color bgSurface;
         private Color bgRaised;
         private Color borderStrong;
+        private Color borderSubtle;
+        private Color bgHover;
         private Color textPrimary;
         private Color textSecondary;
         private Color textMuted;
@@ -75,16 +76,22 @@ namespace Artel
         private GameObject gateContent;
         private GameObject progressContent;
         private GameObject projectListObject;
+        private RectTransform projectListContent;
+        private ScrollRect projectScrollRect;
         private InputField serverUrlInput;
         private Button applyServerButton;
         private bool serverSettingsOpen;
         private GameObject serverSettingsContent;
         private Text serverSettingsToggleText;
         private Button loginButton;
+        private Button cancelLoginButton;
         private Button reloadProjectsButton;
         private Button gateLogOutButton;
+        private Button gateDismissButton;
+        private Button serverSettingsButton;
         private Button connectButton;
         private Text statusText;
+        private Text selectedProjectText;
         private Text accountText;
         private Text gateMessageText;
         private Text gateErrorText;
@@ -130,7 +137,7 @@ namespace Artel
                 new ArtelSdkAuthClient(jsonCodec),
                 jsonCodec);
             viewModel.Changed += RefreshView;
-            darkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 1) != 0;
+            darkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 0) != 0;
             ApplyPalette();
         }
 
@@ -530,8 +537,8 @@ namespace Artel
 
             var scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920f, 1080f);
-            scaler.matchWidthOrHeight = 1f;
+            scaler.referenceResolution = new Vector2(1440f, 900f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
 
             if (createdEventSystem == null)
             {
@@ -556,18 +563,25 @@ namespace Artel
             panelRect.anchorMax = new Vector2(1f, 1f);
             panelRect.pivot = new Vector2(1f, 1f);
             panelRect.anchoredPosition = new Vector2(-24f, -84f);
-            panelRect.sizeDelta = new Vector2(440f, 350f);
+            panelRect.sizeDelta = new Vector2(440f, 402f);
 
             // 로그인과 프로젝트 선택은 게이트가 소유한다. 진입 지점이 둘이면 처음 쓰는
-            // 사람이 어느 쪽을 봐야 할지 모른다. 패널에는 상태 문구와 고급 섹션만 남는다.
+            // 사람이 어느 쪽을 봐야 할지 모른다. 패널에는 선택 프로젝트, 상태와 고급 섹션을 둔다.
             var title = CreateText(panelObject.transform, "Artel SDK", 24, TextAnchor.MiddleLeft);
             SetRect(title.rectTransform, new Vector2(20f, -16f), new Vector2(400f, 36f));
 
+            selectedProjectText = CreateText(panelObject.transform, string.Empty, 16, TextAnchor.UpperLeft);
+            selectedProjectText.name = "Selected Project";
+            selectedProjectText.supportRichText = false;
+            selectedProjectText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            selectedProjectText.verticalOverflow = VerticalWrapMode.Truncate;
+            SetRect(selectedProjectText.rectTransform, new Vector2(20f, -60f), new Vector2(400f, 44f));
+
             statusText = CreateText(panelObject.transform, string.Empty, 15, TextAnchor.UpperLeft, textSecondary);
-            SetRect(statusText.rectTransform, new Vector2(20f, -60f), new Vector2(400f, 66f));
+            SetRect(statusText.rectTransform, new Vector2(20f, -112f), new Vector2(400f, 66f));
 
             var advancedButton = CreateButton(panelObject.transform, "고급", new Vector2(400f, 34f));
-            SetRect(advancedButton.GetComponent<RectTransform>(), new Vector2(20f, -132f), new Vector2(400f, 34f));
+            SetRect(advancedButton.GetComponent<RectTransform>(), new Vector2(20f, -184f), new Vector2(400f, 34f));
             advancedButton.onClick.AddListener(() => advancedObject.SetActive(!advancedObject.activeSelf));
 
             CreateAdvancedSection();
@@ -698,26 +712,24 @@ namespace Artel
 
         private void CreateProgressContent()
         {
-            progressContent = new GameObject("Progress Content", typeof(RectTransform));
-            progressContent.transform.SetParent(coverObject.transform, false);
-            Inset(progressContent.GetComponent<RectTransform>(), 0f);
-
-            CreateLogo(progressContent.transform, new Vector2(0f, 104f), 72f);
-
-            var title = CreateText(progressContent.transform, "Artel SDK", 30, TextAnchor.MiddleCenter);
-            CenterRect(title.rectTransform, new Vector2(0f, 38f), new Vector2(900f, 44f));
+            progressContent = CreateCard("Progress Content", 296f);
+            CreateCardHeader(progressContent.transform);
 
             coverMessageText = CreateText(
                 progressContent.transform,
                 "인스턴스를 등록하는 중입니다. 잠시만 기다려 주세요.",
                 20,
-                TextAnchor.MiddleCenter,
+                TextAnchor.UpperLeft,
                 textSecondary);
-            CenterRect(coverMessageText.rectTransform, new Vector2(0f, -10f), new Vector2(900f, 32f));
+            SetRect(coverMessageText.rectTransform, new Vector2(36f, -104f), new Vector2(GateContentWidth, 56f));
 
             coverStatusText = CreateText(
-                progressContent.transform, string.Empty, 16, TextAnchor.MiddleCenter, textMuted);
-            CenterRect(coverStatusText.rectTransform, new Vector2(0f, -84f), new Vector2(900f, 28f));
+                progressContent.transform, string.Empty, 14, TextAnchor.UpperLeft, textMuted);
+            SetRect(coverStatusText.rectTransform, new Vector2(36f, -164f), new Vector2(GateContentWidth, 36f));
+
+            cancelLoginButton = CreateButton(progressContent.transform, "취소", new Vector2(GateContentWidth, 44f));
+            SetRect(cancelLoginButton.GetComponent<RectTransform>(), new Vector2(36f, -216f), new Vector2(GateContentWidth, 44f));
+            cancelLoginButton.onClick.AddListener(viewModel.CancelLogin);
         }
 
         // 게임 화면 거리에서 읽히도록 artel-home의 타이포보다 한 단계 크게 잡는다.
@@ -728,15 +740,14 @@ namespace Artel
         // 아래에서 높이가 0으로 접힌다. 요소마다 LayoutElement를 붙이는 쪽이 더 길다.
         private void CreateGateContent()
         {
-            gateContent = new GameObject("Gate Content", typeof(RectTransform));
-            gateContent.transform.SetParent(coverObject.transform, false);
-            Inset(gateContent.GetComponent<RectTransform>(), 0f);
+            gateContent = CreateCard("Gate Content", 312f);
+            CreateCardHeader(gateContent.transform);
 
             serverSettingsContent = new GameObject("Server Settings", typeof(RectTransform));
             serverSettingsContent.transform.SetParent(gateContent.transform, false);
-            Inset(serverSettingsContent.GetComponent<RectTransform>(), 0f);
-            var settingsToggle = CreateButton(gateContent.transform, "고급 설정", new Vector2(180f, 36f));
-            CenterRect(settingsToggle.GetComponent<RectTransform>(), new Vector2(0f, -340f), new Vector2(180f, 36f));
+            SetRect(serverSettingsContent.GetComponent<RectTransform>(), Vector2.zero, new Vector2(GateContentWidth, 144f));
+            var settingsToggle = CreateButton(gateContent.transform, "고급 설정", new Vector2(144f, 36f));
+            serverSettingsButton = settingsToggle;
             serverSettingsToggleText = settingsToggle.GetComponentInChildren<Text>();
             settingsToggle.onClick.AddListener(() =>
             {
@@ -745,10 +756,10 @@ namespace Artel
                 RefreshView();
             });
             var serverLabel = CreateText(serverSettingsContent.transform, "서버 주소", 16, TextAnchor.MiddleLeft, textSecondary);
-            CenterRect(serverLabel.rectTransform, new Vector2(0f, 344f), new Vector2(640f, 24f));
+            SetRect(serverLabel.rectTransform, new Vector2(0f, -8f), new Vector2(GateContentWidth, 24f));
             var inputObject = new GameObject("Server URL", typeof(RectTransform), typeof(Image), typeof(InputField));
             inputObject.transform.SetParent(serverSettingsContent.transform, false);
-            CenterRect(inputObject.GetComponent<RectTransform>(), new Vector2(-60f, 304f), new Vector2(520f, 44f));
+            SetRect(inputObject.GetComponent<RectTransform>(), new Vector2(0f, -40f), new Vector2(384f, 44f));
             inputObject.GetComponent<Image>().color = bgRaised;
             serverUrlInput = inputObject.GetComponent<InputField>();
             var addressText = CreateText(inputObject.transform, "", 16, TextAnchor.MiddleLeft);
@@ -758,11 +769,11 @@ namespace Artel
             serverUrlInput.targetGraphic = inputObject.GetComponent<Image>();
             serverUrlInput.lineType = InputField.LineType.SingleLine;
             serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
-            applyServerButton = CreateButton(serverSettingsContent.transform, "적용", new Vector2(108f, 44f));
-            CenterRect(applyServerButton.GetComponent<RectTransform>(), new Vector2(266f, 304f), new Vector2(108f, 44f));
+            applyServerButton = CreateButton(serverSettingsContent.transform, "적용", new Vector2(92f, 44f));
+            SetRect(applyServerButton.GetComponent<RectTransform>(), new Vector2(396f, -40f), new Vector2(92f, 44f));
             applyServerButton.onClick.AddListener(ApplyServer);
             var resetServer = CreateButton(serverSettingsContent.transform, "ARTEL 서버로 복원", new Vector2(180f, 32f));
-            CenterRect(resetServer.GetComponent<RectTransform>(), new Vector2(230f, 350f), new Vector2(180f, 32f));
+            SetRect(resetServer.GetComponent<RectTransform>(), new Vector2(0f, -96f), new Vector2(180f, 32f));
             resetServer.onClick.AddListener(() =>
             {
                 serverUrlInput.text = Server.DefaultUrl;
@@ -770,52 +781,64 @@ namespace Artel
             });
             serverSettingsContent.SetActive(false);
 
-            CreateLogo(gateContent.transform, new Vector2(0f, 220f), 72f);
-
-            var title = CreateText(gateContent.transform, "Artel SDK", 32, TextAnchor.MiddleCenter);
-            CenterRect(title.rectTransform, new Vector2(0f, 148f), new Vector2(900f, 48f));
-
             gateMessageText = CreateText(
                 gateContent.transform,
                 LoginMessage,
                 18,
-                TextAnchor.MiddleCenter,
+                TextAnchor.UpperLeft,
                 textSecondary);
-            CenterRect(gateMessageText.rectTransform, new Vector2(0f, 96f), new Vector2(900f, 28f));
+            SetRect(gateMessageText.rectTransform, new Vector2(36f, -100f), new Vector2(GateContentWidth, 48f));
 
             // 오류 줄은 빈 문자열로도 자리를 차지한다. 나타날 때 아래 버튼이 밀리면 누르려던
             // 위치가 어긋난다.
             gateErrorText = CreateText(
-                gateContent.transform, string.Empty, 16, TextAnchor.MiddleCenter, StatusCritical);
-            CenterRect(gateErrorText.rectTransform, new Vector2(0f, 54f), new Vector2(900f, 24f));
+                gateContent.transform, string.Empty, 14, TextAnchor.UpperLeft, StatusCritical);
+            SetRect(gateErrorText.rectTransform, new Vector2(36f, -152f), new Vector2(GateContentWidth, 44f));
 
-            loginButton = CreateButton(gateContent.transform, "로그인", new Vector2(640f, 56f), primary: true);
-            CenterRect(loginButton.GetComponent<RectTransform>(), new Vector2(0f, 4f), new Vector2(640f, 56f));
+            loginButton = CreateButton(gateContent.transform, "로그인", new Vector2(GateContentWidth, 48f), primary: true);
             loginButton.onClick.AddListener(BeginLogin);
 
             // 로그인은 됐는데 목록을 못 읽었거나 등록이 실패한 자리. 이것이 없으면 게이트에
             // 남는 길이 로그아웃뿐이라, 잠깐 끊긴 서버 때문에 다시 로그인해야 한다.
-            reloadProjectsButton = CreateButton(gateContent.transform, "다시 시도", new Vector2(640f, 56f), primary: true);
-            CenterRect(reloadProjectsButton.GetComponent<RectTransform>(), new Vector2(0f, 4f), new Vector2(640f, 56f));
+            reloadProjectsButton = CreateButton(gateContent.transform, "다시 시도", new Vector2(GateContentWidth, 48f), primary: true);
             reloadProjectsButton.onClick.AddListener(ReloadProjects);
 
-            projectListObject = new GameObject("Project List", typeof(RectTransform));
+            projectListObject = new GameObject(
+                "Project List", typeof(RectTransform), typeof(ScrollRect));
             projectListObject.transform.SetParent(gateContent.transform, false);
-            CenterRect(
-                projectListObject.GetComponent<RectTransform>(),
-                new Vector2(0f, 4f),
-                new Vector2(640f, MaxListedProjects * ProjectRowHeight));
+            var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
+            viewport.transform.SetParent(projectListObject.transform, false);
+            SetRect(viewport.GetComponent<RectTransform>(), Vector2.zero, new Vector2(GateContentWidth - 20f, VisibleProjectRows * ProjectRowHeight));
+            viewport.GetComponent<Image>().color = bgSurface;
+            projectListContent = new GameObject("Content", typeof(RectTransform)).GetComponent<RectTransform>();
+            projectListContent.SetParent(viewport.transform, false);
+            SetRect(projectListContent, Vector2.zero, new Vector2(GateContentWidth - 20f, 0f));
+            listedProjectIds.Clear();
+            projectScrollRect = projectListObject.GetComponent<ScrollRect>();
+            projectScrollRect.viewport = viewport.GetComponent<RectTransform>();
+            projectScrollRect.content = projectListContent;
+            projectScrollRect.horizontal = false;
+            projectScrollRect.movementType = ScrollRect.MovementType.Clamped;
+            projectScrollRect.scrollSensitivity = ProjectRowHeight;
+            var scrollTrack = CreateSurface(projectListObject.transform, "Scrollbar", bgRaised, 4f);
+            SetRect(scrollTrack.rectTransform, new Vector2(GateContentWidth - 8f, 0f), new Vector2(8f, VisibleProjectRows * ProjectRowHeight));
+            var scrollHandle = CreateSurface(scrollTrack.transform, "Handle", borderStrong, 4f);
+            Inset(scrollHandle.rectTransform, 0f);
+            var scrollbar = scrollTrack.gameObject.AddComponent<Scrollbar>();
+            scrollbar.handleRect = scrollHandle.rectTransform;
+            scrollbar.targetGraphic = scrollHandle;
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
+            projectScrollRect.verticalScrollbar = scrollbar;
+            projectScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
 
-            gateLogOutButton = CreateButton(gateContent.transform, "로그아웃", new Vector2(640f, 44f));
+            gateLogOutButton = CreateButton(gateContent.transform, "로그아웃", new Vector2(112f, 36f));
             // 고급 섹션에도 같은 라벨의 버튼이 있다. GameObject 이름이 겹치면 어느 쪽을
             // 집었는지 알 수 없어 계층에서도 테스트에서도 헷갈린다.
             gateLogOutButton.gameObject.name = "게이트 로그아웃 Button";
-            CenterRect(gateLogOutButton.GetComponent<RectTransform>(), new Vector2(0f, -232f), new Vector2(640f, 44f));
             gateLogOutButton.onClick.AddListener(LogOut);
 
-            var dismissButton = CreateButton(gateContent.transform, "나중에", new Vector2(640f, 44f));
-            CenterRect(dismissButton.GetComponent<RectTransform>(), new Vector2(0f, -284f), new Vector2(640f, 44f));
-            dismissButton.onClick.AddListener(DismissGate);
+            gateDismissButton = CreateButton(gateContent.transform, "나중에", new Vector2(112f, 36f));
+            gateDismissButton.onClick.AddListener(DismissGate);
         }
 
         // 프로젝트 버튼은 목록을 받은 뒤에야 몇 개인지 안다. 목록이 실제로 달라졌을 때만
@@ -829,9 +852,10 @@ namespace Artel
             }
 
             listedProjectIds.Clear();
-            for (var index = projectListObject.transform.childCount - 1; index >= 0; index--)
+            for (var index = projectListContent.childCount - 1; index >= 0; index--)
             {
-                var child = projectListObject.transform.GetChild(index).gameObject;
+                var child = projectListContent.GetChild(index).gameObject;
+                child.SetActive(false);
                 if (Application.isPlaying)
                 {
                     Destroy(child);
@@ -842,16 +866,33 @@ namespace Artel
                 }
             }
 
-            var rowCount = Mathf.Min(projects.Count, MaxListedProjects);
+            var rowCount = projects.Count;
+            var rowWidth = GateContentWidth - 20f;
+            projectListContent.sizeDelta = new Vector2(rowWidth, rowCount * ProjectRowHeight);
+            projectScrollRect.StopMovement();
+            projectListContent.anchoredPosition = Vector2.zero;
             for (var index = 0; index < rowCount; index++)
             {
                 var project = projects[index];
                 var button = CreateButton(
-                    projectListObject.transform, project.Name ?? project.Id, new Vector2(640f, 52f));
-                CenterRect(
+                    projectListContent, project.Name ?? project.Id, new Vector2(rowWidth, 56f));
+                SetRect(
                     button.GetComponent<RectTransform>(),
-                    new Vector2(0f, ((rowCount - 1) * ProjectRowHeight * 0.5f) - (index * ProjectRowHeight)),
-                    new Vector2(640f, 52f));
+                    new Vector2(0f, -(index * ProjectRowHeight)),
+                    new Vector2(rowWidth, 56f));
+                var projectLabel = button.GetComponentInChildren<Text>();
+                projectLabel.alignment = TextAnchor.MiddleLeft;
+                projectLabel.fontSize = 17;
+                projectLabel.rectTransform.offsetMin = new Vector2(60f, 0f);
+                projectLabel.rectTransform.offsetMax = new Vector2(-36f, 0f);
+                projectLabel.supportRichText = false;
+                var icon = CreateSurface(button.transform, "Project Icon", bgSurface, 4f);
+                SetRect(icon.rectTransform, new Vector2(12f, -10f), new Vector2(36f, 36f));
+                var name = project.Name ?? project.Id ?? string.Empty;
+                var initial = CreateText(icon.transform, name.Length > 0 ? name.Substring(0, 1).ToUpperInvariant() : string.Empty, 16, TextAnchor.MiddleCenter, brandAccent);
+                Inset(initial.rectTransform, 0f);
+                var chevron = CreateText(button.transform, "›", 24, TextAnchor.MiddleCenter, textMuted);
+                SetRect(chevron.rectTransform, new Vector2(rowWidth - 32f, -10f), new Vector2(24f, 36f));
                 var projectId = project.Id;
                 button.onClick.AddListener(() => ChooseProject(projectId));
                 listedProjectIds.Add(projectId);
@@ -860,7 +901,7 @@ namespace Artel
 
         private bool MatchesListedProjects(IReadOnlyList<SdkProjectDto> projects)
         {
-            var rowCount = Mathf.Min(projects.Count, MaxListedProjects);
+            var rowCount = projects.Count;
             if (listedProjectIds.Count != rowCount)
             {
                 return false;
@@ -881,7 +922,7 @@ namespace Artel
         {
             advancedObject = new GameObject("Advanced Section", typeof(RectTransform));
             advancedObject.transform.SetParent(panelObject.transform, false);
-            SetRect(advancedObject.GetComponent<RectTransform>(), new Vector2(0f, -170f), new Vector2(440f, 128f));
+            SetRect(advancedObject.GetComponent<RectTransform>(), new Vector2(0f, -222f), new Vector2(440f, 128f));
 
             var details = CreateText(
                 advancedObject.transform,
@@ -931,6 +972,10 @@ namespace Artel
                 return;
             }
 
+            var projectLabel = string.IsNullOrWhiteSpace(viewModel.SelectedProjectName)
+                ? viewModel.SelectedProjectId
+                : viewModel.SelectedProjectName;
+            selectedProjectText.text = "프로젝트 · " + (string.IsNullOrEmpty(projectLabel) ? "미선택" : projectLabel);
             statusText.text = viewModel.Status;
             // 실패를 문장으로만 알리면 눈에 걸리지 않는다.
             statusText.color = StatusColor();
@@ -938,7 +983,7 @@ namespace Artel
                 (viewModel.HasToken ? "로그인 " + AccountLabel() : "로그인하지 않음") +
                 "\nSDK UUID " + artelManager.SdkId +
                 "\n게임 버전 " + GameVersionLabel();
-            coverStatusText.text = viewModel.Status;
+            coverStatusText.text = viewModel.Status == coverMessageText.text ? string.Empty : viewModel.Status;
             gateErrorText.text = viewModel.HasError ? viewModel.Status : string.Empty;
             connectButton.interactable = viewModel.CanConnect;
 
@@ -948,12 +993,23 @@ namespace Artel
             var choosingProject = viewModel.HasToken && viewModel.Projects.Count > 0;
             loginButton.gameObject.SetActive(!viewModel.HasToken);
             loginButton.interactable = viewModel.CanLogIn && !loginRunning;
+            cancelLoginButton.gameObject.SetActive(loginRunning && viewModel.CanCancelLogin);
             reloadProjectsButton.gameObject.SetActive(viewModel.HasToken && !choosingProject);
             reloadProjectsButton.interactable = !loginRunning;
             projectListObject.SetActive(choosingProject);
             gateLogOutButton.gameObject.SetActive(viewModel.HasToken);
             gateMessageText.text = viewModel.HasToken ? ChooseProjectMessage : LoginMessage;
             RebuildProjectList();
+            var bodyTop = 156f + (viewModel.HasError ? 52f : 0f);
+            SetRect(loginButton.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, 48f));
+            SetRect(reloadProjectsButton.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, 48f));
+            SetRect(projectListObject.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, VisibleProjectRows * ProjectRowHeight));
+            var footerTop = bodyTop + (choosingProject ? VisibleProjectRows * ProjectRowHeight : 48f) + 24f;
+            SetRect(gateLogOutButton.GetComponent<RectTransform>(), new Vector2(36f, -footerTop), new Vector2(112f, 36f));
+            SetRect(serverSettingsButton.GetComponent<RectTransform>(), new Vector2(viewModel.HasToken ? 164f : 36f, -footerTop), new Vector2(144f, 36f));
+            SetRect(gateDismissButton.GetComponent<RectTransform>(), new Vector2(412f, -footerTop), new Vector2(112f, 36f));
+            SetRect(serverSettingsContent.GetComponent<RectTransform>(), new Vector2(36f, -footerTop - 60f), new Vector2(GateContentWidth, 144f));
+            gateContent.GetComponent<RectTransform>().sizeDelta = new Vector2(GateWidth, footerTop + 72f + (serverSettingsOpen ? 152f : 0f));
 
             // 덮개와 두 콘텐츠 그룹의 쓰기 주체는 여기 하나다. 코루틴이 따로 켜고 끄면
             // 어느 한쪽 경로에서 덮개가 켜진 채 남아 게임 화면을 통째로 가린다.
@@ -1007,38 +1063,69 @@ namespace Artel
         // primary는 화면에서 지금 눌러야 하는 버튼 하나에만 쓴다. 나머지는 secondary로
         // 물러나 있어야 그 하나가 눈에 띈다. artel-home의 .button--primary /
         // .button--secondary와 같은 구분이다.
+        private ArtelSurfaceGraphic CreateSurface(Transform parent, string name, Color color, float radius = 6f)
+        {
+            var surface = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(ArtelSurfaceGraphic));
+            surface.transform.SetParent(parent, false);
+            var graphic = surface.GetComponent<ArtelSurfaceGraphic>();
+            graphic.color = color;
+            graphic.Radius = radius;
+            return graphic;
+        }
+
+        private GameObject CreateCard(string name, float height)
+        {
+            var card = CreateSurface(coverObject.transform, name, borderSubtle);
+            CenterRect(card.rectTransform, Vector2.zero, new Vector2(GateWidth, height));
+            var fill = CreateSurface(card.transform, "Surface", bgSurface, 5f);
+            Inset(fill.rectTransform, 1f);
+            fill.raycastTarget = false;
+            return card.gameObject;
+        }
+
+        private void CreateCardHeader(Transform parent)
+        {
+            var mark = CreateSurface(parent, "Brand Mark", bgRaised, 4f);
+            SetRect(mark.rectTransform, new Vector2(36f, -32f), new Vector2(44f, 44f));
+            CreateLogo(mark.transform, Vector2.zero, 32f);
+            var title = CreateText(parent, "Artel SDK", 24, TextAnchor.MiddleLeft);
+            title.fontStyle = FontStyle.Bold;
+            SetRect(title.rectTransform, new Vector2(96f, -32f), new Vector2(220f, 44f));
+            var theme = CreateToggle(parent, "다크 모드");
+            SetRect(theme.GetComponent<RectTransform>(), new Vector2(388f, -40f), new Vector2(136f, 28f));
+            theme.isOn = darkTheme;
+            theme.onValueChanged.AddListener(SetDarkTheme);
+        }
+
         private Button CreateButton(Transform parent, string label, Vector2 size, bool primary = false)
         {
-            var buttonObject = new GameObject(label + " Button", typeof(RectTransform), typeof(Image), typeof(Button));
-            buttonObject.transform.SetParent(parent, false);
-            buttonObject.GetComponent<RectTransform>().sizeDelta = size;
-
-            if (primary)
-            {
-                buttonObject.GetComponent<Image>().color = brandAccent;
-            }
-            else
-            {
-                // 테두리는 겉 Image를 테두리색으로 두고 안쪽에 배경색 Image를 1유닛 들여
-                // 깔아 낸다. uGUI Image에는 테두리 속성이 없다.
-                buttonObject.GetComponent<Image>().color = borderStrong;
-                var fill = new GameObject("Fill", typeof(RectTransform), typeof(Image));
-                fill.transform.SetParent(buttonObject.transform, false);
-                fill.GetComponent<Image>().color = bgRaised;
-                Inset(fill.GetComponent<RectTransform>(), 1f);
-            }
+            var outline = CreateSurface(parent, label + " Button", primary ? brandAccent : borderSubtle, 4f);
+            var buttonObject = outline.gameObject;
+            outline.rectTransform.sizeDelta = size;
+            var fill = CreateSurface(outline.transform, "Fill", Color.white, 3f);
+            Inset(fill.rectTransform, 1f);
+            var button = buttonObject.AddComponent<Button>();
+            button.targetGraphic = fill;
+            var colors = button.colors;
+            colors.normalColor = primary ? brandAccent : bgRaised;
+            colors.highlightedColor = primary ? Color.Lerp(brandAccent, textPrimary, 0.1f) : bgHover;
+            colors.selectedColor = colors.highlightedColor;
+            colors.pressedColor = primary ? Color.Lerp(brandAccent, textPrimary, 0.2f) : borderSubtle;
+            colors.disabledColor = bgCanvas;
+            colors.fadeDuration = 0.1f;
+            button.colors = colors;
 
             var text = CreateText(
                 buttonObject.transform,
                 label,
-                17,
+                16,
                 TextAnchor.MiddleCenter,
                 primary ? textOnAccent : textPrimary);
             text.rectTransform.anchorMin = Vector2.zero;
             text.rectTransform.anchorMax = Vector2.one;
             text.rectTransform.offsetMin = Vector2.zero;
             text.rectTransform.offsetMax = Vector2.zero;
-            return buttonObject.GetComponent<Button>();
+            return button;
         }
 
         private static void Inset(RectTransform rectTransform, float amount)
@@ -1060,6 +1147,7 @@ namespace Artel
             text.fontSize = fontSize;
             text.color = color ?? textPrimary;
             text.alignment = alignment;
+            text.raycastTarget = false;
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
             text.verticalOverflow = VerticalWrapMode.Truncate;
             return text;
@@ -1067,7 +1155,7 @@ namespace Artel
 
         private void CreateLogo(Transform parent, Vector2 position, float size)
         {
-            var mark = new GameObject("Artel Logo", typeof(RectTransform), typeof(ArtelLogoGraphic));
+            var mark = new GameObject("Artel Logo", typeof(RectTransform), typeof(CanvasRenderer), typeof(ArtelLogoGraphic));
             mark.transform.SetParent(parent, false);
             var logo = mark.GetComponent<ArtelLogoGraphic>();
             logo.BodyColor = ArtelLogoGraphic.Body(darkTheme);
@@ -1099,6 +1187,7 @@ namespace Artel
             checkmark.color = actionPrimary;
 
             var text = CreateText(toggleObject.transform, label, 16, TextAnchor.MiddleLeft);
+            text.raycastTarget = true;
             SetRect(text.rectTransform, new Vector2(40f, 0f), new Vector2(180f, 28f));
 
             var toggle = toggleObject.GetComponent<Toggle>();
@@ -1140,6 +1229,8 @@ namespace Artel
                 bgSurface = new Color32(0x1A, 0x1D, 0x24, 0xFF);
                 bgRaised = new Color32(0x22, 0x26, 0x2F, 0xFF);
                 borderStrong = new Color32(0x61, 0x6B, 0x7A, 0xFF);
+                borderSubtle = new Color32(0x2C, 0x31, 0x3C, 0xFF);
+                bgHover = new Color32(0x2B, 0x30, 0x38, 0xFF);
                 textPrimary = ArtelLogoGraphic.Ink;
                 textSecondary = new Color32(0x9A, 0xA1, 0xAD, 0xFF);
                 textMuted = new Color32(0x83, 0x8C, 0x9A, 0xFF);
@@ -1150,6 +1241,8 @@ namespace Artel
                 bgSurface = new Color32(0xFD, 0xFB, 0xF7, 0xFF);
                 bgRaised = new Color32(0xF1, 0xED, 0xE5, 0xFF);
                 borderStrong = new Color32(0x92, 0x8C, 0x7D, 0xFF);
+                borderSubtle = new Color32(0xD8, 0xD4, 0xCB, 0xFF);
+                bgHover = new Color32(0xE8, 0xE3, 0xD8, 0xFF);
                 textPrimary = ArtelLogoGraphic.Charcoal;
                 textSecondary = new Color32(0x5A, 0x5F, 0x6B, 0xFF);
                 textMuted = new Color32(0x6F, 0x6C, 0x62, 0xFF);

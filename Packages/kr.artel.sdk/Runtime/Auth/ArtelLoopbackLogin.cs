@@ -79,12 +79,15 @@ namespace Artel.Auth
         /// 브라우저를 열고 콜백을 기다린다. 성공하면 code와 verifier가, 실패하면 사람이 읽을
         /// 이유가 <paramref name="completed"/>로 온다.
         /// </summary>
-        public static IEnumerator Authorize(Uri serverOrigin, Action<ArtelLoginCode> completed)
+        public static IEnumerator Authorize(
+            Uri serverOrigin, Action<ArtelLoginCode> completed, Func<bool> isCancelled = null)
         {
             if (completed == null)
             {
                 throw new ArgumentNullException(nameof(completed));
             }
+
+            if (isCancelled?.Invoke() == true) yield break;
 
 #if UNITY_EDITOR || UNITY_STANDALONE
             if (serverOrigin == null)
@@ -135,6 +138,8 @@ namespace Artel.Auth
                 var deadline = Time.realtimeSinceStartup + TimeoutSeconds;
                 while (waiter.Code == null && waiter.Error == null)
                 {
+                    if (isCancelled?.Invoke() == true) yield break;
+
                     if (Time.realtimeSinceStartup >= deadline)
                     {
                         completed(ArtelLoginCode.Failed("로그인을 기다리다 시간이 지났습니다. 다시 시도해 주세요."));
@@ -150,6 +155,8 @@ namespace Artel.Auth
                 // 포트를 잡고, 이전 포트로 온 콜백을 아무도 읽지 않는다.
                 listener.Close();
             }
+
+            if (isCancelled?.Invoke() == true) yield break;
 
             completed(waiter.Error != null
                 ? ArtelLoginCode.Failed(waiter.Error)

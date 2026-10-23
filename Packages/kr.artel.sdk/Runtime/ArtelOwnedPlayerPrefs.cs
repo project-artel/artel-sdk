@@ -27,7 +27,7 @@ namespace Artel
         /// <summary>오버레이·커서·키보드 표시가 공유하는 테마 스위치. 유일한 int 키다.</summary>
         public const string DarkTheme = "Artel.DarkTheme";
 
-        // 아래 여덟 개는 ArtelSdkSession 이 쓴다. 두 개는 보안 저장소를 거치는 값이라
+        // 아래 아홉 개는 ArtelSdkSession 이 쓴다. 두 개는 보안 저장소를 거치는 값이라
         // 이름이 Secret 으로 끝난다.
         public const string SdkTokenSecret = "Artel.SdkToken";
         public const string SdkTokenExpiresAt = "Artel.SdkTokenExpiresAt";
@@ -35,6 +35,7 @@ namespace Artel
         public const string SdkRefreshTokenExpiresAt = "Artel.SdkRefreshTokenExpiresAt";
         public const string SdkDisplayName = "Artel.SdkDisplayName";
         public const string ProjectId = "Artel.ProjectId";
+        public const string ProjectName = "Artel.ProjectName";
         public const string InstanceId = "Artel.InstanceId";
         public const string GameBuildId = "Artel.GameBuildId";
 
@@ -58,6 +59,7 @@ namespace Artel
             SdkRefreshTokenExpiresAt,
             SdkDisplayName,
             ProjectId,
+            ProjectName,
             InstanceId,
             GameBuildId
         };

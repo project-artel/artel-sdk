@@ -175,7 +175,7 @@ namespace Artel.Tests
             var sdkId = ArtelSdkIdentity.LoadOrCreate();
             ArtelSdkSession.SaveToken("token-abc", "2999-01-01T00:00:00Z", "Someone");
             ArtelSdkSession.SaveRefreshToken("refresh-abc", "2999-01-01T00:00:00Z");
-            ArtelSdkSession.SaveProjectId("project-1");
+            ArtelSdkSession.SaveProjectId("project-1", "계몽");
             ArtelSdkSession.SaveInstanceId("instance-1");
             ArtelSdkSession.SaveGameBuildId("build-1");
             PlayerPrefs.SetString(GameProgressKey, "level-7");
@@ -189,6 +189,7 @@ namespace Artel.Tests
             Assert.That(refreshToken, Is.EqualTo("refresh-abc"));
             Assert.That(ArtelSdkSession.TryLoadProjectId(out var projectId), Is.True);
             Assert.That(projectId, Is.EqualTo("project-1"));
+            Assert.That(ArtelSdkSession.ProjectName, Is.EqualTo("계몽"));
             Assert.That(ArtelSdkSession.TryLoadInstanceId(out var instanceId), Is.True);
             Assert.That(instanceId, Is.EqualTo("instance-1"));
             Assert.That(ArtelSdkSession.TryLoadGameBuildId(out var gameBuildId), Is.True);
