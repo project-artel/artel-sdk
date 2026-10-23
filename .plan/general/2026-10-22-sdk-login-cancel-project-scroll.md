@@ -42,3 +42,10 @@ Unity uGUI 오버레이의 기존 변경 사항을 유지한다. Hindsight는 DN
 - 재디자인 후 PlayMode OverlayGuiBootstrapTests 9/9 통과. 재검토 VERDICT: PASS. git diff --check 통과.
 - 마지막 토글·scaling 보완 후 수동 검증은 Esc 입력으로 중단됐다. 다크 테마와 실제 브라우저 로그인 취소의 최종 수동 검증은 남아 있다. 기존 PNG는 재디자인 이전 fixture 화면이다.
 - 실행 중 스크립트 reload 과정에서 ArtelManager.RecordFrameTime 및 StopTransport의 NullReferenceException이 기록됐다. 새 세션 재실행 검증은 중단되어 이 조건의 확인이 남아 있다.
+
+## 2026-10-23 CI 테스트 수정 계획
+- 실패한 EditMode 테스트 3개는 이전 Image 버튼과 기본 다크 테마를 가정한다.
+- 버튼의 targetGraphic과 normalColor를 함께 검사하고 두 테마의 대비 4.5:1 및 브랜드 색상을 검증한다.
+- 기본 라이트 테마, 다크 전환, 저장값으로 재생성, 라이트 복귀를 확인한다.
+- 런타임 UI는 변경하지 않는다. 전체 EditMode와 원격 CI를 실행하며 실패하면 이 테스트 변경만 되돌린다.
+- 검증 결과: Unity 2022.3.34f1 임시 프로젝트 전체 EditMode 552/552 통과. 두 테마 대비 및 브랜드 색상, 기본 라이트와 테마 왕복·복원 확인. git diff --check 통과.
