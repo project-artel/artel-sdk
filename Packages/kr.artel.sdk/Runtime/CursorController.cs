@@ -29,13 +29,13 @@ namespace Artel
 
         private void Awake()
         {
-            darkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 1) != 0;
+            darkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 0) != 0;
             CreateCursor();
         }
 
         private void Update()
         {
-            var currentDarkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 1) != 0;
+            var currentDarkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 0) != 0;
             if (darkTheme == currentDarkTheme)
             {
                 return;

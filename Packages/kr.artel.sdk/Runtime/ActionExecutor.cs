@@ -371,10 +371,11 @@ namespace Artel
             ArtelInput.ForgetLastPress();
             pointerEvents.ForgetLastPress();
             SetButton(button, true);
+            var eventReceiver = pointerEvents.LastPressReceiver;
 
             yield return null;
 
-            completed(ActionResultDto.Success(actionId, PressOutcome()));
+            completed(ActionResultDto.Success(actionId, PressOutcome(eventReceiver)));
         }
 
         /// <summary>
@@ -396,15 +397,15 @@ namespace Artel
         /// 화면 위에 그려지는 것이 UI 이고, 사람이 누른다고 보는 것도 그것이다.
         /// </para>
         /// </remarks>
-        private Dictionary<string, object> PressOutcome()
+        private static Dictionary<string, object> PressOutcome(string eventReceiver)
         {
-            var reached = string.IsNullOrEmpty(pointerEvents.LastPressReceiver)
+            var reached = string.IsNullOrEmpty(eventReceiver)
                 ? ArtelInput.LastPressReceiver
-                : pointerEvents.LastPressReceiver;
+                : eventReceiver;
             return new Dictionary<string, object>
             {
                 { "reached", string.IsNullOrEmpty(reached) ? null : reached },
-                { "pointerHeldByPerson", !ArtelInput.SawPress }
+                { "pointerHeldByPerson", string.IsNullOrEmpty(eventReceiver) && !ArtelInput.SawPress }
             };
         }
 
@@ -951,9 +952,16 @@ namespace Artel
         /// </remarks>
         private static bool TryConfirmAxisExists(string axisName, out string error)
         {
+            // 신 Input System 만 켠 프로젝트에는 Input Manager 축이 없다. 확인할 수도, 게임에 닿게 할 수도 없다(ARTEL-1233).
+            if (!LegacyInput.IsAvailable)
+            {
+                error = "Input Manager axes are not available: this project uses only the Input System package.";
+                return false;
+            }
+
             try
             {
-                UnityEngine.Input.GetAxis(axisName);
+                LegacyInput.GetAxis(axisName);
                 error = null;
                 return true;
             }

@@ -49,5 +49,18 @@ namespace Artel.Protocol.Dto
 
         [JsonProperty("results")]
         public List<ActionResultDto> Results { get; set; } = new List<ActionResultDto>();
+
+        /// <summary><see cref="Errors"/> 에 싣는 묶음의 상한. <c>PULSE</c> 와 같다.</summary>
+        internal const int MaxErrors = 20;
+
+        /// <summary>
+        /// 배치를 꺼낸 frame 이후에 한 번이라도 찍힌 예외와 Error 로그 묶음(ARTEL-1218). 없으면 필드가 빠진다.
+        /// </summary>
+        /// <remarks>
+        /// <c>count</c> 는 이 배치 안의 횟수가 아니라 프로세스 누적이다. <c>PULSE.errors</c> 와 같은 항목을 같은 값으로 보여야
+        /// 받는 쪽이 둘을 같은 묶음으로 맞출 수 있다.
+        /// </remarks>
+        [JsonProperty("errors", NullValueHandling = NullValueHandling.Ignore)]
+        public List<LoggedErrorDto> Errors { get; set; }
     }
 }

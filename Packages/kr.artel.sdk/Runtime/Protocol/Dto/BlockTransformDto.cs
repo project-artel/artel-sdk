@@ -21,9 +21,15 @@ namespace Artel.Protocol.Dto
         /// for the first case are mirrored rather than merely out of range.
         ///
         /// True does not mean visible: a block clipped by a mask, covered by another object, or
-        /// drawn fully transparent still reports true.
+        /// drawn fully transparent still reports true. <see cref="Visible"/> answers that.
         /// </remarks>
         [JsonProperty("onScreen")]
         public bool OnScreen { get; set; }
+
+        /// <summary>
+        /// <see cref="OnScreen"/> 이면서 꺼지거나 투명하거나 mask 에 잘리거나 가려지지 않았는지(ARTEL-1225).
+        /// </summary>
+        [JsonProperty("visible")]
+        public bool Visible { get; set; }
     }
 }

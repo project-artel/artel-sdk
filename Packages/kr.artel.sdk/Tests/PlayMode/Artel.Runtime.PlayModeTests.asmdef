@@ -15,7 +15,7 @@
     "Newtonsoft.Json.dll"
   ],
   "autoReferenced": false,
-  "defineConstraints": [],
+  "defineConstraints": ["UNITY_EDITOR || !UNITY_WEBGL"],
   "versionDefines": [],
   "noEngineReferences": false,
   "optionalUnityReferences": [

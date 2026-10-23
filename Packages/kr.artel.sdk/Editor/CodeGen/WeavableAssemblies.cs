@@ -3,7 +3,7 @@ using System;
 namespace Artel.CodeGen
 {
     /// <summary>
-    /// 어느 어셈블리를 위버에 넘길지 이름만 보고 정한다.
+    /// 플랫폼 define과 이름으로 위빙 대상 어셈블리를 정한다.
     /// </summary>
     /// <remarks>
     /// <c>AffordanceILPostProcessor</c> 의 같은 목록과 짝이다. 두 CodeGen asmdef 이 갈라져 있어
@@ -15,6 +15,14 @@ namespace Artel.CodeGen
     /// </remarks>
     internal static class WeavableAssemblies
     {
+        // WebGL player에는 Artel.Runtime이 없으므로 입력 프록시 참조도 추가하지 않는다.
+        // WebGL을 선택한 Editor의 컴파일은 기존 SDK 동작을 유지한다.
+        internal static bool SupportsTarget(string[] defines)
+        {
+            return defines == null || Array.IndexOf(defines, "UNITY_WEBGL") < 0 ||
+                   Array.IndexOf(defines, "UNITY_EDITOR") >= 0;
+        }
+
         /// <summary>
         /// 이름이 정확히 같을 때만 거른다.
         /// </summary>
