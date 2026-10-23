@@ -146,7 +146,7 @@ behavior 가 끝나는 이유.
 | `GAME_FUNCTION_CATALOG` | `DEVICE_CONTEXT` 바로 뒤에 한 번, 그 뒤 목록이 바뀌면 1 초에 한 번까지. `{type, revision, cheats, behaviors}`. 출시 빌드는 보내지 않는다 |
 | `BEHAVIOR_ENDED` | behavior 하나가 끝날 때 한 번. `{type, behaviorId, name, target, reason, detail, seconds, frame}`. 연결이 없을 때 끝난 것은 버린다 |
 | `PERFORMANCE` | 1 초마다 (`PerformanceReportIntervalSeconds`) |
-| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions`·`behaviors`·`errors` 는 아래 |
+| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions`·`behaviors`·`errors`·`audio` 는 아래 |
 | `STREAM_STATE` | 스트림 상태가 바뀔 때. 값은 `CONNECTING`·`LIVE`·`FAILED`·`STOPPED` |
 | `WEBRTC_OFFER` | 스트림 세션이 offer 를 만들었을 때 |
 | `WEBRTC_ICE` | ICE candidate 가 모였을 때 |
@@ -157,6 +157,7 @@ behavior 가 끝나는 이유.
   `target: null` 항목 하나로 선다
 - `PULSE.behaviors`: 도는 behavior 전부. behavior 가 하나라도 등록돼 있으면 모든 `pulse` 에 싣는다. 감시 대상 값이
   가만히 있어도 behavior 가 도는 동안은 1 초에 한 번 `pulse` 를 보낸다
+- `PULSE.audio`: 재생 중인 `AudioSource` 수와 직전 `pulse` 이후 재생을 시작한 것. 아래 「소리」
 - `PULSE.errors`: 직전 `pulse` 이후 새로 생기거나 `count` 가 늘어난 예외·Error 로그 묶음. 아래 「예외와 Error 로그」
 - `PERFORMANCE` 가 나르는 지표군 이름은 서버가 정한 계약
 - 지금 `MetricGroupNames.Collected()` 가 선언하는 것은 `frameTiming` 과 `editorRender` 둘
@@ -189,6 +190,26 @@ behavior 가 끝나는 이유.
 - 전량 `pulse` 에도 이미 보낸 묶음을 다시 싣지 않는다. 예외는 상태가 아니라 일어난 일이라서다. 그래서 전달에 실패한
   `pulse` 에 실렸던 묶음은 다시 찍히기 전까지 다시 오지 않는다
 - live readings 가 꺼져 있는 동안 찍힌 묶음은 쌓여 있다가 켜진 뒤 첫 `pulse` 부터 나간다
+
+### 소리
+
+- `{ "playing": <int>, "started": [{ "clip": <string|null>, "frame": <int> }], "truncated"?: true }`
+- 전량 `pulse` 에는 늘 싣고, 그 밖에는 `started` 가 있거나 `playing` 이 바뀌었을 때만 싣는다. 실을 때는 감시 대상 값이
+  가만히 있어도 `pulse` 가 나간다
+- `pulse` 를 쓸 때마다(0.1 초) 씬의 `AudioSource` 를 찾아 `isPlaying` 을 본다. 직전에 재생 중이 아니었거나, loop 가
+  아닌데 `time` 이 줄었으면 시작으로 센다
+- `started` 는 `pulse` 하나에 20 개까지. 넘치면 `truncated: true`
+- `frame` 은 시작을 알아챈 frame 이라 실제 시작보다 최대 0.1 초 늦다
+- 처음 재는 순간 이미 재생 중인 것은 `playing` 에만 들어가고 `started` 에는 없다
+
+| 잡히지 않는 것 | 왜 |
+| --- | --- |
+| 0.1 초 안에 시작해서 끝난 소리 | 두 번 잰 사이에 `isPlaying` 이 true 였던 순간이 없다 |
+| 이미 재생 중인 source 위의 `PlayOneShot` | `isPlaying` 도 `time` 도 바뀌지 않는다 |
+| clip 없이 붙은 source 위의 `PlayOneShot` | playOnAwake 때문에 그 source 는 `isPlaying` 이 계속 true 다 (2022.3.34f1). `playing` 에는 늘 하나로 세어진다 |
+
+- 쉬던 source 위의 `PlayOneShot` 은 시작으로 잡히지만 `clip` 이 `null` 이다. `PlayOneShot` 이 넘긴 clip 이름을 얻으려면
+  호출부를 IL post-processor 로 후킹해야 한다
 
 ## Inbound messages (orchestration → SDK)
 
