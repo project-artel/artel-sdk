@@ -66,7 +66,20 @@ namespace Artel.Affordances.CodeGen
 
         internal static Condition FromGesture(InputRead gesture)
         {
-            return new Condition { Kind = ConditionKind.Gesture, Gesture = gesture };
+            if (gesture.Candidates == null || gesture.Candidates.Count == 0)
+            {
+                return new Condition { Kind = ConditionKind.Gesture, Gesture = gesture };
+            }
+
+            // 후보 key 중 하나가 눌리면 성립한다. 눌리지 않아야 하는 갈래는 후보 전부가 눌리지 않아야 한다(ARTEL-1230).
+            var parts = new List<Condition>();
+
+            foreach (var each in gesture.Each())
+            {
+                parts.Add(new Condition { Kind = ConditionKind.Gesture, Gesture = each });
+            }
+
+            return gesture.Absent ? Every(parts) : Either(parts);
         }
 
         internal static Condition Unreadable(string reason, string unread = null)
