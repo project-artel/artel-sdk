@@ -22,3 +22,11 @@ Unity.WebRTC 참조로 CS0234/CS0246 오류를 낸다.
 ## 제한
 WebGL에서 SDK runtime 타입을 직접 참조하는 게임 코드는 동일한 컴파일 조건이 필요하다.
 별도 affordance 메타데이터·scan 어셈블리는 제외하지 않는다.
+
+## 검증 결과
+- Unity 2022.3.34f1의 격리 프로젝트에서 WebGL release와 development 빌드 통과.
+- development smoke에서 player 컴파일 그래프의 Artel.Runtime 및 참조 부재,
+  Editor 그래프의 Artel.Runtime 유지를 확인했다.
+- WebGL target을 선택한 Editor의 Artel.CodeGen.Tests 22개 통과, 실패·건너뜀 0개.
+- Input.GetKey를 호출하는 smoke MonoBehaviour를 포함해 IL2CPP 빌드를 확인했다.
+- 실제 GyeMong 게임 빌드 결과는 이 검증에 포함하지 않는다.
