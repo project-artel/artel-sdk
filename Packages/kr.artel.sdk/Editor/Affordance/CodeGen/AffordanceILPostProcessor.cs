@@ -125,6 +125,9 @@ namespace Artel.Affordances.CodeGen
             // 술어의 조건도 마찬가지다. 쥐고 있는 열쇠가 그것을 읽은 모듈의 MethodDefinition 이다.
             PredicateConditions.Forget();
 
+            // dictionary 의 key 표도 마찬가지다. 쥐고 있는 열쇠가 그 module 의 FieldDefinition 이다.
+            DictionaryKeys.Forget();
+
             var carriedSymbols = HasSymbols(compiledAssembly);
             var readSymbols = carriedSymbols;
 
