@@ -444,6 +444,7 @@ namespace Artel.Affordances.Scan
             _walkGaps.Clear();
             _walkNotes.Clear();
             SerializedReferences.Forget();
+            AssetValues.Forget();
         }
 
         /// <summary>
@@ -578,7 +579,10 @@ namespace Artel.Affordances.Scan
 
             // `persistentObjects` 가 게임이 씬 로드를 건너 쥐고 있던 것을 담고, 아무도 보지 않았다고 말하던 공백은 아무도 볼 수
             // 없었을 때만 쓰인다.
-            "persistent-objects-v1"
+            "persistent-objects-v1",
+
+            // `assets` 가 refs[].id 를 key 로 ScriptableObject 의 직렬화된 값을 담는다(ARTEL-1226).
+            "asset-values-v1"
         };
 
         private static void Built(StringBuilder text)
@@ -775,7 +779,11 @@ namespace Artel.Affordances.Scan
                 wrote = true;
             }
 
-            text.Append("],\"persistentObjects\":[").Append(_persistent).Append("],\"gaps\":[");
+            text.Append("],\"persistentObjects\":[").Append(_persistent).Append("],");
+
+            // refs[].id 로 찾아가는 ScriptableObject 의 값. 더하기만 하는 최상위 필드다(ARTEL-1226).
+            AssetValues.Compose(text);
+            text.Append(",\"gaps\":[");
 
             var said = new HashSet<string>();
             var first = true;
@@ -858,6 +866,17 @@ namespace Artel.Affordances.Scan
                 }
 
                 Json.String(text, "evidence-never-placed-count:" + missing.Count);
+                first = false;
+            }
+
+            if (AssetValues.Skipped > 0)
+            {
+                if (!first)
+                {
+                    text.Append(',');
+                }
+
+                Json.String(text, "asset-values-omitted:" + AssetValues.Skipped);
                 first = false;
             }
 

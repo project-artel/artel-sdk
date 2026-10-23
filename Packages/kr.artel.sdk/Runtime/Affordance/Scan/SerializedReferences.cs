@@ -466,7 +466,7 @@ namespace Artel.Affordances.Scan
         /// 같은 게임을 두 번 돌면 같은 바이트가 나오도록 이름으로 정렬하고, 한 씬이 적은 수의 타입의 인스턴스를 많이 쥐고 있으므로
         /// 캐시한다.
         /// </remarks>
-        private static FieldInfo[] FieldsOf(Type type)
+        internal static FieldInfo[] FieldsOf(Type type)
         {
             if (FieldsByType.TryGetValue(type, out var cached))
             {

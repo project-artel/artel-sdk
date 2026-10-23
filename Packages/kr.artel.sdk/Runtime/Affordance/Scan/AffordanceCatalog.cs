@@ -220,6 +220,19 @@ namespace Artel.Affordances.Scan
             return named;
         }
 
+        /// <summary>분석기가 근거를 구운 assembly 인지. 게임 자신의 코드가 든 assembly 를 가리는 데 쓴다(ARTEL-1226).</summary>
+        internal static bool Carries(Assembly assembly)
+        {
+            try
+            {
+                return Read(assembly) != null;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         internal static void Forget()
         {
             Known.Clear();
