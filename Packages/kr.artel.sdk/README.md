@@ -57,10 +57,13 @@ carries `instanceId`, `projectId`, `instanceName`, `gameBuildId` and
 registers and connects with no interaction.
 
 The two tokens — access and refresh — live in the OS secret store
-(`ArtelSecretStore`; DPAPI on Windows, Keychain on macOS). Expiry, display name,
-project and instance sit in `PlayerPrefs` under `Artel.*`, because none of them
-opens anything on its own. The per-installation UUID is generated once and
-stored in `PlayerPrefs` under `Artel.SdkId`.
+(`ArtelSecretStore`; DPAPI on Windows, Keychain on macOS). Expiry, display name
+and project sit in `PlayerPrefs` under `Artel.*`, because none of them opens
+anything on its own. The per-installation UUID and the instance id of each
+server live in `Application.persistentDataPath/artel/identity.json`, so a game
+that calls `PlayerPrefs.DeleteAll()` keeps registering as the same instance.
+Values an older SDK left in `PlayerPrefs` (`Artel.SdkId`, `Artel.InstanceId.*`)
+move into that file the first time they are read.
 
 Close code `4001` on the socket means the token or the instance was refused.
 The SDK does not retry that one; the overlay's `연결` button registers again,

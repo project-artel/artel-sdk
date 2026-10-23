@@ -189,9 +189,14 @@ namespace Artel.Auth
             PlayerPrefs.Save();
         }
 
+        /// <remarks>
+        /// instance id 는 <c>PlayerPrefs</c> 가 아니라 <see cref="ArtelIdentityStore"/> 의 파일에 있다(ARTEL-1232). 게임이
+        /// <c>PlayerPrefs.DeleteAll()</c> 을 불러도 같은 instance 로 다시 붙는다.
+        /// </remarks>
         public static bool TryLoadInstanceId(out string instanceId)
         {
-            return TryLoadNonEmpty(InstanceIdPlayerPrefsKey, out instanceId);
+            instanceId = ArtelIdentityStore.ReadInstanceId(serverScope, InstanceIdPlayerPrefsKey) ?? string.Empty;
+            return instanceId.Length > 0;
         }
 
         public static string LoadInstanceId()
@@ -210,8 +215,7 @@ namespace Artel.Auth
             }
 
             RegisterScope();
-            PlayerPrefs.SetString(InstanceIdPlayerPrefsKey, instanceId.Trim());
-            PlayerPrefs.Save();
+            ArtelIdentityStore.WriteInstanceId(serverScope, InstanceIdPlayerPrefsKey, instanceId.Trim());
         }
 
         public static bool TryLoadGameBuildId(out string gameBuildId)
@@ -257,7 +261,7 @@ namespace Artel.Auth
             PlayerPrefs.DeleteKey(DisplayNamePlayerPrefsKey);
             PlayerPrefs.DeleteKey(ProjectIdPlayerPrefsKey);
             PlayerPrefs.DeleteKey(ProjectNamePlayerPrefsKey);
-            PlayerPrefs.DeleteKey(InstanceIdPlayerPrefsKey);
+            ArtelIdentityStore.DeleteInstanceId(serverScope, InstanceIdPlayerPrefsKey);
             PlayerPrefs.DeleteKey(GameBuildIdPlayerPrefsKey);
             PlayerPrefs.Save();
         }

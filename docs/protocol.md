@@ -139,14 +139,14 @@ behavior 가 끝나는 이유.
 
 | type | 언제 |
 | --- | --- |
-| `ACTION_RESULT` | `ACTION` 배치 하나를 다 돈 뒤. 항목은 `{id, success, error?, action?, returnValue?}` |
+| `ACTION_RESULT` | `ACTION` 배치 하나를 다 돈 뒤. 항목은 `{id, success, error?, action?, returnValue?}`. 배치 중 예외가 찍혔으면 `errors` 도 실린다 |
 | `GAME_STATE` | 스냅샷 해시가 달라졌을 때, 그리고 `scan_scene` 에 대한 답으로. **`ArtelManager.SendsGameState` 가 기본으로 `false` 다** |
 | `ALL_SCENES` | `scan_all_scenes` 를 마친 뒤 |
 | `DEVICE_CONTEXT` | 연결이 열린 뒤 한 번. 끊기면 표시를 내려 다음 연결에서 다시 보낸다 |
 | `GAME_FUNCTION_CATALOG` | `DEVICE_CONTEXT` 바로 뒤에 한 번, 그 뒤 목록이 바뀌면 1 초에 한 번까지. `{type, revision, cheats, behaviors}`. 출시 빌드는 보내지 않는다 |
 | `BEHAVIOR_ENDED` | behavior 하나가 끝날 때 한 번. `{type, behaviorId, name, target, reason, detail, seconds, frame}`. 연결이 없을 때 끝난 것은 버린다 |
 | `PERFORMANCE` | 1 초마다 (`PerformanceReportIntervalSeconds`) |
-| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions` 와 `behaviors` 는 아래 |
+| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions`·`behaviors`·`errors`·`audio` 는 아래 |
 | `STREAM_STATE` | 스트림 상태가 바뀔 때. 값은 `CONNECTING`·`LIVE`·`FAILED`·`STOPPED` |
 | `WEBRTC_OFFER` | 스트림 세션이 offer 를 만들었을 때 |
 | `WEBRTC_ICE` | ICE candidate 가 모였을 때 |
@@ -157,8 +157,59 @@ behavior 가 끝나는 이유.
   `target: null` 항목 하나로 선다
 - `PULSE.behaviors`: 도는 behavior 전부. behavior 가 하나라도 등록돼 있으면 모든 `pulse` 에 싣는다. 감시 대상 값이
   가만히 있어도 behavior 가 도는 동안은 1 초에 한 번 `pulse` 를 보낸다
+- `PULSE.audio`: 재생 중인 `AudioSource` 수와 직전 `pulse` 이후 재생을 시작한 것. 아래 「소리」
+- `PULSE.errors`: 직전 `pulse` 이후 새로 생기거나 `count` 가 늘어난 예외·Error 로그 묶음. 아래 「예외와 Error 로그」
 - `PERFORMANCE` 가 나르는 지표군 이름은 서버가 정한 계약
 - 지금 `MetricGroupNames.Collected()` 가 선언하는 것은 `frameTiming` 과 `editorRender` 둘
+
+### 예외와 Error 로그
+
+- `Application.logMessageReceived` 로 `LogType.Exception`·`Error`·`Assert` 만 모은다. `Warning` 과 `Log` 는 버린다
+- 게임이 잡아서 `Debug.LogException` 으로 찍은 예외도 `Exception` 으로 들어온다
+- type, message, stack 첫 줄이 같으면 한 묶음이다. 매 frame 같은 예외를 던지는 게임도 묶음 하나로 온다
+- 메인 스레드에서 찍힌 로그만 모은다
+
+항목 하나의 모양. `PULSE.errors` 와 `ACTION_RESULT.errors` 가 같다.
+
+| 필드 | 뜻 |
+| --- | --- |
+| `type` | `Exception` · `Error` · `Assert` |
+| `message` | 로그 문장. 200 자에서 자른다 |
+| `stackHead` | stack trace 첫 줄. 비어 있으면 `null` (release build 의 `Debug.LogError` 가 대개 그렇다) |
+| `firstFrame` · `lastFrame` | 이 묶음이 처음과 마지막으로 찍힌 `Time.frameCount` |
+| `count` | 프로세스가 시작한 뒤의 누적 횟수 |
+| `truncated` | `message` 가 잘렸을 때만 `true` 로 실린다 |
+
+| 어디 | 무엇을 싣나 | 상한 |
+| --- | --- | --- |
+| `PULSE.errors` | 직전 `pulse` 이후 새로 생기거나 `count` 가 늘어난 묶음. 실을 것이 있으면 감시 대상 값이 가만히 있어도 `pulse` 가 나간다 | `pulse` 하나에 20 개. 넘친 묶음은 다음 `pulse` 로 밀린다 |
+| `ACTION_RESULT.errors` | 배치를 꺼낸 frame 이후 한 번이라도 찍힌 묶음. 없으면 필드가 빠진다 | 20 개 |
+
+- 묶음은 100 개까지 둔다. 넘치면 이미 `pulse` 로 보낸 것 중 가장 오래전에 찍힌 것부터 버리고, 그것이 다시 찍히면 새
+  묶음으로 `count` 1 부터 센다
+- 전량 `pulse` 에도 이미 보낸 묶음을 다시 싣지 않는다. 예외는 상태가 아니라 일어난 일이라서다. 그래서 전달에 실패한
+  `pulse` 에 실렸던 묶음은 다시 찍히기 전까지 다시 오지 않는다
+- live readings 가 꺼져 있는 동안 찍힌 묶음은 쌓여 있다가 켜진 뒤 첫 `pulse` 부터 나간다
+
+### 소리
+
+- `{ "playing": <int>, "started": [{ "clip": <string|null>, "frame": <int> }], "truncated"?: true }`
+- 전량 `pulse` 에는 늘 싣고, 그 밖에는 `started` 가 있거나 `playing` 이 바뀌었을 때만 싣는다. 실을 때는 감시 대상 값이
+  가만히 있어도 `pulse` 가 나간다
+- `pulse` 를 쓸 때마다(0.1 초) 씬의 `AudioSource` 를 찾아 `isPlaying` 을 본다. 직전에 재생 중이 아니었거나, loop 가
+  아닌데 `time` 이 줄었으면 시작으로 센다
+- `started` 는 `pulse` 하나에 20 개까지. 넘치면 `truncated: true`
+- `frame` 은 시작을 알아챈 frame 이라 실제 시작보다 최대 0.1 초 늦다
+- 처음 재는 순간 이미 재생 중인 것은 `playing` 에만 들어가고 `started` 에는 없다
+
+| 잡히지 않는 것 | 왜 |
+| --- | --- |
+| 0.1 초 안에 시작해서 끝난 소리 | 두 번 잰 사이에 `isPlaying` 이 true 였던 순간이 없다 |
+| 이미 재생 중인 source 위의 `PlayOneShot` | `isPlaying` 도 `time` 도 바뀌지 않는다 |
+| clip 없이 붙은 source 위의 `PlayOneShot` | playOnAwake 때문에 그 source 는 `isPlaying` 이 계속 true 다 (2022.3.34f1). `playing` 에는 늘 하나로 세어진다 |
+
+- 쉬던 source 위의 `PlayOneShot` 은 시작으로 잡히지만 `clip` 이 `null` 이다. `PlayOneShot` 이 넘긴 clip 이름을 얻으려면
+  호출부를 IL post-processor 로 후킹해야 한다
 
 ## Inbound messages (orchestration → SDK)
 
@@ -178,16 +229,27 @@ behavior 가 끝나는 이유.
 ### `onScreen=true` 는 보인다는 뜻이 아니다
 
 - `true` 가 말하는 것은 "블록이 카메라 앞에 투영되고 프레임 안 어딘가에 떨어진다" 까지
-- 아래 셋도 전부 `true`
+- 보이는지는 그 옆의 `visible` 이 답한다 (ARTEL-1225). `onScreen` 의 뜻은 바뀌지 않았다
 
-| 실제 상태 | 보고되는 값 |
-| --- | --- |
-| `RectMask2D`·`ScrollRect` 에 잘려 나감 | `true` |
-| 다른 것에 완전히 가려짐 | `true` |
-| `CanvasGroup.alpha=0` 으로 그려짐 | `true` |
+| 실제 상태 | `onScreen` | `visible` |
+| --- | --- | --- |
+| 프레임 안에 그려짐 | `true` | `true` |
+| `SpriteRenderer.enabled=false` 등 자기 `Renderer` 가 꺼짐, `SpriteRenderer.color.a=0` | `true` | `false` |
+| 자기 `Graphic` 이 꺼짐, `Graphic.color.a=0` | `true` | `false` |
+| 위쪽 `CanvasGroup.alpha` 곱이 0, 위쪽 `Canvas` 가 꺼짐 | `true` | `false` |
+| `RectMask2D`·`Mask` 영역 밖으로 잘려 나감 | `true` | `false` |
+| `Selectable` 이 있는 블록인데 중심점의 `EventSystem.RaycastAll` 맨 위가 자기나 자기 자식이 아님 | `true` | `false` |
+| GameObject 가 꺼짐 (`full` scan 만 보고) | 잰 값 | `false` |
+| 프레임 밖, 카메라 뒤, 카메라 없음 | `false` | `false` |
 
-- 답하려면 블록마다 mask walk 나 raycast 가 붙는데 이 코드는 폴링 경로에서 돎
-- `false` 는 두 모양
+- `visible` 이 `true` 이면 `onScreen` 도 `true` 다
+- 가려짐은 `Selectable` 이 있는 블록에만 본다. 블록마다 raycast 하면 scan 이 블록 수만큼 raycast 를 하기 때문이다.
+  그래서 `Selectable` 이 없는 블록은 다른 것에 덮여도 `visible=true` 일 수 있다
+- 가려짐 판정은 `raycastTarget` 인 graphic 과 collider 만 본다. `EventSystem` 이 없는 씬에서는 가려짐을 보지 않는다
+- SDK 자신의 overlay 와 커서는 가리는 것으로 치지 않는다
+- mask 는 사각형 영역의 교차만 본다. `Mask` 가 stencil 로 그리는 실제 모양은 보지 않는다
+- 부분 투명(`alpha` 0 초과)은 `true` 다. 얼마나 흐린지는 판정하지 않는다
+- `false` 인 `onScreen` 은 두 모양
 
 | `false` 의 모양 | `rect` 값 | 왜 |
 | --- | --- | --- |
