@@ -371,10 +371,11 @@ namespace Artel
             ArtelInput.ForgetLastPress();
             pointerEvents.ForgetLastPress();
             SetButton(button, true);
+            var eventReceiver = pointerEvents.LastPressReceiver;
 
             yield return null;
 
-            completed(ActionResultDto.Success(actionId, PressOutcome()));
+            completed(ActionResultDto.Success(actionId, PressOutcome(eventReceiver)));
         }
 
         /// <summary>
@@ -396,15 +397,15 @@ namespace Artel
         /// 화면 위에 그려지는 것이 UI 이고, 사람이 누른다고 보는 것도 그것이다.
         /// </para>
         /// </remarks>
-        private Dictionary<string, object> PressOutcome()
+        private static Dictionary<string, object> PressOutcome(string eventReceiver)
         {
-            var reached = string.IsNullOrEmpty(pointerEvents.LastPressReceiver)
+            var reached = string.IsNullOrEmpty(eventReceiver)
                 ? ArtelInput.LastPressReceiver
-                : pointerEvents.LastPressReceiver;
+                : eventReceiver;
             return new Dictionary<string, object>
             {
                 { "reached", string.IsNullOrEmpty(reached) ? null : reached },
-                { "pointerHeldByPerson", !ArtelInput.SawPress }
+                { "pointerHeldByPerson", string.IsNullOrEmpty(eventReceiver) && !ArtelInput.SawPress }
             };
         }
 
