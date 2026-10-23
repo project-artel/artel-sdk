@@ -179,7 +179,8 @@ flowchart TB
 | 무엇 | 어디에 두나 | 왜 |
 | --- | --- | --- |
 | access·refresh 토큰 | OS 비밀 저장소 (`ArtelSecretStore`, Windows 는 DPAPI) | 그 자체로 계정을 엶 |
-| 만료 시각·표시 이름·프로젝트·인스턴스 | `PlayerPrefs` | 그 자체로 아무것도 열지 못함. 옮기면 값 하나마다 keychain 왕복만 붙음 |
+| 만료 시각·표시 이름·프로젝트 | `PlayerPrefs` | 그 자체로 아무것도 열지 못함. 옮기면 값 하나마다 keychain 왕복만 붙음 |
+| `sdkId`·서버별 instance id | `Application.persistentDataPath/artel/identity.json` (`ArtelIdentityStore`) | 게임이 `PlayerPrefs.DeleteAll()` 을 불러도 같은 instance 로 등록되도록 (ARTEL-1232). 예전 `PlayerPrefs` 값은 처음 읽을 때 옮김 |
 
 - 자세한 것은
   [`.plan/general/2026-07-31-sdk-loopback-login-jwt-auth.md`](../.plan/general/2026-07-31-sdk-loopback-login-jwt-auth.md)

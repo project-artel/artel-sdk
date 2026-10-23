@@ -18,6 +18,8 @@ namespace Artel.Tests.Transport
 {
     public sealed class WebSocketTransportTests
     {
+        private IdentityFileSandbox identityFile;
+
         private const string PlayerPrefsKey = "Artel.SdkId";
         private const string DarkThemePlayerPrefsKey = "Artel.DarkTheme";
 
@@ -40,6 +42,7 @@ namespace Artel.Tests.Transport
         [SetUp]
         public void SetUp()
         {
+            identityFile = new IdentityFileSandbox();
             hadOriginalSdkId = PlayerPrefs.HasKey(PlayerPrefsKey);
             originalSdkId = PlayerPrefs.GetString(PlayerPrefsKey);
             hadOriginalDarkTheme = PlayerPrefs.HasKey(DarkThemePlayerPrefsKey);
@@ -77,6 +80,8 @@ namespace Artel.Tests.Transport
             ClearSession();
             PlayerPrefs.Save();
             ArtelSecretStore.Current = null;
+
+            identityFile.Dispose();
         }
 
         private static void ClearSession()
@@ -137,7 +142,7 @@ namespace Artel.Tests.Transport
             var sdkId = ArtelSdkIdentity.LoadOrCreate();
 
             Assert.That(Guid.TryParse(sdkId, out _), Is.True);
-            Assert.That(PlayerPrefs.GetString(PlayerPrefsKey), Is.EqualTo(sdkId));
+            Assert.That(ArtelIdentityStore.ReadSdkId(), Is.EqualTo(sdkId));
         }
 
         [Test]
@@ -150,7 +155,7 @@ namespace Artel.Tests.Transport
 
             Assert.That(replacement, Is.Not.EqualTo(previous));
             Assert.That(Guid.TryParse(replacement, out _), Is.True);
-            Assert.That(PlayerPrefs.GetString(PlayerPrefsKey), Is.EqualTo(replacement));
+            Assert.That(ArtelIdentityStore.ReadSdkId(), Is.EqualTo(replacement));
         }
 
         [Test]

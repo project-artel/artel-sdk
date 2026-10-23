@@ -7,6 +7,8 @@ namespace Artel.Tests.Auth
 {
     public sealed class SdkLoginTests
     {
+        private IdentityFileSandbox identityFile;
+
         private static readonly string[] SessionPlayerPrefsKeys =
         {
             "Artel.SdkToken",
@@ -22,6 +24,7 @@ namespace Artel.Tests.Auth
         [SetUp]
         public void SetUp()
         {
+            identityFile = new IdentityFileSandbox();
             // 세션 테스트는 실제 키체인이나 사용자 프로필을 건드리지 않는다. 실제 플랫폼
             // 구현은 PlatformSecretStore_RoundTripsAndDeletes 하나에서만 돈다.
             ArtelSecretStore.Current = new PlayerPrefsSecretStore();
@@ -35,6 +38,8 @@ namespace Artel.Tests.Auth
             ArtelSdkSession.Clear();
             ClearSession();
             ArtelSecretStore.Current = null;
+
+            identityFile.Dispose();
         }
 
         [Test]
