@@ -153,7 +153,7 @@ namespace Artel
                 }
                 // input update가 끝나도 EventSystem.Update는 아직일 수 있다.
                 yield return null;
-                if (method == "mouse_down") result.ReturnValue = PressOutcome();
+                if (method == "mouse_down") result.ReturnValue = PressOutcome(pointerEvents.LastPressReceiver);
             }
             completed(result);
         }
@@ -411,10 +411,11 @@ namespace Artel
             ArtelInput.ForgetLastPress();
             pointerEvents.ForgetLastPress();
             SetButton(button, true);
+            var eventReceiver = pointerEvents.LastPressReceiver;
 
             yield return null;
 
-            completed(ActionResultDto.Success(actionId, PressOutcome()));
+            completed(ActionResultDto.Success(actionId, PressOutcome(eventReceiver)));
         }
 
         /// <summary>
@@ -436,16 +437,17 @@ namespace Artel
         /// 화면 위에 그려지는 것이 UI 이고, 사람이 누른다고 보는 것도 그것이다.
         /// </para>
         /// </remarks>
-        private Dictionary<string, object> PressOutcome()
+        private static Dictionary<string, object> PressOutcome(string eventReceiver)
         {
-            // native UI의 후속 raycast는 실제 수신 증거가 아니다. 알 수 없는 대상은 null로 남긴다.
-            var reached = NewInputMouse.UsesNativeUi ? null :
-                string.IsNullOrEmpty(pointerEvents.LastPressReceiver)
-                    ? ArtelInput.LastPressReceiver : pointerEvents.LastPressReceiver;
+            // native UI의 후속 raycast는 실제 수신 증거가 아니다.
+            var nativeUi = NewInputMouse.UsesNativeUi;
+            var reached = nativeUi ? null : string.IsNullOrEmpty(eventReceiver)
+                ? ArtelInput.LastPressReceiver : eventReceiver;
             return new Dictionary<string, object>
             {
                 { "reached", string.IsNullOrEmpty(reached) ? null : reached },
-                { "pointerHeldByPerson", !ArtelInput.OwnsVirtualPointer }
+                { "pointerHeldByPerson", nativeUi ? !ArtelInput.OwnsVirtualPointer :
+                    string.IsNullOrEmpty(eventReceiver) && !ArtelInput.SawPress }
             };
         }
 

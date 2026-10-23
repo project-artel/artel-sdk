@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Artel.Tracking;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Unity.CompilationPipeline.Common.Diagnostics;
@@ -20,12 +19,17 @@ namespace Artel.CodeGen
         /// </remarks>
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
-            return !WeavableAssemblies.IsSkipped(compiledAssembly.Name);
+            return WeavableAssemblies.SupportsTarget(compiledAssembly.Defines) &&
+                   !WeavableAssemblies.IsSkipped(compiledAssembly.Name);
         }
 
         public override ILPostProcessResult Process(ICompiledAssembly compiledAssembly)
         {
             var diagnostics = new List<DiagnosticMessage>();
+            if (!WeavableAssemblies.SupportsTarget(compiledAssembly.Defines))
+            {
+                return new ILPostProcessResult(null, diagnostics);
+            }
             using (var resolver = new CompiledAssemblyResolver(compiledAssembly.References))
             using (var peStream = new MemoryStream(compiledAssembly.InMemoryAssembly.PeData))
             using (var pdbStream = new MemoryStream(compiledAssembly.InMemoryAssembly.PdbData ?? Array.Empty<byte>()))

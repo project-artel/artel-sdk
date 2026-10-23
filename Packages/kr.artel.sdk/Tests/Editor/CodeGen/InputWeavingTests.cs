@@ -27,6 +27,16 @@ namespace Artel.CodeGen.Tests
         private const string ProxyTypeName = "Artel.ArtelInput";
         private const string UnityInputTypeName = "UnityEngine.Input";
 
+        [Test]
+        public void WebGL_player는_위빙하지_않고_Editor와_다른_player는_유지()
+        {
+            Assert.That(WeavableAssemblies.SupportsTarget(new[] { "UNITY_WEBGL" }), Is.False);
+            Assert.That(WeavableAssemblies.SupportsTarget(new[] { "UNITY_WEBGL", "DEVELOPMENT_BUILD" }), Is.False);
+            Assert.That(WeavableAssemblies.SupportsTarget(new[] { "UNITY_WEBGL", "UNITY_EDITOR" }), Is.True);
+            Assert.That(WeavableAssemblies.SupportsTarget(new[] { "UNITY_STANDALONE_WIN", "DEVELOPMENT_BUILD" }), Is.True);
+            Assert.That(WeavableAssemblies.SupportsTarget(new[] { "UNITY_STANDALONE_WIN" }), Is.True);
+        }
+
         /// <summary>
         /// ARTEL-383 이 다시 열린 이유. SDK 타입을 한 번도 쓰지 않는 게임 어셈블리도
         /// <c>Input</c> 을 부르기만 하면 위빙 대상이다.
