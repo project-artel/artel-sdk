@@ -1,7 +1,8 @@
 # ADR 0003 — 상태 관측을 text scraping 과 attribute 로 하고 SDK 안에 vision 판정을 두지 않는다
 
 - 상태: 확정
-- 근거: Notion `3960bce5-474c-808b-a907-c0524b995d03`, Notion `3b50bce5-474c-81de-be32-f98008c0494b`, `Packages/kr.artel.sdk/Runtime/SceneScanner.cs`, `Packages/kr.artel.sdk/Runtime/Tracking/SceneStatePoller.cs`
+- 근거: Notion `3960bce5-474c-808b-a907-c0524b995d03`, Notion `3b50bce5-474c-81de-be32-f98008c0494b`, `Packages/kr.artel.sdk/Runtime/SceneScanner.cs`, `Packages/kr.artel.sdk/Runtime/Tracking/SceneStatePoller.cs`, `Packages/kr.artel.sdk/Runtime/Observation/LoggedErrors.cs`
+- 갱신: 2026-10-23 ARTEL-1218 — 예외와 Error 로그를 세 번째 통로로 더함. 아래 「갱신: log hooking」
 
 ## 결정
 
@@ -21,9 +22,20 @@ Notion 원문과 실제로 나간 것이 세 자리에서 다릅니다.
 
 | Notion 원문 | 이 저장소 | 확인한 것 |
 | --- | --- | --- |
-| 세 번째 통로로 log hooking | 없음 | `Application.logMessageReceived` 를 거는 자리가 하나도 없고, `ArtelLoggerBehaviour` 는 시작할 때 `Debug.Log` 한 줄을 쓸 뿐 |
+| 세 번째 통로로 log hooking | ARTEL-1218 전까지 없었음. 지금은 예외·Error·Assert 만 | 아래 「갱신: log hooking」 |
 | `[QAAction]` | `[ArtelAction]` | 원문 이름으로 저장소를 검색하면 아무것도 안 나옴 |
 | `[QAWatch]` | `[ArtelState]` | 같음 |
+
+### 갱신: log hooking (ARTEL-1218)
+
+- 2026-10-22 결함 주입 측정에서 "오프닝 대사마다 예외 로그" 를 심은 빌드 3 런 중 1 런만 잡혔습니다. 그 1 런도
+  development build 의 개발자 콘솔이 화면을 가려 screen capture 에 찍힌 덕분이었습니다. 예외가 agent 에게 닿는 통로가
+  없었습니다.
+- 그래서 `LoggedErrors` 가 `Application.logMessageReceived` 를 걸고, `LogType.Exception`·`Error`·`Assert` 만 모아
+  `PULSE.errors` 와 `ACTION_RESULT.errors` 로 보냅니다. 모양과 상한은 [`docs/protocol.md`](../protocol.md) 의
+  「예외와 Error 로그」 에 있습니다.
+- `Warning` 과 `Log` 는 모으지 않습니다. 게임마다 양이 크게 다르고, 대부분 결함이 아니라 개발자의 메모입니다.
+- 이 통로도 이 ADR 의 선을 지킵니다. SDK 는 찍힌 문장과 횟수를 보고할 뿐이고, 그것이 결함인지는 agent 가 정합니다.
 
 ## 왜
 
@@ -56,9 +68,9 @@ Notion 원문과 실제로 나간 것이 세 자리에서 다릅니다.
 
 | 대가 | 무엇이 일어나나 |
 | --- | --- |
-| 소리는 관측할 수 없음 | `AudioSource` 가 스캔에 나타나지 않음. 소리를 보는 테스트 케이스 넷(id 9, 10, 81, 82)을 지움 |
+| 소리는 관측할 수 없음 | `AudioSource` 가 스캔에 나타나지 않음. 소리를 보는 테스트 케이스 넷(id 9, 10, 81, 82)을 지움. ARTEL-1224 부터 `PULSE.audio` 가 재생 시작과 재생 중인 수를 따로 보고함 |
 | 엔진 컴포넌트가 통째로 안 보임 | `Image`·`TMP_Text`·`EventTrigger` 의 직렬화 필드는 읽지 않음 |
-| `onScreen=true` 는 보인다는 뜻이 아님 | `RectMask2D` 에 잘린 것, 완전히 가려진 것, `CanvasGroup.alpha=0` 인 것이 전부 `true` |
+| `onScreen=true` 는 보인다는 뜻이 아님 | `RectMask2D` 에 잘린 것, 완전히 가려진 것, `CanvasGroup.alpha=0` 인 것이 전부 `true`. ARTEL-1225 부터 옆의 `visible` 이 이것을 답함 |
 | 좌표를 그대로 싣지 않음 | `rect` 는 정수 픽셀, `world` 는 소수점 4 자리 |
 | `GAME_STATE` 자체가 기본으로 꺼져 있음 | `ArtelManager.SendsGameState` 가 `false` |
 
@@ -69,6 +81,8 @@ Notion 원문과 실제로 나간 것이 세 자리에서 다릅니다.
 - 엔진 컴포넌트를 거르는 대가는 소리만이 아닙니다. 전부 읽으면 게임 자신의 데이터가 수백 개의 레이아웃
   필드 밑에 묻힙니다. 어셈블리 이름이 그 선이고, 선을 그은 이상 저쪽에 있는 것은 안 보입니다.
 - `onScreen` 을 정확히 답하려면 블록마다 mask walk 나 raycast 가 붙는데, 이 코드는 폴링 경로에서 돕니다.
+  ARTEL-400 이 1 초 poller 를 없앤 뒤 scan 은 요청받을 때만 돌므로, ARTEL-1225 는 mask walk 를 모든 블록에,
+  raycast 는 `Selectable` 이 있는 블록에만 붙여 `visible` 로 따로 보고합니다.
 - 좌표를 자르지 않으면 숨 쉬는 idle 애니메이션 하나가 매 폴링 `GAME_STATE` 를 다시 내보냅니다. 자세한
   것은 [`docs/protocol.md`](../protocol.md) 에 있습니다.
 - `GAME_STATE` 스위치는 `pulse` 가 그 자리를 대신할 수 있는지 재는 중이라 남아 있고, ARTEL-400 이
