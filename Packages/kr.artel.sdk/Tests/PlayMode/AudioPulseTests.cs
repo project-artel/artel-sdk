@@ -16,7 +16,7 @@ namespace Artel.Tests
         public void SetUp()
         {
             clip = AudioClip.Create("artel test tone", 44100 * 2, 1, 44100, false);
-            host = new GameObject("Artel audio pulse test");
+            host = new GameObject("Artel audio pulse test", typeof(AudioListener));
         }
 
         [TearDown]
@@ -31,6 +31,8 @@ namespace Artel.Tests
         {
             var source = host.AddComponent<AudioSource>();
             source.clip = clip;
+            // Stop 전까지 재생 상태를 유지해야 연속 관측 사이의 자연 종료에 의존하지 않는다.
+            source.loop = true;
             var pulse = new AudioPulse(() => new[] { source });
 
             pulse.Compose(true, out _);
