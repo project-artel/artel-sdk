@@ -23,6 +23,7 @@ namespace Artel.Auth
         private static string RefreshExpiresAtPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkRefreshTokenExpiresAt);
         private static string DisplayNamePlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkDisplayName);
         private static string ProjectIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.ProjectId);
+        private static string ProjectNamePlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.ProjectName);
         private static string InstanceIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.InstanceId);
         private static string GameBuildIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.GameBuildId);
 
@@ -163,7 +164,9 @@ namespace Artel.Auth
             return TryLoadNonEmpty(ProjectIdPlayerPrefsKey, out projectId);
         }
 
-        public static void SaveProjectId(string projectId)
+        public static string ProjectName => PlayerPrefs.GetString(ProjectNamePlayerPrefsKey, string.Empty);
+
+        public static void SaveProjectId(string projectId, string projectName = null)
         {
             if (string.IsNullOrWhiteSpace(projectId))
             {
@@ -172,12 +175,28 @@ namespace Artel.Auth
 
             RegisterScope();
             PlayerPrefs.SetString(ProjectIdPlayerPrefsKey, projectId.Trim());
+            if (string.IsNullOrWhiteSpace(projectName))
+                PlayerPrefs.DeleteKey(ProjectNamePlayerPrefsKey);
+            else
+                PlayerPrefs.SetString(ProjectNamePlayerPrefsKey, projectName.Trim());
             PlayerPrefs.Save();
         }
 
+        public static void ClearProject()
+        {
+            PlayerPrefs.DeleteKey(ProjectIdPlayerPrefsKey);
+            PlayerPrefs.DeleteKey(ProjectNamePlayerPrefsKey);
+            PlayerPrefs.Save();
+        }
+
+        /// <remarks>
+        /// instance id 는 <c>PlayerPrefs</c> 가 아니라 <see cref="ArtelIdentityStore"/> 의 파일에 있다(ARTEL-1232). 게임이
+        /// <c>PlayerPrefs.DeleteAll()</c> 을 불러도 같은 instance 로 다시 붙는다.
+        /// </remarks>
         public static bool TryLoadInstanceId(out string instanceId)
         {
-            return TryLoadNonEmpty(InstanceIdPlayerPrefsKey, out instanceId);
+            instanceId = ArtelIdentityStore.ReadInstanceId(serverScope, InstanceIdPlayerPrefsKey) ?? string.Empty;
+            return instanceId.Length > 0;
         }
 
         public static string LoadInstanceId()
@@ -196,8 +215,7 @@ namespace Artel.Auth
             }
 
             RegisterScope();
-            PlayerPrefs.SetString(InstanceIdPlayerPrefsKey, instanceId.Trim());
-            PlayerPrefs.Save();
+            ArtelIdentityStore.WriteInstanceId(serverScope, InstanceIdPlayerPrefsKey, instanceId.Trim());
         }
 
         public static bool TryLoadGameBuildId(out string gameBuildId)
@@ -242,7 +260,8 @@ namespace Artel.Auth
             PlayerPrefs.DeleteKey(RefreshExpiresAtPlayerPrefsKey);
             PlayerPrefs.DeleteKey(DisplayNamePlayerPrefsKey);
             PlayerPrefs.DeleteKey(ProjectIdPlayerPrefsKey);
-            PlayerPrefs.DeleteKey(InstanceIdPlayerPrefsKey);
+            PlayerPrefs.DeleteKey(ProjectNamePlayerPrefsKey);
+            ArtelIdentityStore.DeleteInstanceId(serverScope, InstanceIdPlayerPrefsKey);
             PlayerPrefs.DeleteKey(GameBuildIdPlayerPrefsKey);
             PlayerPrefs.Save();
         }

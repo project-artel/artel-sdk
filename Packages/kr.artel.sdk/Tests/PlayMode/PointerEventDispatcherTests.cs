@@ -1,4 +1,7 @@
 using System.Collections;
+using System.Collections.Generic;
+using Artel.Protocol.Dto;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -17,9 +20,20 @@ namespace Artel.Tests
         private PointerFixtureBehaviour source;
         private PointerFixtureBehaviour destination;
 
+        [SetUp]
+        public void SetUp()
+        {
+            // SDK 로그인 overlay가 테스트 Canvas의 raycast를 가로채지 않게 한다.
+            foreach (var manager in Object.FindObjectsOfType<ArtelManager>(true))
+            {
+                Object.DestroyImmediate(manager.gameObject);
+            }
+        }
+
         [TearDown]
         public void TearDown()
         {
+            ArtelInput.ResetVirtualKeyboard();
             if (canvasObject != null)
             {
                 Object.DestroyImmediate(canvasObject);
@@ -132,6 +146,112 @@ namespace Artel.Tests
 
             Assert.That(source.Events, Does.Contain("endDrag"));
             Assert.That(destination.Events, Is.EqualTo(new[] { "drop" }));
+        }
+
+        [UnityTest]
+        public IEnumerator MouseDown_ReportsUiReceiverAndClearsItForEmptySpace()
+        {
+            BuildScene();
+            yield return null;
+
+            var dispatcher = new PointerEventDispatcher();
+            var executor = new ActionExecutor(null, null, dispatcher);
+            dispatcher.MoveTo(GrabPoint);
+            ActionResultDto result = null;
+            yield return executor.Execute(1, "mouse_down", new List<object> { 0 }, value => result = value);
+
+            Assert.That(result.IsSuccess, Is.True);
+            var outcome = JObject.FromObject(result.ReturnValue);
+            Assert.That((string)outcome["reached"], Is.EqualTo("canvas/drag source"));
+            Assert.That((bool)outcome["pointerHeldByPerson"], Is.False);
+            yield return executor.Execute(2, "mouse_up", new List<object> { 0 }, value => result = value);
+            Assert.That(source.Events, Is.EqualTo(new[] { "down", "up", "click" }));
+
+            dispatcher.MoveTo(new Vector2(-100f, -100f));
+            yield return executor.Execute(3, "mouse_down", new List<object> { 0 }, value => result = value);
+            outcome = JObject.FromObject(result.ReturnValue);
+            Assert.That(outcome["reached"].Type, Is.EqualTo(JTokenType.Null));
+            yield return executor.Execute(4, "mouse_up", new List<object> { 0 }, value => result = value);
+        }
+
+        [UnityTest]
+        public IEnumerator MouseDown_ReportsButtonAndInvokesOnClickOnRelease()
+        {
+            BuildScene();
+            var buttonObject = source.gameObject;
+            Object.DestroyImmediate(source);
+            var button = buttonObject.AddComponent<Button>();
+            var clicks = 0;
+            button.onClick.AddListener(() => clicks++);
+            yield return null;
+
+            var dispatcher = new PointerEventDispatcher();
+            var executor = new ActionExecutor(null, null, dispatcher);
+            dispatcher.MoveTo(GrabPoint);
+            ActionResultDto result = null;
+            yield return executor.Execute(1, "mouse_down", new List<object> { 0 }, value => result = value);
+            var outcome = JObject.FromObject(result.ReturnValue);
+            Assert.That((string)outcome["reached"], Is.EqualTo("canvas/drag source"));
+            Assert.That((bool)outcome["pointerHeldByPerson"], Is.False);
+            yield return executor.Execute(2, "mouse_up", new List<object> { 0 }, value => result = value);
+            Assert.That(clicks, Is.EqualTo(1));
+        }
+
+        [UnityTest]
+        public IEnumerator Press_ReportsBlockingGraphicWithoutHandler()
+        {
+            BuildScene();
+            Object.DestroyImmediate(source);
+            yield return null;
+
+            var dispatcher = new PointerEventDispatcher();
+            dispatcher.MoveTo(GrabPoint);
+            dispatcher.Press(0);
+            Assert.That(dispatcher.LastPressReceiver, Is.EqualTo("canvas/drag source"));
+            dispatcher.Release(0);
+        }
+
+        [UnityTest]
+        public IEnumerator MouseDown_PreservesReceiverRemovedBeforeResult()
+        {
+            BuildScene();
+            yield return null;
+
+            var dispatcher = new PointerEventDispatcher();
+            var executor = new ActionExecutor(null, null, dispatcher);
+            dispatcher.MoveTo(GrabPoint);
+            ActionResultDto result = null;
+            var action = executor.Execute(1, "mouse_down", new List<object> { 0 }, value => result = value);
+            Assert.That(action.MoveNext(), Is.True);
+            var press = (IEnumerator)action.Current;
+            Assert.That(press.MoveNext(), Is.True);
+            Object.DestroyImmediate(source.gameObject);
+            Assert.That(press.MoveNext(), Is.False);
+
+            var outcome = JObject.FromObject(result.ReturnValue);
+            Assert.That((string)outcome["reached"], Is.EqualTo("canvas/drag source"));
+            Assert.That((bool)outcome["pointerHeldByPerson"], Is.False);
+            dispatcher.ReleaseAll();
+        }
+
+        [UnityTest]
+        public IEnumerator Press_ReportsParentHandlerAndClearsWithoutEventSystem()
+        {
+            BuildScene();
+            var child = new GameObject("graphic", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            child.transform.SetParent(source.transform, false);
+            child.GetComponent<RectTransform>().sizeDelta = new Vector2(60f, 60f);
+            yield return null;
+
+            var dispatcher = new PointerEventDispatcher();
+            dispatcher.MoveTo(GrabPoint);
+            dispatcher.Press(0);
+            Assert.That(dispatcher.LastPressReceiver, Is.EqualTo("canvas/drag source"));
+            dispatcher.Release(0);
+            Object.DestroyImmediate(eventSystemObject);
+            LogAssert.Expect(LogType.Warning, "[Artel] mouse_down found no EventSystem, so no uGUI element can answer it.");
+            dispatcher.Press(0);
+            Assert.That(dispatcher.LastPressReceiver, Is.Empty);
         }
 
         private void BuildScene()
