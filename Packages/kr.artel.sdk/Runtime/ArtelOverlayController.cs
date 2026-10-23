@@ -41,6 +41,9 @@ namespace Artel
         private const string LoginMessage = "Artel 계정으로 로그인하면 연결됩니다.";
         private const string ChooseProjectMessage = "이 게임을 연결할 프로젝트를 선택해 주세요.";
 
+        /// <summary>신 Input System 만 켠 프로젝트에서 상태 줄 아래에 붙는 문장(ARTEL-1233). <see cref="LegacyInput"/> 참고.</summary>
+        internal const string NewInputSystemOnlyNotice = "신 Input System은 지원하지 않습니다.";
+
         // artel-home의 src/styles/tokens.css(Blueprint Paper)에서 가져온 값. CSS를 C#으로 자동 동기화할
         // 수단이 없으므로, 16진 리터럴로 적어 두는 것이 원본과 대조하는 유일한 방법이다.
         // Color32를 쓰는 이유는 컴파일 타임에 걸리기 때문이다. ColorUtility로 파싱하면
@@ -143,6 +146,13 @@ namespace Artel
 
         private void Start()
         {
+            if (!LegacyInput.IsAvailable)
+            {
+                // 콘솔에도 한 번 남긴다. overlay 를 보지 않고 로그만 읽는 사람도 왜 조작이 게임에 닿지 않는지 알 수 있게.
+                Debug.LogWarning("[Artel] This project uses only the Input System package. " +
+                                 "Artel cannot deliver keyboard and mouse actions to it.");
+            }
+
             viewModel.Initialize(artelManager.Server);
             CreateGui();
             RefreshView();
@@ -976,7 +986,9 @@ namespace Artel
                 ? viewModel.SelectedProjectId
                 : viewModel.SelectedProjectName;
             selectedProjectText.text = "프로젝트 · " + (string.IsNullOrEmpty(projectLabel) ? "미선택" : projectLabel);
-            statusText.text = viewModel.Status;
+            statusText.text = LegacyInput.IsAvailable
+                ? viewModel.Status
+                : viewModel.Status + "\n" + NewInputSystemOnlyNotice;
             // 실패를 문장으로만 알리면 눈에 걸리지 않는다.
             statusText.color = StatusColor();
             accountText.text =
@@ -1300,13 +1312,37 @@ namespace Artel
                 return null;
             }
 
-            var eventSystem = new GameObject(
-                "Artel EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+            var eventSystem = new GameObject("Artel EventSystem", typeof(EventSystem));
+            AddInputModule(eventSystem);
             // Also parented to the manager: a scene that arrives without an
             // EventSystem leaves the UI unclickable, and the one we made for that
             // case must not disappear with the scene we made it in.
             eventSystem.transform.SetParent(owner, false);
             return eventSystem;
+        }
+
+        /// <summary>
+        /// 구 <c>Input</c> 이 있으면 <c>StandaloneInputModule</c>, 없으면 Input System 패키지의 UI 모듈을 붙인다(ARTEL-1233).
+        /// </summary>
+        /// <remarks>
+        /// 신 Input System 만 켠 프로젝트에서 <c>StandaloneInputModule</c> 은 매 frame 구 <c>Input</c> 을 읽다가 예외를 던지고,
+        /// 그러면 overlay 의 로그인 버튼도 눌리지 않는다. SDK 는 Input System 패키지를 참조하지 않으므로 이름으로 찾는다.
+        /// 찾지 못하면 모듈 없이 둔다 — 예외를 내는 모듈보다 낫다.
+        /// </remarks>
+        private static void AddInputModule(GameObject eventSystem)
+        {
+            if (LegacyInput.IsAvailable)
+            {
+                eventSystem.AddComponent<StandaloneInputModule>();
+                return;
+            }
+
+            var inputSystemModule = System.Type.GetType(
+                "UnityEngine.InputSystem.UI.InputSystemUIInputModule, Unity.InputSystem");
+            if (inputSystemModule != null)
+            {
+                eventSystem.AddComponent(inputSystemModule);
+            }
         }
     }
 }

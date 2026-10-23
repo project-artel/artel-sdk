@@ -952,9 +952,16 @@ namespace Artel
         /// </remarks>
         private static bool TryConfirmAxisExists(string axisName, out string error)
         {
+            // 신 Input System 만 켠 프로젝트에는 Input Manager 축이 없다. 확인할 수도, 게임에 닿게 할 수도 없다(ARTEL-1233).
+            if (!LegacyInput.IsAvailable)
+            {
+                error = "Input Manager axes are not available: this project uses only the Input System package.";
+                return false;
+            }
+
             try
             {
-                UnityEngine.Input.GetAxis(axisName);
+                LegacyInput.GetAxis(axisName);
                 error = null;
                 return true;
             }
