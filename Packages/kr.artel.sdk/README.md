@@ -225,15 +225,14 @@ What that cannot undo:
 
 ## Agent keyboard input
 
-A project whose Active Input Handling is "Input System Package (New)" alone is
-not supported. Its game code never calls `UnityEngine.Input`, so the agent's keys
-and clicks do not reach it. The SDK still runs there without exceptions: its own
-`UnityEngine.Input` reads are compiled out when `ENABLE_LEGACY_INPUT_MANAGER` is
-not defined, the overlay's `EventSystem` gets the Input System package's
-`InputSystemUIInputModule`, the overlay status line says
-`신 Input System은 지원하지 않습니다.`, and `set_axis` fails with a message. Setting
-Active Input Handling to "Both" keeps the game's Input System code and makes
-Artel's input work for code that reads `UnityEngine.Input`.
+마우스 QA 명령(`move_mouse`, `mouse_down`, `mouse_up`, `Mouse0/1/2` 별칭)은 Legacy와 New Input System을 지원한다. SDK는 `com.unity.inputsystem` 1.7.0 이상을 의존성으로 사용하며, New 또는 Both 설정에서는 가상 `Mouse`의 상태를 Input System 업데이트에 전달한다. 게임의 `InputAction`과 `Mouse.current`에서 읽을 수 있다. Legacy 설정의 기존 입력 경로는 유지한다.
+
+`InputSystemUIInputModule`을 사용하는 UI는 native 입력으로 처리하므로 SDK의 직접 이벤트 전달과 중복되지 않는다. `StandaloneInputModule`은 기존 dispatcher를 사용한다. native UI 경로의 `mouse_down` 결과는 실제 수신 대상을 추측하지 않아 `reached=null`이며, `pointerHeldByPerson`은 포인터 소유권으로 판단한다.
+
+- Dynamic Update와 Fixed Update를 지원한다. Manual Update, `timeScale=0`인 Fixed Update는 QA 마우스 명령을 거절한다. Dynamic Update는 일시 정지 중에도 동작한다.
+- Mouse를 소유한 `InputUser`가 하나이면 가상 Mouse도 pairing한다. 복수 Mouse 사용자 환경은 거절한다. 특정 장치 ID에 고정한 binding이나 게임이 직접 제한한 action device 목록은 자동 수정하지 않는다.
+- QA 마우스가 활성화된 동안 원본 asset을 변경하지 않고 Input Settings 복사본에서 focus와 background 입력을 허용하며 종료 시 원래 설정을 복원한다. QA가 포인터를 소유하는 동안 실제 마우스 이벤트를 차단한다. run 종료, reset, 연결 해제, Ctrl+Shift+M 제어권 반환 때 버튼을 놓고 장치를 정리한다. 기존 release와 마찬가지로 같은 UI 대상에서 놓으면 click이 발생할 수 있다.
+- New Input System 키보드/gamepad 주입은 지원하지 않는다. 키보드 QA는 아래 Legacy proxy 경로를 사용한다.
 
 Keep using `UnityEngine.Input` for keyboard polling. Artel's IL post-processor
 rewrites supported calls to the `ArtelInput` proxy during compilation:

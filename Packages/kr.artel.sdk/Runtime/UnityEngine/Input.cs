@@ -91,7 +91,7 @@ namespace Artel
         {
             get
             {
-                var physical = LegacyInput.mousePosition;
+                var physical = PhysicalMousePosition;
                 if (!VirtualMouse.OwnsPointer(physical))
                 {
                     return physical;
@@ -197,14 +197,28 @@ namespace Artel
             VirtualKeyboard.Release(key, Time.frameCount);
         }
 
+        internal static Vector2 PhysicalMousePosition => NewInputMouse.PhysicalPosition;
+
+        internal static bool OwnsVirtualPointer => VirtualMouse.OwnsPointer(PhysicalMousePosition);
+
+        internal static void ReadVirtualMouse(out Vector2 position, out ushort buttons)
+        {
+            position = VirtualMouse.Position;
+            buttons = 0;
+            for (var button = 0; button < VirtualMouseState.ButtonCount; button++)
+                if (VirtualMouse.GetButton(button, Time.frameCount)) buttons |= (ushort)(1 << button);
+        }
+
         internal static void MoveMouse(Vector2 screenPosition)
         {
-            VirtualMouse.MoveTo(screenPosition, LegacyInput.mousePosition);
+            VirtualMouse.MoveTo(screenPosition, PhysicalMousePosition);
+            NewInputMouse.Activate();
         }
 
         internal static void PressMouseButton(int button)
         {
             VirtualMouse.Press(button, Time.frameCount);
+            NewInputMouse.Activate();
         }
 
         internal static void ReleaseMouseButton(int button)
@@ -243,6 +257,7 @@ namespace Artel
             VirtualKeyboard.ReleaseAll(Time.frameCount);
             VirtualMouse.ReleaseAll(Time.frameCount);
             VirtualMouse.ReleasePointer();
+            NewInputMouse.Release();
             VirtualAxes.ReleaseAll(Time.frameCount);
             MouseMessenger.Clear();
         }
@@ -269,7 +284,7 @@ namespace Artel
 
             // Only while the agent holds the pointer. The engine keeps sending its own OnMouse*
             // from the real cursor, so driving ours at the same time would deliver everything twice.
-            if (VirtualMouse.OwnsPointer(LegacyInput.mousePosition))
+            if (VirtualMouse.OwnsPointer(PhysicalMousePosition))
             {
                 MouseMessenger.Tick(VirtualMouse.Position, VirtualMouse.GetButton(0, Time.frameCount));
             }
@@ -282,6 +297,7 @@ namespace Artel
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         internal static void ResetVirtualKeyboard()
         {
+            NewInputMouse.Dispose();
             VirtualKeyboard.Clear();
             VirtualMouse.Clear();
             VirtualAxes.Clear();

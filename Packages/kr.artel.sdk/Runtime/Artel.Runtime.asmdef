@@ -6,7 +6,8 @@
     "Unity.WebRTC",
     "UnityEngine.UI",
     "UnityEngine.UnityWebRequestModule",
-    "Artel.Affordances.Scan"
+    "Artel.Affordances.Scan",
+    "Unity.InputSystem"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

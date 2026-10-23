@@ -11,8 +11,7 @@ namespace Artel
     /// frame 예외가 났다(2022.3.34f1 에서 확인). 그때 Unity 는 <c>ENABLE_LEGACY_INPUT_MANAGER</c> 를 정의하지 않으므로, 그
     /// 정의가 없으면 여기서 아무것도 누르지 않은 값(false, 0, <c>Vector3.zero</c>)을 돌려준다.
     ///
-    /// 그런 프로젝트의 게임 코드는 구 <c>Input</c> 을 부르지 않으므로 SDK 가 넣는 가상 입력도 게임에 닿지 않는다. 그래서
-    /// 지원하지 않는다고 overlay 에 알린다(<see cref="IsAvailable"/>).
+    /// New Input System의 마우스 입력은 NewInputMouse가 전달한다. 키보드는 이 Legacy 경로만 지원한다.
     /// </remarks>
     internal static class LegacyInput
     {

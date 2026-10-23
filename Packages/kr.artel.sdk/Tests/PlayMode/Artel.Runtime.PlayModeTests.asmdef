@@ -5,7 +5,8 @@
     "Artel.Runtime",
     "Artel.GameFunctions.Fixtures",
     "Artel.Affordances.Scan",
-    "Unity.TextMeshPro"
+    "Unity.TextMeshPro",
+    "Unity.InputSystem"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

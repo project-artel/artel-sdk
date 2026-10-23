@@ -37,6 +37,17 @@ dest="$(cd "${dest}" && pwd)"
 cp -R "${template}/." "${dest}/"
 mkdir -p "${dest}/Assets"
 
+# 각 job이 서로 다른 입력 backend로 컴파일되게 설정한다.
+input_handling="${2:-0}"
+case "$input_handling" in 0|1|2) ;; *) echo "input handling must be 0, 1, or 2" >&2; exit 64 ;; esac
+cat > "${dest}/ProjectSettings/ProjectSettings.asset" <<EOF
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  activeInputHandler: ${input_handling}
+EOF
+
 rm -rf "${dest}/Packages/kr.artel.sdk"
 cp -R "${package}" "${dest}/Packages/kr.artel.sdk"
 

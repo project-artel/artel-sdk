@@ -142,9 +142,15 @@ namespace Artel.Tests
             // all these tests read. Assigning a theme would mean shipping a ThemeStyleSheet asset.
             LogAssert.ignoreFailingMessages = true;
 
-            eventSystemObject = withInputModule
-                ? new GameObject("event system", typeof(EventSystem), typeof(StandaloneInputModule))
-                : new GameObject("event system", typeof(EventSystem));
+            eventSystemObject = new GameObject("event system", typeof(EventSystem));
+            if (withInputModule)
+            {
+#if ENABLE_LEGACY_INPUT_MANAGER
+                eventSystemObject.AddComponent<StandaloneInputModule>();
+#elif ENABLE_INPUT_SYSTEM
+                eventSystemObject.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>().AssignDefaultActions();
+#endif
+            }
 
             panelSettings = ScriptableObject.CreateInstance<PanelSettings>();
             panelSettings.scaleMode = PanelScaleMode.ConstantPixelSize;

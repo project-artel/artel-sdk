@@ -162,7 +162,10 @@ namespace Artel.Tests
 
             var results = transport.FirstActionResult()["results"];
             Assert.That((bool)results[1]["success"], Is.True);
-            Assert.That((string)results[1]["returnValue"]["reached"], Does.EndWith("drag source"));
+            if (NewInputMouse.UsesNativeUi)
+                Assert.That((string)results[1]["returnValue"]["reached"], Is.Null);
+            else
+                Assert.That((string)results[1]["returnValue"]["reached"], Does.EndWith("drag source"));
         }
 
         [UnityTest]
@@ -561,6 +564,10 @@ namespace Artel.Tests
             if (eventSystemObject == null)
             {
                 eventSystemObject = new GameObject("event system", typeof(EventSystem));
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+                eventSystemObject.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>().AssignDefaultActions();
+                EventSystem.current = eventSystemObject.GetComponent<EventSystem>();
+#endif
                 canvasObject = new GameObject(
                     "canvas", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
                 canvasObject.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;

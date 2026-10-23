@@ -42,7 +42,7 @@ namespace Artel
         private const string ChooseProjectMessage = "이 게임을 연결할 프로젝트를 선택해 주세요.";
 
         /// <summary>신 Input System 만 켠 프로젝트에서 상태 줄 아래에 붙는 문장(ARTEL-1233). <see cref="LegacyInput"/> 참고.</summary>
-        internal const string NewInputSystemOnlyNotice = "신 Input System은 지원하지 않습니다.";
+        internal const string NewInputSystemOnlyNotice = "신 Input System에서는 마우스 조작만 지원합니다.";
 
         // artel-home의 src/styles/tokens.css(Blueprint Paper)에서 가져온 값. CSS를 C#으로 자동 동기화할
         // 수단이 없으므로, 16진 리터럴로 적어 두는 것이 원본과 대조하는 유일한 방법이다.
@@ -150,7 +150,7 @@ namespace Artel
             {
                 // 콘솔에도 한 번 남긴다. overlay 를 보지 않고 로그만 읽는 사람도 왜 조작이 게임에 닿지 않는지 알 수 있게.
                 Debug.LogWarning("[Artel] This project uses only the Input System package. " +
-                                 "Artel cannot deliver keyboard and mouse actions to it.");
+                                 "Artel supports mouse actions; keyboard actions require the legacy Input Manager.");
             }
 
             viewModel.Initialize(artelManager.Server);
