@@ -7,9 +7,11 @@ using WebSocketSharp;
 
 namespace Artel
 {
-    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport
+    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelConnectionEpoch
     {
         private const string SdkWebSocketPath = "/ws/sdk";
+        private long connectionEpoch;
+        public long ConnectionEpoch => Interlocked.Read(ref connectionEpoch);
 
         // 서버가 자격증명이나 인스턴스 접근을 거절할 때 붙이는 코드. 토큰과 instanceId 가 그대로면
         // 다시 걸어도 같은 대답이 오므로 이 코드만은 재시도하지 않는다.
@@ -180,8 +182,11 @@ namespace Artel
 
                 DisposeTimer(ref handshakeTimer);
                 connectionUptime.Restart();
+                Interlocked.Increment(ref connectionEpoch);
                 phase = ArtelTransportPhase.Connected;
                 StartKeepAlive();
+                socket.Send(Newtonsoft.Json.JsonConvert.SerializeObject(
+                    new Artel.Protocol.Dto.DemonstrationCapabilitiesDto()));
             }
 
             UnityEngine.Debug.Log("[Artel] WebSocket connected.");
@@ -207,6 +212,8 @@ namespace Artel
 
                 DisposeTimer(ref keepAliveTimer);
                 DisposeTimer(ref handshakeTimer);
+
+                Interlocked.Increment(ref connectionEpoch);
 
                 if (stopped)
                 {
@@ -320,7 +327,9 @@ namespace Artel
                 return;
             }
 
-            incomingMessages.Enqueue(new ArtelWebSocketMessage(eventArgs.Data, Send));
+            var messageEpoch = ConnectionEpoch;
+            incomingMessages.Enqueue(new ArtelWebSocketMessage(eventArgs.Data, Send,
+                () => ReferenceEquals(socket, client) && IsConnected && ConnectionEpoch == messageEpoch));
         }
 
         /// <summary>

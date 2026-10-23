@@ -140,6 +140,30 @@ namespace Artel.Tests
             Assert.That(destination.Events, Is.EqualTo(new[] { "drop" }));
         }
 
+        [UnityTest]
+        public IEnumerator DirectPointerMove_DeliversDragAndDropAtTarget()
+        {
+            var manager = CreateManager(new RecordingTransport());
+            yield return null;
+            var source = CreateDragTarget("direct source", UnityPointOf(GrabPoint));
+            var destination = CreateDragTarget("direct destination", UnityPointOf(DropPoint));
+            yield return null;
+            IsolateFixtureRaycaster();
+            var executor = (ActionExecutor)typeof(ArtelManager)
+                .GetField("actionExecutor", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(manager);
+            var results = new List<ActionResultDto>();
+            yield return executor.Execute(1, "move_mouse", Coordinates(GrabPoint), results.Add, glideMouse: false);
+            yield return executor.Execute(2, "mouse_down", new List<object>(), results.Add, glideMouse: false);
+            yield return executor.Execute(3, "move_mouse", Coordinates(DropPoint), results.Add, glideMouse: false);
+            yield return executor.Execute(4, "mouse_up", new List<object>(), results.Add, glideMouse: false);
+            Assert.That((Vector2)ArtelInput.mousePosition, Is.EqualTo(UnityPointOf(DropPoint)));
+            Assert.That(source.Events, Has.Some.EqualTo("beginDrag"));
+            Assert.That(source.Events, Has.Some.EqualTo("drag"));
+            Assert.That(source.Events, Has.Some.EqualTo("endDrag"));
+            Assert.That(destination.Events, Is.EqualTo(new[] { "drop" }));
+            Assert.That(results.All(result => result.IsSuccess), Is.True);
+        }
+
         /// <summary>
         /// Canvas 의 대상을 누르면 결과의 <c>reached</c> 가 그 대상을 댄다. collider 쪽만 적던
         /// 때는 늘 null 이었고, 씬을 바꾼 버튼 클릭이 빈 곳 클릭으로 읽혔다(ARTEL-1175).
