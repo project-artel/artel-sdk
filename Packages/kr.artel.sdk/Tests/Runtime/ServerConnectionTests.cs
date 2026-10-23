@@ -38,7 +38,7 @@ namespace Artel.Tests
             ArtelSdkSession.UseServer(first);
             ArtelSdkSession.SaveToken("first-token", "2999-01-01T00:00:00Z", "first-user");
             ArtelSdkSession.SaveRefreshToken("first-refresh", "2999-01-01T00:00:00Z");
-            ArtelSdkSession.SaveProjectId("first-project");
+            ArtelSdkSession.SaveProjectId("first-project", "First project");
             ArtelSdkSession.SaveInstanceId("first-instance");
             ArtelSdkSession.SaveGameBuildId("first-build");
 
@@ -46,6 +46,7 @@ namespace Artel.Tests
             Assert.That(ArtelSdkSession.LoadToken(), Is.Empty);
             Assert.That(ArtelSdkSession.TryLoadRefreshToken(out _), Is.False);
             Assert.That(ArtelSdkSession.TryLoadProjectId(out _), Is.False);
+            Assert.That(ArtelSdkSession.ProjectName, Is.Empty);
             Assert.That(ArtelSdkSession.LoadInstanceId(), Is.Empty);
             Assert.That(ArtelSdkSession.LoadGameBuildId(), Is.Empty);
             Assert.That(ArtelSdkSession.DisplayName, Is.Empty);
@@ -58,6 +59,7 @@ namespace Artel.Tests
             Assert.That(refresh, Is.EqualTo("first-refresh"));
             Assert.That(ArtelSdkSession.TryLoadProjectId(out var project), Is.True);
             Assert.That(project, Is.EqualTo("first-project"));
+            Assert.That(ArtelSdkSession.ProjectName, Is.EqualTo("First project"));
             Assert.That(ArtelSdkSession.LoadInstanceId(), Is.EqualTo("first-instance"));
             Assert.That(ArtelSdkSession.LoadGameBuildId(), Is.EqualTo("first-build"));
             Assert.That(ArtelSdkSession.DisplayName, Is.EqualTo("first-user"));

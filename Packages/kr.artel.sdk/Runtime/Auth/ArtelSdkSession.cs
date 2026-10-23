@@ -23,6 +23,7 @@ namespace Artel.Auth
         private static string RefreshExpiresAtPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkRefreshTokenExpiresAt);
         private static string DisplayNamePlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.SdkDisplayName);
         private static string ProjectIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.ProjectId);
+        private static string ProjectNamePlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.ProjectName);
         private static string InstanceIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.InstanceId);
         private static string GameBuildIdPlayerPrefsKey => ScopedKey(ArtelOwnedPlayerPrefs.GameBuildId);
 
@@ -163,7 +164,9 @@ namespace Artel.Auth
             return TryLoadNonEmpty(ProjectIdPlayerPrefsKey, out projectId);
         }
 
-        public static void SaveProjectId(string projectId)
+        public static string ProjectName => PlayerPrefs.GetString(ProjectNamePlayerPrefsKey, string.Empty);
+
+        public static void SaveProjectId(string projectId, string projectName = null)
         {
             if (string.IsNullOrWhiteSpace(projectId))
             {
@@ -172,6 +175,17 @@ namespace Artel.Auth
 
             RegisterScope();
             PlayerPrefs.SetString(ProjectIdPlayerPrefsKey, projectId.Trim());
+            if (string.IsNullOrWhiteSpace(projectName))
+                PlayerPrefs.DeleteKey(ProjectNamePlayerPrefsKey);
+            else
+                PlayerPrefs.SetString(ProjectNamePlayerPrefsKey, projectName.Trim());
+            PlayerPrefs.Save();
+        }
+
+        public static void ClearProject()
+        {
+            PlayerPrefs.DeleteKey(ProjectIdPlayerPrefsKey);
+            PlayerPrefs.DeleteKey(ProjectNamePlayerPrefsKey);
             PlayerPrefs.Save();
         }
 
@@ -242,6 +256,7 @@ namespace Artel.Auth
             PlayerPrefs.DeleteKey(RefreshExpiresAtPlayerPrefsKey);
             PlayerPrefs.DeleteKey(DisplayNamePlayerPrefsKey);
             PlayerPrefs.DeleteKey(ProjectIdPlayerPrefsKey);
+            PlayerPrefs.DeleteKey(ProjectNamePlayerPrefsKey);
             PlayerPrefs.DeleteKey(InstanceIdPlayerPrefsKey);
             PlayerPrefs.DeleteKey(GameBuildIdPlayerPrefsKey);
             PlayerPrefs.Save();
