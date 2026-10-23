@@ -14,13 +14,13 @@ New Input System 키보드/gamepad 주입, 게임별 binding 변경, OS 커서 �
 
 ## Context / Constraints
 
-ARTEL-1233 / PR #158의 LegacyInput guard 위에 쌓는다. 기존 작업 checkout은 수정하지 않는다. 사용자 후속 요청에 따라 Input System을 필수 dependency에서 제거하고 선택적 assembly로 분리한다.
+ARTEL-1233 / PR #158의 LegacyInput guard를 사용한다. 선행 PR 병합과 원격 PR의 develop 통합 커밋을 보존하고 현재 PR은 develop을 대상으로 한다. 기존 작업 checkout은 수정하지 않는다. 사용자 후속 요청에 따라 Input System을 필수 dependency에서 제거하고 선택적 assembly로 분리한다.
 
 ## Approach (Checklist)
 
 - [x] **Step 0: Recon** — ActionExecutor, ArtelInput, PointerEventDispatcher, VirtualMouseMessenger와 종료 경로를 확인했다.
 - [x] **Step 1: Implementation** — VirtualMouseState를 버튼/소유권의 유일한 상태로 유지한다. 공통 NewInputMouse facade는 Input System assembly를 참조하지 않는다. optional backend가 없는 Legacy 설정에서는 기존 경로를 사용한다.
-- [x] 실제 구현과 lifetime은 Artel.InputSystem assembly에 둔다. com.unity.inputsystem >=1.7.0의 versionDefine와 ENABLE_INPUT_SYSTEM을 모두 요구한다. optional -> Runtime으로만 참조하며 필요한 internal 경계만 InternalsVisibleTo로 공유한다.
+- [x] 실제 구현과 lifetime은 Artel.InputSystem assembly에 둔다. com.unity.inputsystem >=1.7.0의 versionDefine와 ENABLE_INPUT_SYSTEM을 모두 요구한다. WebGL player 제외 조건도 공통 Runtime과 일치시킨다. optional -> Runtime으로만 참조하며 필요한 internal 경계만 InternalsVisibleTo로 공유한다.
 - [x] SubsystemRegistration에서 이전 backend를 dispose하고 새 instance를 등록한다. reset은 등록을 지우지 않아 초기화 callback 순서에 의존하지 않는다. AlwaysLinkAssembly로 bootstrap을 보존한다.
 - [x] 가상 Mouse 하나로 위치/delta/세 버튼을 전달한다. 실제 이벤트가 처리된 update만 완료로 인정하고 다음 rendered frame까지 기다린다. 짧은 FixedUpdate click도 press 처리 후 놓는다.
 - [x] native UI 직접 dispatch를 생략해 중복 클릭을 막는다. native reached는 null, pointerHeldByPerson은 실제 포인터 소유권이다. Legacy dispatcher와 collider 경로는 유지한다.
@@ -36,10 +36,10 @@ Unity 2022.3.34f1의 batch mode에서 실제 InputAction과 InputSystemUIInputMo
 
 | Input System package | Active Input Handling | EditMode | PlayMode |
 | --- | --- | --- | --- |
-| 없음 (fresh import) | Legacy (0) | 565/565 | 88/88 |
-| 1.7.0 | Legacy (0) | 565/565 | 87/87 |
-| 1.7.0 | New (1) | 565/565 | 97/97 |
-| 1.7.0 | Both (2) | 565/565 | 97/97 |
+| 없음 (fresh import) | Legacy (0) | 566/566 | 93/93 |
+| 1.7.0 | Legacy (0) | 566/566 | 92/92 |
+| 1.7.0 | New (1) | 566/566 | 102/102 |
+| 1.7.0 | Both (2) | 566/566 | 102/102 |
 
 - 명령: setup-unity-test-project.sh <dest> <0|1|2> <absent|present>로 준비하고 Unity -batchmode -nographics -runTests -testPlatform EditMode/PlayMode로 실행한다. Windows 로컬 준비는 같은 template/package를 복사해 구성했다.
 - 무패키지 프로젝트의 packages-lock.json, Library/PackageCache, ScriptAssemblies에서 Input System 부재를 확인했다. runtime 참조 및 로드 부재 assertion과 기존 마우스/UI 테스트를 모두 실행했다.

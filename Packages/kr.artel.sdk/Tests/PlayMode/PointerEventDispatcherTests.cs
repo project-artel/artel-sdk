@@ -222,11 +222,25 @@ namespace Artel.Tests
             dispatcher.MoveTo(GrabPoint);
             ActionResultDto result = null;
             var action = executor.Execute(1, "mouse_down", new List<object> { 0 }, value => result = value);
-            Assert.That(action.MoveNext(), Is.True);
-            var press = (IEnumerator)action.Current;
-            Assert.That(press.MoveNext(), Is.True);
-            Object.DestroyImmediate(source.gameObject);
-            Assert.That(press.MoveNext(), Is.False);
+            // Execute의 중첩 깊이에 의존하지 않고, press 후 첫 frame 대기에서 대상을 제거한다.
+            var steps = new Stack<IEnumerator>();
+            steps.Push(action);
+            var removed = false;
+            while (steps.Count > 0)
+            {
+                var step = steps.Peek();
+                if (!step.MoveNext()) { steps.Pop(); continue; }
+                if (step.Current is IEnumerator child) { steps.Push(child); continue; }
+                if (!removed && source.Events.Contains("down"))
+                {
+                    Assert.That(result, Is.Null);
+                    Object.DestroyImmediate(source.gameObject);
+                    removed = true;
+                }
+                yield return step.Current;
+            }
+            Assert.That(removed, Is.True);
+            Assert.That(result, Is.Not.Null);
 
             var outcome = JObject.FromObject(result.ReturnValue);
             Assert.That((string)outcome["reached"], Is.EqualTo("canvas/drag source"));
