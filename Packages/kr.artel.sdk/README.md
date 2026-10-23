@@ -1,5 +1,17 @@
 # Artel SDK
 
+## WebGL player 제외
+
+WebGL player에서는 `Artel.Runtime`을 컴파일하지 않는다. WebGL용 `Unity.WebRTC`가
+없으므로 SDK 연결, 화면 스트리밍, overlay와 가상 입력은 WebGL에서 지원하지 않는다.
+입력 ILPostProcessor도 WebGL player에는 `ArtelInput` 참조를 추가하지 않는다.
+WebGL을 Build Target으로 선택한 Unity Editor에서는 기존 SDK 기능을 사용할 수 있다.
+별도 affordance 메타데이터·scan 어셈블리는 유지한다.
+
+게임 코드에서 `Artel.Runtime` 타입을 직접 참조한다면 해당 코드에도
+`#if UNITY_EDITOR || !UNITY_WEBGL` 조건이 필요하다. WebGL에서도 필요한 게임 로직은
+SDK 참조와 분리해야 한다.
+
 ## Runtime connection
 
 Install the package. Nothing else is required — in the editor and in
@@ -45,10 +57,13 @@ carries `instanceId`, `projectId`, `instanceName`, `gameBuildId` and
 registers and connects with no interaction.
 
 The two tokens — access and refresh — live in the OS secret store
-(`ArtelSecretStore`; DPAPI on Windows, Keychain on macOS). Expiry, display name,
-project and instance sit in `PlayerPrefs` under `Artel.*`, because none of them
-opens anything on its own. The per-installation UUID is generated once and
-stored in `PlayerPrefs` under `Artel.SdkId`.
+(`ArtelSecretStore`; DPAPI on Windows, Keychain on macOS). Expiry, display name
+and project sit in `PlayerPrefs` under `Artel.*`, because none of them opens
+anything on its own. The per-installation UUID and the instance id of each
+server live in `Application.persistentDataPath/artel/identity.json`, so a game
+that calls `PlayerPrefs.DeleteAll()` keeps registering as the same instance.
+Values an older SDK left in `PlayerPrefs` (`Artel.SdkId`, `Artel.InstanceId.*`)
+move into that file the first time they are read.
 
 Close code `4001` on the socket means the token or the instance was refused.
 The SDK does not retry that one; the overlay's `연결` button registers again,
@@ -221,6 +236,16 @@ What that cannot undo:
 - Mutated `ScriptableObject` and other asset state, which no scene owns.
 
 ## Agent keyboard input
+
+A project whose Active Input Handling is "Input System Package (New)" alone is
+not supported. Its game code never calls `UnityEngine.Input`, so the agent's keys
+and clicks do not reach it. The SDK still runs there without exceptions: its own
+`UnityEngine.Input` reads are compiled out when `ENABLE_LEGACY_INPUT_MANAGER` is
+not defined, the overlay's `EventSystem` gets the Input System package's
+`InputSystemUIInputModule`, the overlay status line says
+`신 Input System은 지원하지 않습니다.`, and `set_axis` fails with a message. Setting
+Active Input Handling to "Both" keeps the game's Input System code and makes
+Artel's input work for code that reads `UnityEngine.Input`.
 
 Keep using `UnityEngine.Input` for keyboard polling. Artel's IL post-processor
 rewrites supported calls to the `ArtelInput` proxy during compilation:
