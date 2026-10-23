@@ -229,16 +229,27 @@ behavior 가 끝나는 이유.
 ### `onScreen=true` 는 보인다는 뜻이 아니다
 
 - `true` 가 말하는 것은 "블록이 카메라 앞에 투영되고 프레임 안 어딘가에 떨어진다" 까지
-- 아래 셋도 전부 `true`
+- 보이는지는 그 옆의 `visible` 이 답한다 (ARTEL-1225). `onScreen` 의 뜻은 바뀌지 않았다
 
-| 실제 상태 | 보고되는 값 |
-| --- | --- |
-| `RectMask2D`·`ScrollRect` 에 잘려 나감 | `true` |
-| 다른 것에 완전히 가려짐 | `true` |
-| `CanvasGroup.alpha=0` 으로 그려짐 | `true` |
+| 실제 상태 | `onScreen` | `visible` |
+| --- | --- | --- |
+| 프레임 안에 그려짐 | `true` | `true` |
+| `SpriteRenderer.enabled=false` 등 자기 `Renderer` 가 꺼짐, `SpriteRenderer.color.a=0` | `true` | `false` |
+| 자기 `Graphic` 이 꺼짐, `Graphic.color.a=0` | `true` | `false` |
+| 위쪽 `CanvasGroup.alpha` 곱이 0, 위쪽 `Canvas` 가 꺼짐 | `true` | `false` |
+| `RectMask2D`·`Mask` 영역 밖으로 잘려 나감 | `true` | `false` |
+| `Selectable` 이 있는 블록인데 중심점의 `EventSystem.RaycastAll` 맨 위가 자기나 자기 자식이 아님 | `true` | `false` |
+| GameObject 가 꺼짐 (`full` scan 만 보고) | 잰 값 | `false` |
+| 프레임 밖, 카메라 뒤, 카메라 없음 | `false` | `false` |
 
-- 답하려면 블록마다 mask walk 나 raycast 가 붙는데 이 코드는 폴링 경로에서 돎
-- `false` 는 두 모양
+- `visible` 이 `true` 이면 `onScreen` 도 `true` 다
+- 가려짐은 `Selectable` 이 있는 블록에만 본다. 블록마다 raycast 하면 scan 이 블록 수만큼 raycast 를 하기 때문이다.
+  그래서 `Selectable` 이 없는 블록은 다른 것에 덮여도 `visible=true` 일 수 있다
+- 가려짐 판정은 `raycastTarget` 인 graphic 과 collider 만 본다. `EventSystem` 이 없는 씬에서는 가려짐을 보지 않는다
+- SDK 자신의 overlay 와 커서는 가리는 것으로 치지 않는다
+- mask 는 사각형 영역의 교차만 본다. `Mask` 가 stencil 로 그리는 실제 모양은 보지 않는다
+- 부분 투명(`alpha` 0 초과)은 `true` 다. 얼마나 흐린지는 판정하지 않는다
+- `false` 인 `onScreen` 은 두 모양
 
 | `false` 의 모양 | `rect` 값 | 왜 |
 | --- | --- | --- |

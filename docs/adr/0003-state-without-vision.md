@@ -70,7 +70,7 @@ Notion 원문과 실제로 나간 것이 세 자리에서 다릅니다.
 | --- | --- |
 | 소리는 관측할 수 없음 | `AudioSource` 가 스캔에 나타나지 않음. 소리를 보는 테스트 케이스 넷(id 9, 10, 81, 82)을 지움. ARTEL-1224 부터 `PULSE.audio` 가 재생 시작과 재생 중인 수를 따로 보고함 |
 | 엔진 컴포넌트가 통째로 안 보임 | `Image`·`TMP_Text`·`EventTrigger` 의 직렬화 필드는 읽지 않음 |
-| `onScreen=true` 는 보인다는 뜻이 아님 | `RectMask2D` 에 잘린 것, 완전히 가려진 것, `CanvasGroup.alpha=0` 인 것이 전부 `true` |
+| `onScreen=true` 는 보인다는 뜻이 아님 | `RectMask2D` 에 잘린 것, 완전히 가려진 것, `CanvasGroup.alpha=0` 인 것이 전부 `true`. ARTEL-1225 부터 옆의 `visible` 이 이것을 답함 |
 | 좌표를 그대로 싣지 않음 | `rect` 는 정수 픽셀, `world` 는 소수점 4 자리 |
 | `GAME_STATE` 자체가 기본으로 꺼져 있음 | `ArtelManager.SendsGameState` 가 `false` |
 
@@ -81,6 +81,8 @@ Notion 원문과 실제로 나간 것이 세 자리에서 다릅니다.
 - 엔진 컴포넌트를 거르는 대가는 소리만이 아닙니다. 전부 읽으면 게임 자신의 데이터가 수백 개의 레이아웃
   필드 밑에 묻힙니다. 어셈블리 이름이 그 선이고, 선을 그은 이상 저쪽에 있는 것은 안 보입니다.
 - `onScreen` 을 정확히 답하려면 블록마다 mask walk 나 raycast 가 붙는데, 이 코드는 폴링 경로에서 돕니다.
+  ARTEL-400 이 1 초 poller 를 없앤 뒤 scan 은 요청받을 때만 돌므로, ARTEL-1225 는 mask walk 를 모든 블록에,
+  raycast 는 `Selectable` 이 있는 블록에만 붙여 `visible` 로 따로 보고합니다.
 - 좌표를 자르지 않으면 숨 쉬는 idle 애니메이션 하나가 매 폴링 `GAME_STATE` 를 다시 내보냅니다. 자세한
   것은 [`docs/protocol.md`](../protocol.md) 에 있습니다.
 - `GAME_STATE` 스위치는 `pulse` 가 그 자리를 대신할 수 있는지 재는 중이라 남아 있고, ARTEL-400 이
