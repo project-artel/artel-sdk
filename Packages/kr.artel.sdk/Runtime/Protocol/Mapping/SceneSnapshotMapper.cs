@@ -79,7 +79,8 @@ namespace Artel.Protocol.Mapping
                     W = ToPixels(transform.ScreenRect.width),
                     H = ToPixels(transform.ScreenRect.height)
                 },
-                OnScreen = transform.OnScreen
+                OnScreen = transform.OnScreen,
+                Visible = transform.Visible
             };
         }
 

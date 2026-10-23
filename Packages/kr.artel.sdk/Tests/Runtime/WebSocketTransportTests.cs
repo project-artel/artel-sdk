@@ -18,6 +18,8 @@ namespace Artel.Tests.Transport
 {
     public sealed class WebSocketTransportTests
     {
+        private IdentityFileSandbox identityFile;
+
         private const string PlayerPrefsKey = "Artel.SdkId";
         private const string DarkThemePlayerPrefsKey = "Artel.DarkTheme";
 
@@ -40,6 +42,7 @@ namespace Artel.Tests.Transport
         [SetUp]
         public void SetUp()
         {
+            identityFile = new IdentityFileSandbox();
             hadOriginalSdkId = PlayerPrefs.HasKey(PlayerPrefsKey);
             originalSdkId = PlayerPrefs.GetString(PlayerPrefsKey);
             hadOriginalDarkTheme = PlayerPrefs.HasKey(DarkThemePlayerPrefsKey);
@@ -77,6 +80,8 @@ namespace Artel.Tests.Transport
             ClearSession();
             PlayerPrefs.Save();
             ArtelSecretStore.Current = null;
+
+            identityFile.Dispose();
         }
 
         private static void ClearSession()
@@ -137,7 +142,7 @@ namespace Artel.Tests.Transport
             var sdkId = ArtelSdkIdentity.LoadOrCreate();
 
             Assert.That(Guid.TryParse(sdkId, out _), Is.True);
-            Assert.That(PlayerPrefs.GetString(PlayerPrefsKey), Is.EqualTo(sdkId));
+            Assert.That(ArtelIdentityStore.ReadSdkId(), Is.EqualTo(sdkId));
         }
 
         [Test]
@@ -150,7 +155,7 @@ namespace Artel.Tests.Transport
 
             Assert.That(replacement, Is.Not.EqualTo(previous));
             Assert.That(Guid.TryParse(replacement, out _), Is.True);
-            Assert.That(PlayerPrefs.GetString(PlayerPrefsKey), Is.EqualTo(replacement));
+            Assert.That(ArtelIdentityStore.ReadSdkId(), Is.EqualTo(replacement));
         }
 
         [Test]
@@ -594,6 +599,46 @@ namespace Artel.Tests.Transport
             // The upload needs a session and fails long after the screen was read. A blank panel
             // would read as a capture that produced nothing.
             Assert.That(ArtelTestPage.Html, Does.Contain("captureStatus.textContent = result.error || 'capture failed'"));
+        }
+
+        [Test]
+        public void 선택한_프로젝트_이름은_재실행해도_복원되고_로그아웃하면_사라진다()
+        {
+            SignIn();
+            var viewModel = CreateViewModel();
+            viewModel.Initialize();
+            var projects = (System.Collections.Generic.List<SdkProjectDto>)viewModel.Projects;
+            projects.Add(new SdkProjectDto { Id = "project-1", Name = "계몽" });
+
+            viewModel.SelectProject("project-1");
+            Assert.That(viewModel.SelectedProjectName, Is.EqualTo("계몽"));
+            var restored = CreateViewModel();
+            restored.Initialize();
+            Assert.That(restored.SelectedProjectId, Is.EqualTo("project-1"));
+            Assert.That(restored.SelectedProjectName, Is.EqualTo("계몽"));
+
+            restored.LogOut();
+            Assert.That(restored.SelectedProjectName, Is.Empty);
+            Assert.That(ArtelSdkSession.ProjectName, Is.Empty);
+            restored.Initialize();
+            Assert.That(restored.SelectedProjectId, Is.Empty);
+            Assert.That(restored.SelectedProjectName, Is.Empty);
+        }
+
+        [Test]
+        public void 이름이_없는_프로젝트를_선택하면_이전_이름을_지운다()
+        {
+            SignIn();
+            var viewModel = CreateViewModel();
+            viewModel.Initialize();
+            var projects = (System.Collections.Generic.List<SdkProjectDto>)viewModel.Projects;
+            projects.Add(new SdkProjectDto { Id = "named", Name = "계몽" });
+            projects.Add(new SdkProjectDto { Id = "unnamed", Name = " " });
+            viewModel.SelectProject("named");
+            viewModel.SelectProject("unnamed");
+            Assert.That(viewModel.SelectedProjectId, Is.EqualTo("unnamed"));
+            Assert.That(viewModel.SelectedProjectName, Is.Empty);
+            Assert.That(ArtelSdkSession.ProjectName, Is.Empty);
         }
 
         [Test]
@@ -1049,9 +1094,11 @@ namespace Artel.Tests.Transport
             });
         }
 
-        [Test]
-        public void LoginButton_LabelMeetsContrastRatio()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void LoginButton_LabelMeetsContrastRatio(bool darkTheme)
         {
+            PlayerPrefs.SetInt(DarkThemePlayerPrefsKey, darkTheme ? 1 : 0);
             WithOverlay((controller, canvas) =>
             {
                 var loginButton = Array.Find(
@@ -1062,14 +1109,16 @@ namespace Artel.Tests.Transport
                 // 액센트가 밝아서 흰 라벨은 대비 기준을 넘지 못한다. 색값을 색값과 비교하는
                 // 동어반복 대신 실제 불변식을 지킨다. 재색상해도 살아남는다.
                 Assert.That(
-                    ContrastRatio(loginButton.image.color, label.color),
+                    ContrastRatio(loginButton.targetGraphic.color * loginButton.colors.normalColor, label.color),
                     Is.GreaterThanOrEqualTo(4.5f));
             });
         }
 
-        [Test]
-        public void OverlayGui_UsesBrandCoralOnlyForActionAccent()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void OverlayGui_UsesBrandCoralOnlyForActionAccent(bool darkTheme)
         {
+            PlayerPrefs.SetInt(DarkThemePlayerPrefsKey, darkTheme ? 1 : 0);
             WithOverlay((controller, canvas) =>
             {
                 var logos = canvas.GetComponentsInChildren<ArtelLogoGraphic>(true);
@@ -1081,12 +1130,13 @@ namespace Artel.Tests.Transport
 
                 Assert.That(logos, Has.Length.EqualTo(3));
 
-                // 오버레이 기본은 다크다. accent는 밝힌 coral이어야 한다.
-                Assert.That(loginButton.image.color, Is.EqualTo((Color)ArtelLogoGraphic.CoralDark));
+                // 버튼의 기본 tint와 표면 색상을 합친 색이 테마의 accent여야 한다.
+                var expectedAccent = (Color)(darkTheme ? ArtelLogoGraphic.CoralDark : ArtelLogoGraphic.Coral);
+                Assert.That(loginButton.targetGraphic.color * loginButton.colors.normalColor, Is.EqualTo(expectedAccent));
 
                 // 시안 action 색은 없앴다. Blueprint Paper에서 action은 브랜드 accent와
                 // 같은 색을 쓴다. 실패·성공만 자기 의미 색을 유지한다.
-                Assert.That(checkmark.color, Is.EqualTo((Color)ArtelLogoGraphic.CoralDark));
+                Assert.That(checkmark.color, Is.EqualTo(expectedAccent));
 
                 Assert.That(ArtelLogoGraphic.Charcoal, Is.EqualTo(new Color32(0x20, 0x23, 0x2B, 0xFF)));
                 Assert.That(ArtelLogoGraphic.Coral, Is.EqualTo(new Color32(0xF0, 0x4B, 0x3A, 0xFF)));
@@ -1105,13 +1155,34 @@ namespace Artel.Tests.Transport
                     toggle => toggle.name == "다크 모드 Toggle");
 
                 Assert.That(darkThemeToggle, Is.Not.Null);
-                Assert.That(darkThemeToggle.isOn, Is.True);
+                Assert.That(darkThemeToggle.isOn, Is.False);
                 Assert.That(
                     Array.Find(
                         canvas.GetComponentsInChildren<Button>(true),
                         button => button.name == "Artel Button")
                     .transform.Find("Artel Logo"),
                     Is.Not.Null);
+                Assert.That(
+                    canvas.GetComponentInChildren<ArtelLogoGraphic>(true).BodyColor,
+                    Is.EqualTo(ArtelLogoGraphic.Charcoal));
+
+                darkThemeToggle.isOn = true;
+
+                var currentCanvas = (GameObject)typeof(ArtelOverlayController)
+                    .GetField("canvasObject", BindingFlags.Instance | BindingFlags.NonPublic)
+                    .GetValue(controller);
+                Assert.That(PlayerPrefs.GetInt(DarkThemePlayerPrefsKey), Is.EqualTo(1));
+                Assert.That(
+                    currentCanvas.GetComponentInChildren<ArtelLogoGraphic>(true).BodyColor,
+                    Is.EqualTo(ArtelLogoGraphic.Ink));
+            });
+
+            WithOverlay((controller, canvas) =>
+            {
+                var darkThemeToggle = Array.Find(
+                    canvas.GetComponentsInChildren<Toggle>(true),
+                    toggle => toggle.name == "다크 모드 Toggle");
+                Assert.That(darkThemeToggle.isOn, Is.True);
                 Assert.That(
                     canvas.GetComponentInChildren<ArtelLogoGraphic>(true).BodyColor,
                     Is.EqualTo(ArtelLogoGraphic.Ink));
@@ -1124,6 +1195,17 @@ namespace Artel.Tests.Transport
                 Assert.That(PlayerPrefs.GetInt(DarkThemePlayerPrefsKey), Is.Zero);
                 Assert.That(
                     currentCanvas.GetComponentInChildren<ArtelLogoGraphic>(true).BodyColor,
+                    Is.EqualTo(ArtelLogoGraphic.Charcoal));
+            });
+
+            WithOverlay((controller, canvas) =>
+            {
+                var darkThemeToggle = Array.Find(
+                    canvas.GetComponentsInChildren<Toggle>(true),
+                    toggle => toggle.name == "다크 모드 Toggle");
+                Assert.That(darkThemeToggle.isOn, Is.False);
+                Assert.That(
+                    canvas.GetComponentInChildren<ArtelLogoGraphic>(true).BodyColor,
                     Is.EqualTo(ArtelLogoGraphic.Charcoal));
             });
         }

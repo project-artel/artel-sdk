@@ -20,6 +20,7 @@ namespace Artel
         private readonly ArtelSdkAuthClient authClient;
         private readonly IJsonCodec jsonCodec;
         private readonly List<SdkProjectDto> projects = new List<SdkProjectDto>();
+        private bool loginCancelled;
 
         // 마지막으로 화면에 옮긴 전송 상태. NoticeTransport 는 프레임마다 불리므로, 달라졌을 때만
         // Changed 를 올려야 오버레이가 매 프레임 다시 그려지지 않는다.
@@ -56,8 +57,10 @@ namespace Artel
         public bool HasAttemptedRegistration { get; private set; }
 
         public bool HasToken { get; private set; }
+        public bool CanCancelLogin { get; private set; }
         public string DisplayName { get; private set; } = string.Empty;
         public string SelectedProjectId { get; private set; } = string.Empty;
+        public string SelectedProjectName { get; private set; } = string.Empty;
 
         /// <summary>고른 프로젝트까지 남아 있어 로그인 화면 없이 곧바로 등록할 수 있는 상태.</summary>
         public bool HasStoredSession
@@ -133,6 +136,7 @@ namespace Artel
             SelectedProjectId = ArtelSdkSession.TryLoadProjectId(out var projectId) && HasToken
                 ? projectId
                 : string.Empty;
+            SelectedProjectName = SelectedProjectId.Length > 0 ? ArtelSdkSession.ProjectName : string.Empty;
 
             if (HasStoredSession)
             {
@@ -181,14 +185,29 @@ namespace Artel
                 yield break;
             }
 
+            loginCancelled = false;
+            CanCancelLogin = true;
             State = ArtelConnectionState.LoggingIn;
             HasError = false;
             SetStatus("브라우저에서 로그인을 완료해 주세요.");
 
             var login = default(ArtelLoginCode);
-            yield return ArtelLoopbackLogin.Authorize(serverOrigin, result => login = result);
+            try
+            {
+                yield return ArtelLoopbackLogin.Authorize(
+                    serverOrigin, result => login = result, () => loginCancelled);
+            }
+            finally
+            {
+                CanCancelLogin = false;
+            }
 
             if (!ArtelSdkSession.IsFor(server)) yield break;
+            if (loginCancelled)
+            {
+                Initialize(server);
+                yield break;
+            }
             if (!login.IsSuccess)
             {
                 Fail("로그인 실패: " + login.Error);
@@ -254,6 +273,14 @@ namespace Artel
             DisplayName = token.DisplayName ?? string.Empty;
 
             yield return LoadProjects(server);
+        }
+
+        public void CancelLogin()
+        {
+            if (!CanCancelLogin) return;
+            loginCancelled = true;
+            CanCancelLogin = false;
+            NotifyChanged();
         }
 
         /// <summary>
@@ -360,7 +387,8 @@ namespace Artel
             }
 
             SelectedProjectId = projectId.Trim();
-            ArtelSdkSession.SaveProjectId(SelectedProjectId);
+            SelectedProjectName = projects.Find(project => project.Id == SelectedProjectId)?.Name?.Trim() ?? string.Empty;
+            ArtelSdkSession.SaveProjectId(SelectedProjectId, SelectedProjectName);
             HasError = false;
             SetStatus("프로젝트를 선택했습니다. 등록하는 중...");
         }
@@ -466,6 +494,8 @@ namespace Artel
                     // 그 사용자가 더 이상 붙을 수 없는 프로젝트다. 선택을 지워야 다음 화면이
                     // 같은 404를 반복하지 않고 목록부터 다시 고르게 한다.
                     SelectedProjectId = string.Empty;
+                    SelectedProjectName = string.Empty;
+                    ArtelSdkSession.ClearProject();
                     Fail("등록 실패: 접근할 수 없는 프로젝트입니다. 프로젝트를 다시 선택해 주세요.");
                 }
                 else
@@ -770,6 +800,7 @@ namespace Artel
             HasToken = false;
             DisplayName = string.Empty;
             SelectedProjectId = string.Empty;
+            SelectedProjectName = string.Empty;
             State = ArtelConnectionState.NeedsLogin;
             ShowPanel = true;
         }

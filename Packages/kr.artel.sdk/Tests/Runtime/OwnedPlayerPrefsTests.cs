@@ -24,6 +24,8 @@ namespace Artel.Tests
     /// </remarks>
     public sealed class OwnedPlayerPrefsTests
     {
+        private IdentityFileSandbox identityFile;
+
         private const string GameProgressKey = "game.progress";
         private const string GameVolumeKey = "game.volume";
 
@@ -33,6 +35,7 @@ namespace Artel.Tests
         [SetUp]
         public void SetUp()
         {
+            identityFile = new IdentityFileSandbox();
             // 토큰 두 개는 보안 저장소를 거친다. 갈아끼우지 않으면 macOS 는 Keychain,
             // Windows 는 DPAPI 로 가고, PlayerPrefs 에는 애초에 아무것도 쓰이지 않아
             // 이 테스트가 그 두 플랫폼에서 아무것도 검사하지 않는 껍데기가 된다 —
@@ -99,6 +102,8 @@ namespace Artel.Tests
             PlayerPrefs.Save();
 
             ArtelSecretStore.Current = null;
+
+            identityFile.Dispose();
         }
 
         /// <summary>
@@ -175,7 +180,7 @@ namespace Artel.Tests
             var sdkId = ArtelSdkIdentity.LoadOrCreate();
             ArtelSdkSession.SaveToken("token-abc", "2999-01-01T00:00:00Z", "Someone");
             ArtelSdkSession.SaveRefreshToken("refresh-abc", "2999-01-01T00:00:00Z");
-            ArtelSdkSession.SaveProjectId("project-1");
+            ArtelSdkSession.SaveProjectId("project-1", "계몽");
             ArtelSdkSession.SaveInstanceId("instance-1");
             ArtelSdkSession.SaveGameBuildId("build-1");
             PlayerPrefs.SetString(GameProgressKey, "level-7");
@@ -189,6 +194,7 @@ namespace Artel.Tests
             Assert.That(refreshToken, Is.EqualTo("refresh-abc"));
             Assert.That(ArtelSdkSession.TryLoadProjectId(out var projectId), Is.True);
             Assert.That(projectId, Is.EqualTo("project-1"));
+            Assert.That(ArtelSdkSession.ProjectName, Is.EqualTo("계몽"));
             Assert.That(ArtelSdkSession.TryLoadInstanceId(out var instanceId), Is.True);
             Assert.That(instanceId, Is.EqualTo("instance-1"));
             Assert.That(ArtelSdkSession.TryLoadGameBuildId(out var gameBuildId), Is.True);
