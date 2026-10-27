@@ -61,7 +61,7 @@ namespace Artel.Affordances.Live
         /// </remarks>
         private const float DefaultInterval = 0.1f;
 
-        /// <summary>전달 사이의 초.</summary>
+        /// <summary>변화가 없어도 전달하는 간격의 상한.</summary>
         /// <remarks>
         /// 읽기와 전달이 두 속도인 것은 일부러다. 변화는 일어나는 그 순간에 잡지 않으면 틀린 값으로 잡힌다 — 1초 안에 올라갔다
         /// 내려온 카운터는 초당 한 번 재는 독자에게 애초에 없던 것이다. 그 속도로 전달하는 것은 다른 물음이고, 답은 게임당 초당
@@ -72,11 +72,43 @@ namespace Artel.Affordances.Live
         /// </remarks>
         private const float DefaultDelivery = 1f;
 
+        /// <summary>변화를 본 뒤 전달까지 기다리는 최소 초.</summary>
+        /// <remarks>
+        /// 1초 배치가 지연의 전부였다. 판독은 0.1초마다 찍히는데 떠나는 것은 1초에 한 번이라, 변화가 독자에게
+        /// 닿는 데 평균 0.5초가 들었고 그 뒤에 결정이 붙는다. 이제 변화를 본 tick 에 바로 보내고, 이 값은
+        /// 매 tick 바뀌는 값 — 타이머·카운터 — 이 소켓을 초당 열 번 두드리는 것을 막는 바닥이다. 양은 같다.
+        /// 보내는 것은 바뀐 값뿐이고 주기를 줄이면 쪼개질 뿐이다.
+        /// </remarks>
+        private const float DefaultMinDelivery = 0.1f;
+
+        /// <summary>판독의 세 속도. <c>start_readings</c> 가 실측을 위해 바꿀 수 있다.</summary>
+        public struct Pace
+        {
+            /// <summary>판독 사이의 초.</summary>
+            public float Interval;
+
+            /// <summary>변화가 없어도 쥔 것을 보내는 간격의 상한.</summary>
+            public float Delivery;
+
+            /// <summary>변화를 본 뒤 보내기까지의 최소 간격.</summary>
+            public float MinDelivery;
+
+            public static Pace Default => new Pace
+            {
+                Interval = DefaultInterval, Delivery = DefaultDelivery, MinDelivery = DefaultMinDelivery
+            };
+
+            internal bool Valid =>
+                Interval > 0f && MinDelivery >= 0f && Delivery >= Interval &&
+                !float.IsNaN(Interval) && !float.IsNaN(Delivery) && !float.IsNaN(MinDelivery);
+        }
+
         private static Pulse _beating;
 
         private IPulseSink _sink;
         private float _interval = DefaultInterval;
         private float _delivery = DefaultDelivery;
+        private float _minDelivery = DefaultMinDelivery;
 
         /// <summary>찍었으나 아직 건네지 않은 판독들.</summary>
         private readonly System.Collections.Generic.List<string> _pending =
@@ -124,9 +156,14 @@ namespace Artel.Affordances.Live
         internal static int Held { get; private set; }
 
         /// <summary>읽기를 시작하거나, 이미 돌고 있어서 false 로 답한다.</summary>
-        internal static bool Begin(IPulseSink sink, float interval = DefaultInterval)
+        internal static bool Begin(IPulseSink sink)
         {
-            if (_beating != null || sink == null || interval <= 0f)
+            return Begin(sink, Pace.Default);
+        }
+
+        internal static bool Begin(IPulseSink sink, Pace pace)
+        {
+            if (_beating != null || sink == null || !pace.Valid)
             {
                 return false;
             }
@@ -136,7 +173,9 @@ namespace Artel.Affordances.Live
 
             _beating = carrier.AddComponent<Pulse>();
             _beating._sink = sink;
-            _beating._interval = interval;
+            _beating._interval = pace.Interval;
+            _beating._delivery = pace.Delivery;
+            _beating._minDelivery = pace.MinDelivery;
             Sent = 0;
             Held = 0;
 
@@ -165,23 +204,32 @@ namespace Artel.Affordances.Live
 
         private IEnumerator Beat()
         {
-            var untilDelivery = _delivery;
+            // 마지막 전달로부터 지난 초. 첫 판독이 기다리지 않도록 바닥에서 시작한다 — 아직 아무 말도 하지 않았으므로
+            // "바뀌지 않음" 은 이것이 그것에 대해 할 수 있는 주장이 아니다.
+            var sinceDelivery = _minDelivery;
 
-            // 첫 판독은 언제나 나간다. 아직 아무 말도 하지 않았으므로 "바뀌지 않음" 은 이것이 그것에 대해 할 수 있는 주장이 아니다.
             while (_beating == this)
             {
                 Take();
 
+                // 변화를 본 tick 에 보낸다. 쥔 것이 없으면 변화가 없었다는 말이고, 바닥 안이면 다음 tick 이 합쳐 나른다.
+                if (_pending.Count > 0 && sinceDelivery >= _minDelivery)
+                {
+                    Deliver();
+                    sinceDelivery = 0f;
+                }
+
                 yield return new WaitForSecondsRealtime(_interval);
 
-                untilDelivery -= _interval;
+                sinceDelivery += _interval;
 
-                if (untilDelivery > 0f)
+                if (sinceDelivery < _delivery)
                 {
                     continue;
                 }
 
-                untilDelivery = _delivery;
+                // 바닥에 걸려 남은 것이 있으면 여기서 나간다. 상한은 그것이 1초 넘게 쥐어지지 않게 하는 자리다.
+                sinceDelivery = 0f;
                 Deliver();
             }
         }

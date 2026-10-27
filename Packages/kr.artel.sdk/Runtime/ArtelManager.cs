@@ -592,6 +592,11 @@ namespace Artel
         /// </remarks>
         public bool StartReadings()
         {
+            return StartReadings(Affordances.Live.Pulse.Pace.Default);
+        }
+
+        public bool StartReadings(Affordances.Live.Pulse.Pace pace)
+        {
             if (Affordances.Scan.AffordanceBootstrap.Watching)
             {
                 return true;
@@ -604,7 +609,7 @@ namespace Artel
                 ? null
                 : new WebSocketPulseSink(() => webSocketTransport, () => nextMessageId++);
 
-            return Affordances.Scan.AffordanceBootstrap.WatchLiveState(sink);
+            return Affordances.Scan.AffordanceBootstrap.WatchLiveState(sink, pace);
         }
 
         /// <summary>라이브 판독을 끝낸다. 한 번도 시작하지 않았을 때 불러도 안전하다.</summary>
