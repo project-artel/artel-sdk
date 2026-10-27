@@ -596,9 +596,20 @@ must leave the game exactly as it found it.
 
 **Reading state needs no change to the game.** There is no attribute to add and
 no member to mark. The SDK samples what the game holds ten times a second and
-sends a batch once a second as a `PULSE` message on the same WebSocket. The two
-actions `start_readings` and `stop_readings` turn it on and off, so a QA run
-reads only the part of the session it is actually driving.
+sends a `PULSE` message on the same WebSocket on the tick a value moved, no
+sooner than 0.1 s after the previous one. The two actions `start_readings` and
+`stop_readings` turn it on and off, so a QA run reads only the part of the
+session it is actually driving; `start_readings` takes the three rates as
+options when a run wants to measure with different ones.
+
+A member the evidence did not name can still be asked for by name while the game
+runs: `watch [["Game.Player::hp", "Progress::stage"]]` resolves each name against
+the loaded assemblies and adds it to the watch list, and `read_member` reads one
+once. A member on a scene component is read where the walk meets it; a static is
+read directly; anything else — a ScriptableObject, a plain object behind a static
+or a container — is found by following references from static fields and scene
+components, four levels deep and within a time budget, and the action's result
+says which names resolved, where each is read from, and which did not and why.
 
 What a pulse carries is decided by the evidence document baked at build time —
 the members the analysed conditions and effects name — plus the objects that

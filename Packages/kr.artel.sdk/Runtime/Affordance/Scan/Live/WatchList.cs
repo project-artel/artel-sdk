@@ -38,6 +38,22 @@ namespace Artel.Affordances.Live
         /// <summary>리플렉션에 물어본 뒤의 필드 그 자체. 그 전까지는 null.</summary>
         internal FieldInfo Field;
 
+        /// <summary>필드가 아니라 프로퍼티를 청했을 때, 그 getter. 분석이 구운 목록에는 없고 이름으로 청한 것에만 있다.</summary>
+        /// <remarks>
+        /// getter 는 코드를 돌린다. 판독이 게임을 하지 않는다는 규칙의 예외이고, 그래서 누군가 그 이름을 대고 청했을 때만
+        /// 들어온다 — 그것을 읽어 달라고 한 것은 사람이다.
+        /// </remarks>
+        internal PropertyInfo Getter;
+
+        /// <summary>
+        /// 컴포넌트도 static 도 아닌 것이 쥔 멤버일 때, 그 멤버를 쥔 인스턴스들. 씬을 걸어서는 닿지 않으므로 찾아 둔다.
+        /// </summary>
+        /// <remarks>
+        /// null 이면 씬 걷기나 static 읽기가 이 멤버를 맡는다. 비어 있으면 찾았어야 하는데 지금 없는 것이고, 그것은 판독에
+        /// <c>unread</c> 로 적힌다 — 안 보내는 것과 안 아는 것은 다르다.
+        /// </remarks>
+        internal List<object> Holders;
+
         /// <summary>그것이 사는 타입. 그것을 나르는 인스턴스를 찾기 위한 것.</summary>
         internal Type Owner;
 
@@ -79,6 +95,69 @@ namespace Artel.Affordances.Live
         private static List<Watched> _resolved;
         private static List<string> _animatorNames;
         private static Dictionary<string, Offer> _offers;
+
+        /// <summary>구운 목록 밖에서, 게임이 도는 동안 이름으로 청해진 멤버들.</summary>
+        /// <remarks>
+        /// 따로 쥔다. 구운 목록은 어셈블리에서 다시 읽을 수 있지만 이것은 청한 쪽만 알고, <see cref="All"/> 이 둘을 합친다.
+        /// </remarks>
+        private static readonly List<Watched> _requested = new List<Watched>();
+
+        /// <summary>청한 멤버 가운데 컴포넌트가 쥔 것들의 타입. holders 상한을 넘겨서도 싣기 위해.</summary>
+        private static readonly HashSet<Type> _requestedOwners = new HashSet<Type>();
+
+        internal static IReadOnlyList<Watched> Requested => _requested;
+
+        /// <summary>
+        /// 이름으로 청한 멤버를 목록에 더한다. 이미 같은 것을 보고 있었으면 false.
+        /// </summary>
+        /// <remarks>
+        /// 합치고 나서 <see cref="Readable"/> 과 <see cref="Worth"/> 의 기억을 지운다. 둘은 타입과 객체마다 답을 한 번
+        /// 기억하므로, 지우지 않으면 판독이 돌던 중에 청한 멤버는 다음 씬까지 <c>asked:false</c> 로 나가거나 그것을
+        /// 쥔 객체가 순회에 들지 않는다.
+        /// </remarks>
+        internal static bool Request(Watched member)
+        {
+            var all = All();
+
+            foreach (var had in all)
+            {
+                if (had.Key == member.Key && had.Via == member.Via)
+                {
+                    return false;
+                }
+            }
+
+            _requested.Add(member);
+            _resolved.Add(member);
+
+            if (!member.Static && member.Holders == null)
+            {
+                _requestedOwners.Add(member.Owner);
+            }
+
+            Readable.Forget();
+            Worth.Forget();
+            return true;
+        }
+
+        /// <summary>이 객체의 컴포넌트 가운데 청한 멤버를 쥔 것이 있는지.</summary>
+        internal static bool Holds(UnityEngine.GameObject subject)
+        {
+            if (_requestedOwners.Count == 0 || subject == null)
+            {
+                return false;
+            }
+
+            foreach (var component in subject.GetComponents<UnityEngine.Component>())
+            {
+                if (component != null && _requestedOwners.Contains(component.GetType()))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         /// <summary>
         /// 플레이어가 어떤 타입을 움직이게 만들 수 있는 방법들. 그것이 씬 안의 무엇에 붙어 있을 때.
@@ -180,12 +259,16 @@ namespace Artel.Affordances.Live
                 }
             }
 
+            _resolved.AddRange(_requested);
+
             return _resolved;
         }
 
         internal static void Forget()
         {
             _resolved = null;
+            _requested.Clear();
+            _requestedOwners.Clear();
         }
 
         private static void Read(Assembly assembly, List<Watched> into)
@@ -331,7 +414,7 @@ namespace Artel.Affordances.Live
         /// 선언된 타입에 대고 판단한다. 더 파생된 것을 쥔 필드는 이것이 볼 수 있는 것보다 많이 내놓을 수 있고, 그 값은 틀린 값이
         /// 아니라 가지 않은 경로 하나다.
         /// </remarks>
-        private static string Walkable(Type from, string path)
+        internal static string Walkable(Type from, string path)
         {
             if (path == null || from == null)
             {
