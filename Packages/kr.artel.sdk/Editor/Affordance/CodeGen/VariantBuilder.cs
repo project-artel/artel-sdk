@@ -198,7 +198,7 @@ namespace Artel.Affordances.CodeGen
                 // 경로 옆에 그렇다고 말하는 것이 알려진 것의 전부다.
                 if (answered != null)
                 {
-                    variant.Inputs.Add(answered);
+                    variant.Inputs.AddRange(answered.Each());
                     variant.AddGap("input-not-branched");
                 }
                 variant.Incomplete = when.HasUnknown(new HashSet<Condition>());
@@ -927,6 +927,15 @@ namespace Artel.Affordances.CodeGen
             if (IlReading.TryConstant(argument, out var value) && called.Parameters.Count == 1)
             {
                 read.Name = IlReading.EnumName(called.Parameters[0].ParameterType, value);
+                return read;
+            }
+
+            // dictionary 에서 꺼낸 key. 꺼낼 때 쓴 key 가 상수면 그 KeyCode 하나, 아니면 dictionary 의 값 전체가
+            // 후보다(ARTEL-1230).
+            if (DictionaryKeys.TryRead(argument, out var mapped, out var candidates))
+            {
+                read.Name = mapped ?? "(not a literal)";
+                read.Candidates = candidates;
                 return read;
             }
 

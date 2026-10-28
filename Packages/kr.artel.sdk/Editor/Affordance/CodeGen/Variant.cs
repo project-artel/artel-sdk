@@ -20,6 +20,34 @@ namespace Artel.Affordances.CodeGen
         internal bool Absent;
         internal int Offset;
 
+        /// <summary>
+        /// key 를 하나로 정하지 못했을 때 그것일 수 있는 KeyCode 들. 없으면 null(ARTEL-1230).
+        /// </summary>
+        /// <remarks>
+        /// <c>Input.GetKeyDown(keyMappings[action])</c> 에서 <c>action</c> 이 상수가 아니면 dictionary 의 값 전체가 여기 온다.
+        /// 조건에는 이 key 들 하나하나의 제스처로 들어가므로, 이것을 따로 써 나가지 않는다.
+        /// </remarks>
+        internal List<string> Candidates;
+
+        /// <summary>후보가 있으면 후보마다 하나씩, 없으면 자기 자신.</summary>
+        internal List<InputRead> Each()
+        {
+            var each = new List<InputRead>();
+
+            if (Candidates == null || Candidates.Count == 0)
+            {
+                each.Add(this);
+                return each;
+            }
+
+            foreach (var candidate in Candidates)
+            {
+                each.Add(new InputRead { Gesture = Gesture, Name = candidate, Phase = Phase, Absent = Absent, Offset = Offset });
+            }
+
+            return each;
+        }
+
         public override string ToString()
         {
             var text = Phase == null ? Gesture + ":" + Name : Gesture + ":" + Name + " (" + Phase + ")";
