@@ -913,7 +913,9 @@ namespace Artel.Affordances.Live
         {
             object held;
 
-            if (!member.Static && member.Holders != null && on == null)
+            // 인스턴스 멤버인데 읽을 인스턴스가 없다. 찾아 둔 것이 비었거나, 씬에 그 컴포넌트가 하나도 없는데 `read_member`
+            // 가 물었거나. `GetValue(null)` 이 던지는 `TargetException` 은 그 사실을 말하지 않는다 — WordVenture 에서 그렇게 나왔다.
+            if (!member.Static && on == null)
             {
                 Json.Property(text, "unread", "no-holder");
                 return;
