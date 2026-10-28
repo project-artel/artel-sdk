@@ -2,13 +2,7 @@ using Newtonsoft.Json;
 
 namespace Artel.Protocol.Dto
 {
-    /// <summary>
-    /// Reports where one session stands: CONNECTING, LIVE, FAILED or STOPPED.
-    ///
-    /// FAILED is reported the moment ICE gives up rather than left to time out. Without TURN a
-    /// game and a browser on different networks negotiate successfully and then carry no media;
-    /// surfaced as an endless "connecting", a network limitation gets filed as a broken stream.
-    /// </summary>
+    /// <summary>frame 전송의 CONNECTING·LIVE·FAILED·STOPPED 상태와 transport 지원 여부를 보고한다.</summary>
     internal sealed class StreamStateMessageDto
     {
         [JsonProperty("type")]
@@ -19,6 +13,9 @@ namespace Artel.Protocol.Dto
 
         [JsonProperty("state")]
         public string State { get; set; }
+
+        [JsonProperty("transport")]
+        public string Transport { get; set; }
 
         [JsonProperty("error")]
         public string Error { get; set; }

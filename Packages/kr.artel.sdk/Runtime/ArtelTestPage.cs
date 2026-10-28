@@ -103,12 +103,12 @@ namespace Artel
     </label>
     <button id=""capture-screen"">Capture</button>
   </section>
-  <section id=""stream-viewer"" class=""controls"" aria-label=""WebRTC stream"">
-    <strong>WebRTC</strong>
+  <section id=""stream-viewer"" class=""controls"" aria-label=""WebSocket stream"">
+    <strong>WebSocket</strong>
     <button id=""stream-start"">Start stream</button>
     <button id=""stream-stop"">Stop stream</button>
     <span id=""stream-status"">idle</span>
-    <video id=""stream-video"" autoplay playsinline muted></video>
+    <img id=""stream-video"" alt=""Game stream"">
   </section>
   <section id=""snapshot"" class=""empty"" aria-label=""Pinned scan"">
     <header>
@@ -145,10 +145,8 @@ namespace Artel
     // 어느 결과가 이 캡처의 것인지 가리는 값. capture_screen 의 성공은 결과에 액션 이름을 싣지 않으므로
     // 보낸 액션 id 로 짝을 맞춘다.
     let pendingCaptureId = null;
-    let streamPeer = null;
     let streamId = null;
     let streamRenewTimer = null;
-    let pendingRemoteIce = [];
     const status = document.getElementById('status');
     const sceneRoot = document.getElementById('scene');
     const log = document.getElementById('log');
@@ -316,12 +314,11 @@ namespace Artel
     }
 
     function handleMessage(message) {
+      if (message.type === 'STREAM_FRAME') { acceptStreamFrame(message); return; }
       log.textContent = JSON.stringify(message, null, 2);
       if (message.type === 'GAME_STATE') renderScene(message.scene);
       if (message.type === 'ALL_SCENES') renderAllScenes(message.scenes, message);
       if (message.type === 'ACTION_RESULT') renderCapture(message.results);
-      if (message.type === 'WEBRTC_OFFER') acceptStreamOffer(message);
-      if (message.type === 'WEBRTC_ICE') acceptRemoteIce(message);
       if (message.type === 'STREAM_STATE') renderStreamState(message);
     }
 
@@ -333,33 +330,11 @@ namespace Artel
 
       stopStream(true);
       streamId = `test-page-${Date.now()}`;
-      pendingRemoteIce = [];
-      streamPeer = new RTCPeerConnection({ iceServers: [] });
-      streamPeer.ontrack = event => {
-        // SDK는 track을 특정 MediaStream에 묶지 않는다. 브라우저가 빈 streams 배열을 주면
-        // 수신 track으로 로컬 stream을 만들어야 협상 성공 뒤에도 video가 실제로 재생된다.
-        streamVideo.srcObject = event.streams[0] || new MediaStream([event.track]);
-      };
-      streamPeer.onicecandidate = event => {
-        if (!event.candidate || !streamId) return;
-        sendStreamMessage({
-          type: 'WEBRTC_ICE',
-          streamId,
-          candidate: event.candidate.toJSON()
-        });
-      };
-      streamPeer.onconnectionstatechange = () => {
-        if (!streamPeer) return;
-        if (streamPeer.connectionState === 'failed' || streamPeer.connectionState === 'closed') {
-          stopStream(true, 'failed');
-        }
-      };
-
       sendStreamMessage({
         type: 'STREAM_START',
         streamId,
-        iceServers: [],
-        video: { maxWidth: 640, maxFramerate: 10 },
+        transport: 'JPEG_WS',
+        video: { maxWidth: 640, maxHeight: 720, maxFramerate: 10, jpegQuality: 65, maxFrameBytes: 131072 },
         leaseSeconds: 30
       });
       streamRenewTimer = setInterval(() => {
@@ -368,39 +343,22 @@ namespace Artel
       streamStatus.textContent = 'starting';
     }
 
-    async function acceptStreamOffer(message) {
-      if (!streamPeer || message.streamId !== streamId || !message.sdp) return;
-
-      const peer = streamPeer;
-      const offeredStreamId = streamId;
+    async function acceptStreamFrame(message) {
+      if (message.streamId !== streamId || typeof message.jpeg !== 'string' || message.jpeg.length > 174764) return;
+      const receivedStreamId = streamId;
+      let accepted = false;
       try {
-        await peer.setRemoteDescription({ type: 'offer', sdp: message.sdp });
-        if (peer !== streamPeer || offeredStreamId !== streamId) return;
-        for (const candidate of pendingRemoteIce) await peer.addIceCandidate(candidate);
-        pendingRemoteIce = [];
-        const answer = await peer.createAnswer();
-        await peer.setLocalDescription(answer);
-        if (peer !== streamPeer || offeredStreamId !== streamId) return;
-        sendStreamMessage({ type: 'WEBRTC_ANSWER', streamId, sdp: answer.sdp });
+        const image = new Image();
+        image.src = 'data:image/jpeg;base64,' + message.jpeg;
+        await image.decode();
+        if (streamId !== receivedStreamId) return;
+        accepted = image.naturalWidth <= 1920 && image.naturalHeight <= 1080;
+        if (accepted) { streamVideo.src = image.src; streamStatus.textContent = 'LIVE'; }
       } catch (error) {
-        streamStatus.textContent = `negotiation failed: ${error.message}`;
-        stopStream(true);
+        streamStatus.textContent = 'frame decode failed';
       }
-    }
-
-    async function acceptRemoteIce(message) {
-      if (!streamPeer || message.streamId !== streamId || !message.candidate ||
-          !message.candidate.candidate) return;
-
-      try {
-        if (!streamPeer.remoteDescription) {
-          pendingRemoteIce.push(message.candidate);
-          return;
-        }
-        await streamPeer.addIceCandidate(message.candidate);
-      } catch (error) {
-        streamStatus.textContent = `ICE failed: ${error.message}`;
-      }
+      if (streamId === receivedStreamId)
+        sendStreamMessage({ type: 'STREAM_FRAME_ACK', streamId, frameId: message.frameId, accepted });
     }
 
     function renderStreamState(message) {
@@ -418,15 +376,7 @@ namespace Artel
       streamId = null;
       if (streamRenewTimer) clearInterval(streamRenewTimer);
       streamRenewTimer = null;
-      pendingRemoteIce = [];
-      if (streamPeer) {
-        streamPeer.ontrack = null;
-        streamPeer.onicecandidate = null;
-        streamPeer.onconnectionstatechange = null;
-        streamPeer.close();
-      }
-      streamPeer = null;
-      streamVideo.srcObject = null;
+      streamVideo.removeAttribute('src');
       if (notifySdk && stoppedId) {
         sendStreamMessage({ type: 'STREAM_STOP', streamId: stoppedId });
       }

@@ -172,29 +172,23 @@ namespace Artel.Tests.Streaming
         }
 
         [Test]
-        public void Signalling_ForAReplacedSessionIsDropped()
+        public void Ack_ForAReplacedSessionIsDropped()
         {
             host.TryHandleMessage(StreamMessageType.StreamStart, StreamStartJson(FirstStreamId), 0f);
             host.TryHandleMessage(StreamMessageType.StreamStart, StreamStartJson(SecondStreamId), 1f);
-
             var current = sessions.Created[1];
-
-            host.TryHandleMessage(StreamMessageType.WebRtcAnswer, AnswerJson(FirstStreamId), 2f);
-            host.TryHandleMessage(StreamMessageType.WebRtcIce, IceJson(FirstStreamId), 2f);
+            host.TryHandleMessage(StreamMessageType.StreamFrameAck, AckJson(FirstStreamId), 2f);
             host.TryHandleMessage(StreamMessageType.StreamStop, StreamStopJson(FirstStreamId), 2f);
-
-            Assert.That(current.Answers, Is.Empty);
-            Assert.That(current.Candidates, Is.Empty);
+            Assert.That(current.Acknowledgements, Is.Empty);
             Assert.That(host.HasLiveSession, Is.True);
+            host.TryHandleMessage(StreamMessageType.StreamFrameAck, AckJson(SecondStreamId), 3f);
+            Assert.That(current.Acknowledgements.Count, Is.EqualTo(1));
+            Assert.That(current.Acknowledgements[0].FrameId, Is.EqualTo(1));
+        }
 
-            host.TryHandleMessage(StreamMessageType.WebRtcAnswer, AnswerJson(SecondStreamId), 3f);
-            host.TryHandleMessage(StreamMessageType.WebRtcIce, IceJson(SecondStreamId), 3f);
-
-            Assert.That(current.Answers, Is.EqualTo(new[] { "v=0" }));
-            Assert.That(current.Candidates.Count, Is.EqualTo(1));
-            Assert.That(current.Candidates[0].Candidate, Is.EqualTo("candidate:1 1 udp 1 10.0.0.1 5000 typ host"));
-            Assert.That(current.Candidates[0].SdpMid, Is.EqualTo("0"));
-            Assert.That(current.Candidates[0].SdpMLineIndex, Is.EqualTo(0));
+        private static string AckJson(string streamId)
+        {
+            return "{\"type\":\"STREAM_FRAME_ACK\",\"streamId\":\"" + streamId + "\",\"frameId\":1,\"accepted\":true}";
         }
 
         [Test]
@@ -223,17 +217,26 @@ namespace Artel.Tests.Streaming
         }
 
         [Test]
-        public void StreamStart_CarriesTheServersIceConfigurationThrough()
+        public void StreamStart_CarriesTheServersVideoConstraintsThrough()
         {
             host.TryHandleMessage(StreamMessageType.StreamStart, StreamStartJson(FirstStreamId), 0f);
 
             var start = sessions.Created[0].StartMessage;
 
-            Assert.That(start.IceServers.Count, Is.EqualTo(1));
-            Assert.That(start.IceServers[0].Urls, Is.EqualTo(new[] { "stun:stun.example.org:19302" }));
+            Assert.That(start.Transport, Is.EqualTo("JPEG_WS"));
             Assert.That(start.Video.MaxWidth, Is.EqualTo(1280));
             Assert.That(start.Video.MaxFramerate, Is.EqualTo(30));
             Assert.That(start.LeaseSeconds, Is.EqualTo(LeaseSeconds));
+        }
+
+        [Test]
+        public void 지원하지_않는_transport는_session을_만들지_않고_실패를_보고한다()
+        {
+            var json = StreamStartJson(FirstStreamId).Replace("JPEG_WS", "WEBRTC");
+            host.TryHandleMessage(StreamMessageType.StreamStart, json, 0f);
+            Assert.That(sessions.Created, Is.Empty);
+            Assert.That(signals.LastState(), Is.EqualTo(StreamState.Failed));
+            Assert.That(signals.States[0].Transport, Is.EqualTo("JPEG_WS"));
         }
 
         /// <summary>
@@ -251,7 +254,7 @@ namespace Artel.Tests.Streaming
 
         private static string StreamStartJson(string streamId)
         {
-            return "{\"type\":\"STREAM_START\",\"streamId\":\"" + streamId + "\"," +
+            return "{\"type\":\"STREAM_START\",\"transport\":\"JPEG_WS\",\"streamId\":\"" + streamId + "\"," +
                    "\"iceServers\":[{\"urls\":[\"stun:stun.example.org:19302\"]," +
                    "\"username\":null,\"credential\":null}]," +
                    "\"video\":{\"maxWidth\":1280,\"maxFramerate\":30}," +
@@ -266,18 +269,6 @@ namespace Artel.Tests.Streaming
         private static string StreamStopJson(string streamId)
         {
             return "{\"type\":\"STREAM_STOP\",\"streamId\":\"" + streamId + "\"}";
-        }
-
-        private static string AnswerJson(string streamId)
-        {
-            return "{\"type\":\"WEBRTC_ANSWER\",\"streamId\":\"" + streamId + "\",\"sdp\":\"v=0\"}";
-        }
-
-        private static string IceJson(string streamId)
-        {
-            return "{\"type\":\"WEBRTC_ICE\",\"streamId\":\"" + streamId + "\"," +
-                   "\"candidate\":{\"candidate\":\"candidate:1 1 udp 1 10.0.0.1 5000 typ host\"," +
-                   "\"sdpMid\":\"0\",\"sdpMLineIndex\":0}}";
         }
 
         private sealed class RecordingSignalSender : IStreamSignalSender
@@ -329,8 +320,7 @@ namespace Artel.Tests.Streaming
             public string StreamId { get { return StartMessage.StreamId; } }
             public bool IsStarted { get; private set; }
             public bool IsStopped { get; private set; }
-            public List<string> Answers { get; } = new List<string>();
-            public List<WebRtcIceCandidateDto> Candidates { get; } = new List<WebRtcIceCandidateDto>();
+            public List<StreamFrameAckMessageDto> Acknowledgements { get; } = new List<StreamFrameAckMessageDto>();
 
             public event Action<string, string> StateChanged;
 
@@ -351,14 +341,11 @@ namespace Artel.Tests.Streaming
                 return lease.HasExpired(currentTime);
             }
 
-            public void AcceptAnswer(string sdp)
-            {
-                Answers.Add(sdp);
-            }
+            public void Tick(float currentTime) { }
 
-            public void AcceptIceCandidate(WebRtcIceCandidateDto candidate)
+            public void AcceptFrameAck(StreamFrameAckMessageDto acknowledgement)
             {
-                Candidates.Add(candidate);
+                Acknowledgements.Add(acknowledgement);
             }
 
             public void Stop()

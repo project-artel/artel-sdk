@@ -11,7 +11,7 @@ using Artel.Protocol.Mapping;
 using Artel.Serialization;
 using Artel.Streaming;
 using Artel.Tracking;
-using Unity.WebRTC;
+
 using Artel.Affordances.Scan;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -76,7 +76,7 @@ namespace Artel
         private volatile string transportToken = string.Empty;
         private volatile string transportInstanceId = string.Empty;
         private ArtelStreamHost streamHost;
-        private Coroutine webRtcPump;
+
 
         /// <summary>
         /// What the host game had <c>Application.runInBackground</c> set to before this manager
@@ -329,7 +329,7 @@ namespace Artel
             streamHost = new ArtelStreamHost(
                 jsonCodec,
                 streamSignals,
-                new WebRtcStreamSessionFactory(this, streamSignals));
+                new WebSocketStreamSessionFactory(this, streamSignals));
 
             SdkId = ArtelSdkIdentity.LoadOrCreate();
             GameVersion = Application.version;
@@ -1254,22 +1254,6 @@ namespace Artel
         private void PumpStreaming()
         {
             streamHost.Tick(Time.unscaledTime);
-
-            if (streamHost.HasLiveSession == (webRtcPump != null))
-            {
-                return;
-            }
-
-            if (webRtcPump == null)
-            {
-                // WebRTC.Update drives the plugin's per-frame encode step. It runs only while a
-                // session is live, so a game that merely installs the SDK never pays for it.
-                webRtcPump = StartCoroutine(WebRTC.Update());
-                return;
-            }
-
-            StopCoroutine(webRtcPump);
-            webRtcPump = null;
         }
 
         /// <summary>

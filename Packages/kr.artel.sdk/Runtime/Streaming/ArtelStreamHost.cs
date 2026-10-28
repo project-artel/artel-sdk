@@ -16,9 +16,8 @@ namespace Artel.Streaming
         public const string StreamRenew = "STREAM_RENEW";
         public const string StreamStop = "STREAM_STOP";
         public const string StreamState = "STREAM_STATE";
-        public const string WebRtcOffer = "WEBRTC_OFFER";
-        public const string WebRtcAnswer = "WEBRTC_ANSWER";
-        public const string WebRtcIce = "WEBRTC_ICE";
+        public const string StreamFrameAck = "STREAM_FRAME_ACK";
+        public const string Transport = "JPEG_WS";
     }
 
     internal static class StreamState
@@ -72,12 +71,10 @@ namespace Artel.Streaming
                     StopSession(jsonCodec.Deserialize<StreamStopMessageDto>(json));
                     return true;
 
-                case StreamMessageType.WebRtcAnswer:
-                    AcceptAnswer(jsonCodec.Deserialize<WebRtcAnswerMessageDto>(json));
-                    return true;
-
-                case StreamMessageType.WebRtcIce:
-                    AcceptIceCandidate(jsonCodec.Deserialize<WebRtcIceMessageDto>(json));
+                case StreamMessageType.StreamFrameAck:
+                    var acknowledgement = jsonCodec.Deserialize<StreamFrameAckMessageDto>(json);
+                    if (acknowledgement != null && BelongsToCurrentSession(acknowledgement.StreamId))
+                        session.AcceptFrameAck(acknowledgement);
                     return true;
 
                 default:
@@ -87,6 +84,7 @@ namespace Artel.Streaming
 
         public void Tick(float currentTime)
         {
+            session?.Tick(currentTime);
             if (session == null || !session.HasExpired(currentTime))
             {
                 return;
@@ -94,7 +92,7 @@ namespace Artel.Streaming
 
             // Lease expiry is the ordinary end of a stream, not a fault: the cases it exists for —
             // a closed lid, a killed browser, a dead server — never send STREAM_STOP.
-            Debug.Log("[Artel] Stream lease expired, tearing the peer connection down.");
+            Debug.Log("[Artel] 영상 lease가 만료되어 전송을 종료합니다.");
             EndSession(StreamState.Stopped, null);
         }
 
@@ -123,9 +121,20 @@ namespace Artel.Streaming
             // messages arriving in order.
             EndSession(StreamState.Stopped, null);
 
+            if (start.Transport != StreamMessageType.Transport)
+            {
+                ReportState(start.StreamId, StreamState.Failed, "서버의 JPEG_WS 영상 전송 지원이 필요합니다.");
+                return;
+            }
+
             session = sessionFactory.Create(start);
             session.StateChanged += OnSessionStateChanged;
-            session.Start(currentTime);
+            try { session.Start(currentTime); }
+            catch (Exception error)
+            {
+                ReportState(start.StreamId, StreamState.Failed, "영상 capture 시작 실패: " + error.Message);
+                DisposeSession();
+            }
         }
 
         private void RenewSession(StreamRenewMessageDto renew, float currentTime)
@@ -148,31 +157,8 @@ namespace Artel.Streaming
             EndSession(StreamState.Stopped, null);
         }
 
-        private void AcceptAnswer(WebRtcAnswerMessageDto answer)
-        {
-            if (answer == null || !BelongsToCurrentSession(answer.StreamId))
-            {
-                return;
-            }
-
-            session.AcceptAnswer(answer.Sdp);
-        }
-
-        private void AcceptIceCandidate(WebRtcIceMessageDto ice)
-        {
-            if (ice == null || !BelongsToCurrentSession(ice.StreamId))
-            {
-                return;
-            }
-
-            session.AcceptIceCandidate(ice.Candidate);
-        }
-
         /// <summary>
-        /// Signalling for a session that has already ended is dropped. Under the takeover policy
-        /// the displaced viewer's last ICE candidates are still in flight while the replacement is
-        /// negotiating, so this overlap is the normal case rather than a rare one, and applying
-        /// one of those candidates corrupts the new negotiation.
+        /// 이전 session의 늦은 ACK나 STOP이 새 session을 바꾸지 않도록 streamId를 확인한다.
         /// </summary>
         private bool BelongsToCurrentSession(string streamId)
         {
@@ -193,8 +179,7 @@ namespace Artel.Streaming
                 return;
             }
 
-            // A failed peer still holds a RenderTexture and a capture loop, and nothing else will
-            // come to stop it: the viewer keeps renewing a lease against a peer carrying no media.
+            // 실패한 session이 texture와 capture loop를 계속 보유하지 않게 한다.
             DisposeSession();
         }
 
@@ -228,6 +213,7 @@ namespace Artel.Streaming
                 Type = StreamMessageType.StreamState,
                 StreamId = streamId,
                 State = state,
+                Transport = StreamMessageType.Transport,
                 Error = error
             });
         }
