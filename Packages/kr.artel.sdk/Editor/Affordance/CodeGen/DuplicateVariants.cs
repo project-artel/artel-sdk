@@ -67,6 +67,13 @@ namespace Artel.Affordances.CodeGen
         {
             var key = new StringBuilder(256);
 
+            // inspector 에서 부를 수 있는 진입점은 버튼에 묶인다. 그 기록이 다른 진입점의 기록 밑 alsoReachedBy 로 들어가면
+            // 소비자가 버튼을 다른 진입점의 callPath 와 조건에 잇게 되므로, 진입점까지 같을 때만 접는다(ARTEL-1229).
+            if (variant.TriggerKind == "unity-event")
+            {
+                key.Append(variant.EntryId).Append(Separator);
+            }
+
             key.Append(variant.Owner?.FullName).Append(Separator)
                 .Append(variant.MethodId).Append(Separator)
                 .Append(variant.RecordKind).Append(Separator)
