@@ -137,7 +137,7 @@ namespace Artel
             }
 
             ActionResultDto result = null;
-            yield return ExecuteCore(actionId, method, parameters, value => result = value);
+            yield return ExecuteCore(actionId, method, parameters, value => result = value, glideMouse);
             if (mouseAction && result != null && result.IsSuccess && NewInputMouse.IsActive)
             {
                 var targetFrame = Time.frameCount + 1;
@@ -163,7 +163,8 @@ namespace Artel
             int actionId,
             string method,
             List<object> parameters,
-            Action<ActionResultDto> completed)
+            Action<ActionResultDto> completed,
+            bool glideMouse)
         {
             switch (method)
             {
