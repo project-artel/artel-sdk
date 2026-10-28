@@ -36,12 +36,22 @@ namespace Artel.Affordances.CodeGen
         internal static string Write(
             Variant variant, Dictionary<string, List<string>> callers, out bool truncated)
         {
+            return Write(variant, callers, variant.Owner?.FullName, out truncated);
+        }
+
+        /// <summary>
+        /// <paramref name="owner"/> 를 <c>owner</c> 로 적는다. 부모 class 의 기록을 그것을 물려받은 자식 type 에도 실을 때
+        /// 쓴다(ARTEL-1228) — 소비자는 <c>owner</c> 로 기록을 scene 의 컴포넌트에 잇는다.
+        /// </summary>
+        internal static string Write(
+            Variant variant, Dictionary<string, List<string>> callers, string owner, out bool truncated)
+        {
             truncated = false;
             var text = new StringBuilder(1024);
             text.Append('{');
             Property(text, "schema", SchemaVersion);
             text.Append(',');
-            Property(text, "owner", variant.Owner?.FullName);
+            Property(text, "owner", owner);
             text.Append(',');
             Property(text, "entry", variant.Entry);
             text.Append(',');

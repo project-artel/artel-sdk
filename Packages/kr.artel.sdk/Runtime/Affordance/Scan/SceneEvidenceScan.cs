@@ -51,6 +51,24 @@ namespace Artel.Affordances.Scan
         /// <summary>씬 하나를 리포트로 읽어 들이고, 전에 그것에 대해 말한 것을 갈아치운다.</summary>
         public static bool Capture(Scene scene)
         {
+            return Capture(scene, null);
+        }
+
+        /// <summary>
+        /// 씬 하나와, 그 씬이 load 되면서 <c>DontDestroyOnLoad</c> 로 내보낸 root 들을 함께 읽는다(ARTEL-1228).
+        /// </summary>
+        /// <remarks>
+        /// <c>Awake</c> 에서 <c>DontDestroyOnLoad</c> 를 부르는 객체는 scan 이 scene 을 읽기 전에 이미 그 scene 을 떠나 있다.
+        /// WordVenture 의 <c>TutorialController</c> prefab 이 그렇다. 그 객체는 MapScene 에 놓여 있지만 scene 의 root 목록에도,
+        /// walk 끝의 <c>persistentObjects</c> 에도 없었다 — walk 이 다음 scene 으로 가기 전에 그것을 이 scene 으로 되돌려
+        /// 함께 내리기 때문이다. 그래서 그 type 의 capability 가 하나도 나오지 않았다.
+        ///
+        /// 처음 생긴 scene 의 이름으로 적고 <c>persistent: true</c> 를 붙인다. 이름을 그 scene 으로 두는 것은 그 객체가
+        /// 거기서 처음 생기고, 플레이어가 그 scene 에 가야 생기기 때문이다. <c>persistent</c> 는 그 뒤 scene 에도 남는다는
+        /// 표시이고, 모르는 소비자는 무시해도 된다.
+        /// </remarks>
+        internal static bool Capture(Scene scene, IList<GameObject> carriedOff)
+        {
             if (!scene.IsValid())
             {
                 return false;
@@ -96,6 +114,8 @@ namespace Artel.Affordances.Scan
                     }
                 }
             }
+
+            objects += DescribeCarriedOff(text, carriedOff, scene.name, gaps, ref first, objects);
 
             AffordanceReport.Merge(scene.name, text.ToString(), gaps);
             return true;
@@ -195,6 +215,56 @@ namespace Artel.Affordances.Scan
             return marked;
         }
 
+        private static int DescribeCarriedOff(
+            StringBuilder text,
+            IList<GameObject> carriedOff,
+            string scene,
+            List<string> gaps,
+            ref bool first,
+            int objects)
+        {
+            if (carriedOff == null)
+            {
+                return 0;
+            }
+
+            var written = 0;
+
+            foreach (var root in carriedOff)
+            {
+                if (root == null)
+                {
+                    continue;
+                }
+
+                // selector 는 객체가 실제로 사는 scene 의 root 순서로 만든다. 실행 중에 그 객체는 DontDestroyOnLoad scene 에
+                // 있고, 조준은 거기서 찾는다.
+                var rootIndex = Array.IndexOf(root.scene.GetRootGameObjects(), root);
+                var instrumented = new Dictionary<Transform, bool>();
+
+                foreach (var transform in root.GetComponentsInChildren<Transform>(true))
+                {
+                    if (objects + written >= MaxObjects)
+                    {
+                        gaps.Add("object-limit");
+                        return written;
+                    }
+
+                    if (Instrumented(transform, instrumented))
+                    {
+                        continue;
+                    }
+
+                    if (Describe(text, transform.gameObject, scene, rootIndex, gaps, ref first, true))
+                    {
+                        written++;
+                    }
+                }
+            }
+
+            return written;
+        }
+
         /// <summary>객체 하나를 쓰고, 쓸 값이 있었는지 말한다.</summary>
         private static bool Describe(
             StringBuilder text,
@@ -202,7 +272,8 @@ namespace Artel.Affordances.Scan
             string scene,
             int rootIndex,
             List<string> gaps,
-            ref bool first)
+            ref bool first,
+            bool persistent = false)
         {
             Component[] components;
 
@@ -267,6 +338,12 @@ namespace Artel.Affordances.Scan
             Json.Property(text, "scene", scene);
             text.Append(',');
             Json.Property(text, "active", subject.activeInHierarchy);
+
+            if (persistent)
+            {
+                text.Append(',');
+                Json.Property(text, "persistent", true);
+            }
 
             var seen = new Showing();
             Gather(subject.transform, 0, seen, false);

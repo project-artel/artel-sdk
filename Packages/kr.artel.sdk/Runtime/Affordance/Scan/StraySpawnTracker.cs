@@ -42,6 +42,36 @@ namespace Artel.Affordances.Scan
         /// 돌지 않았다는 뜻일 수도 있는데 개수만으로는 그 둘이 구분되지 않는다. 어느 오브젝트가
         /// 죽었는지는 게임 저자가 미아와 제 것을 가릴 유일한 근거이기도 하다.
         /// </remarks>
+        /// <summary>
+        /// <see cref="Capture"/> 뒤에 <paramref name="visited"/> 밖에 새로 생긴 root 들. 옮기지 않고 돌려주기만 한다.
+        /// </summary>
+        /// <remarks>
+        /// 방문한 scene 이 <c>DontDestroyOnLoad</c> 로 내보낸 객체를 scan 이 그 scene 의 것으로 읽게 하려고 쓴다(ARTEL-1228).
+        /// <see cref="MoveInto"/> 와 같은 규칙으로 고른다: 숨은 root 는 도구의 것이라 빼고, 이미 있던 root 도 뺀다.
+        /// </remarks>
+        public List<GameObject> Strays(Scene visited)
+        {
+            var found = new List<GameObject>();
+
+            foreach (var scene in LoadedScenes())
+            {
+                if (scene == visited)
+                {
+                    continue;
+                }
+
+                foreach (var root in scene.GetRootGameObjects())
+                {
+                    if (!preexisting.Contains(ObjectIds.KeyOf(root)) && root.hideFlags == HideFlags.None)
+                    {
+                        found.Add(root);
+                    }
+                }
+            }
+
+            return found;
+        }
+
         public List<string> MoveInto(Scene doomed)
         {
             var moved = new List<string>();

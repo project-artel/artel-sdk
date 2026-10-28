@@ -224,7 +224,7 @@ namespace Artel.Affordances.Scan
                 yield break;
             }
 
-            SceneEvidenceScan.Capture(scene);
+            SceneEvidenceScan.Capture(scene, strays.Strays(scene));
 
             var afterScene = SceneWalkHooks.OnSceneRead(scene.name);
 
