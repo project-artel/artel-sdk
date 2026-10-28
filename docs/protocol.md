@@ -107,7 +107,7 @@ sequenceDiagram
 | key | 읽는 것 | 안의 키 |
 | --- | --- | --- |
 | `ui` | uGUI(이름으로 맞춤, 참조 없음) | `interactable`(Selectable) · `isOn`(Toggle) · `value`(Slider·Scrollbar·Dropdown·TMP_Dropdown) · `fill`·`sprite`(Image) · `alpha`·`groupInteractable`·`blocksRaycasts`(CanvasGroup) |
-| `engine` | 엔진 컴포넌트 | `anim`{`stateHash`, `state`?}(Animator, layer 0) · `audio`{`playing`, `clip`}(AudioSource) · `particles`{`playing`}(ParticleSystem) · `sprite`{`name`, `alpha`, `enabled`}(SpriteRenderer) · `renderer`{`enabled`} |
+| `engine` | 엔진 컴포넌트 | `anim`{`stateHash`, `state`?}(Animator, layer 0) · `audio`{`playing`, `clip`}(AudioSource) · `particles`{`playing`}(ParticleSystem) · `sprite`{`alpha`, `enabled`}(SpriteRenderer. 스프라이트 이름은 싣지 않는다 — 프레임 애니메이션이 매 tick 바꾼다) · `renderer`{`enabled`} |
 
 연속값은 셋째 자리에서 끊고(`value`·`fill`·`alpha`), `normalizedTime` 처럼 매 프레임 바뀌는 것은 싣지 않는다. `Selectable`·`Animator`·`AudioSource`·`ParticleSystem` 을 가진 객체는 holders 상한 안에서 순회에 든다. `Renderer` 만으로는 들지 않는다.
 

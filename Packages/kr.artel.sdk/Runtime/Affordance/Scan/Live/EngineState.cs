@@ -103,10 +103,11 @@ namespace Artel.Affordances.Live
                         continue;
 
                     case SpriteRenderer sprite:
+                        // 어느 스프라이트인지는 싣지 않는다. 프레임 애니메이션은 매 tick 다른 스프라이트를 쥐고, 그 이름 하나가
+                        // 모든 판독을 변화로 만들었다 — WordVenture 타이틀의 배경 하나가 14초에 120 판독을 내보냈다. 참조된
+                        // 스프라이트는 `Held` 가 여전히 이름을 댄다.
                         Key(ref text, "sprite");
-                        text.Append('{');
-                        Json.Property(text, "name", sprite.sprite == null ? null : sprite.sprite.name);
-                        text.Append(",\"alpha\":");
+                        text.Append("{\"alpha\":");
                         UiState.Value(text, (float)Math.Round(sprite.color.a, 2));
                         text.Append(",\"enabled\":").Append(sprite.enabled ? "true" : "false");
                         text.Append('}');

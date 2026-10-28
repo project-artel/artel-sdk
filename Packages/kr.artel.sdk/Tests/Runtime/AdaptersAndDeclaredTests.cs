@@ -102,7 +102,7 @@ namespace Artel.Tests
             puppet.AddComponent<Animator>();
 
             Assert.That(EngineState.Of(speaker), Is.EqualTo(",\"engine\":{\"audio\":{\"playing\":false,\"clip\":null}}"));
-            Assert.That(EngineState.Of(sprite), Does.Contain("\"sprite\":{\"name\":null,\"alpha\":0.5,\"enabled\":true}"));
+            Assert.That(EngineState.Of(sprite), Does.Contain("\"sprite\":{\"alpha\":0.5,\"enabled\":true}"));
             Assert.That(EngineState.Of(puppet), Does.Contain("\"anim\":{"));
             Assert.That(EngineState.CanCarry(speaker), Is.True);
             Assert.That(EngineState.CanCarry(sprite), Is.False, "Renderer 만으로는 순회에 안 든다. 배경 전부가 그것이다.");
