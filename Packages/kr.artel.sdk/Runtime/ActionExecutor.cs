@@ -152,7 +152,6 @@ namespace Artel
                     }
                     yield return null;
                 }
-                // 시연 pointer는 native 위치 반영 뒤 ACK한다. 추가 frame을 기다리면 매 frame 들어오는 이동이 쌓인다.
                 // 클릭 결과와 일반 QA는 EventSystem.Update까지 기다린다.
                 if (method != "move_mouse" || glideMouse) yield return null;
                 if (method == "mouse_down") result.ReturnValue = PressOutcome(pointerEvents.LastPressReceiver);

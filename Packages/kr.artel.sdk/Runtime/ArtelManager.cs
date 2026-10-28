@@ -90,13 +90,6 @@ namespace Artel
         private long nextMessageId = 1;
         private readonly Queue<ArtelRequestDto> actionRequests = new Queue<ArtelRequestDto>();
         private bool processingActions;
-        private readonly DemonstrationLease demonstrationLease = new DemonstrationLease(
-            () => System.Diagnostics.Stopwatch.GetTimestamp() / (double)System.Diagnostics.Stopwatch.Frequency);
-        private long observedConnectionEpoch;
-        private bool observedConnection;
-        private long demonstrationExecutionEpoch;
-        private bool processingDemonstration;
-        private bool demonstrationOwnsReadings;
 
         /// <summary>False on a duplicate that Awake destroyed before it built anything.</summary>
         private bool ownsRuntime;
@@ -404,7 +397,6 @@ namespace Artel
             using (ArtelProfilerMarkers.ManagerUpdate.Auto())
             {
                 RecordFrameTime();
-                PumpDemonstrationControl();
 
                 // Before AdvanceFrame, so the frame the person asks for the pointer is already
                 // theirs.
@@ -643,13 +635,9 @@ namespace Artel
             // not leave the game holding a button nobody will ever send the release for.
             ReleaseAgentInput();
 
-            demonstrationLease.Invalidate();
-            demonstrationExecutionEpoch++;
-
             // 게임 읽기가 그것을 청한 연결보다 오래 사는 것이 이 짝짓기가 피하려고 존재하는 값이다 — 아무도 없는데 씬 로드마다
             // 스캔하고 파일이 자라는 것.
             EndDiscovery();
-            demonstrationOwnsReadings = false;
 
             // 소켓이 닫히기 전에 끝내고 보낸다. 아직 열려 있으면 BEHAVIOR_ENDED 가 서버에 닿는다.
             gameFunctions.EndRun("connection closed");
@@ -701,8 +689,7 @@ namespace Artel
             }
 
             ReleaseAgentInput();
-            demonstrationLease.Invalidate();
-            demonstrationExecutionEpoch++;
+
             gameFunctions.EndRun("connection closed");
             SendBehaviorEndedFrames();
             webSocketTransport = null;
@@ -711,7 +698,6 @@ namespace Artel
             // 읽기를 청한 연결이 사라졌으므로 읽기도 함께 간다 — 이 매니저가 스스로 만든 전송에 대해 StopTransport 가 지키는 것과
             // 같은 짝짓기다.
             EndDiscovery();
-            demonstrationOwnsReadings = false;
         }
 
         /// <summary>
@@ -789,12 +775,6 @@ namespace Artel
                     return;
                 }
 
-                if (request.Type == "DEMONSTRATION_CONTROL")
-                {
-                    HandleDemonstrationControl(message);
-                    return;
-                }
-
                 if (request.Type == "RUN_STATUS")
                 {
                     HandleRunStatus(message.Text);
@@ -826,120 +806,8 @@ namespace Artel
             }
         }
 
-        private void PumpDemonstrationControl()
-        {
-            var connected = webSocketTransport != null && webSocketTransport.IsConnected;
-            var connectionEpoch = (webSocketTransport as IArtelConnectionEpoch)?.ConnectionEpoch ?? 0;
-            if (connected != observedConnection || connectionEpoch != observedConnectionEpoch)
-            {
-                var hadDemonstration = demonstrationLease.HasLease || processingDemonstration;
-                demonstrationLease.Invalidate();
-                demonstrationExecutionEpoch++;
-                if (hadDemonstration)
-                {
-                    ReleaseAgentInput();
-                    StopDemonstrationReadings();
-                }
-                observedConnection = connected;
-                observedConnectionEpoch = connectionEpoch;
-            }
-            if (demonstrationLease.Expire())
-            {
-                demonstrationExecutionEpoch++;
-                ReleaseAgentInput();
-                StopDemonstrationReadings();
-            }
-        }
-
-        private void HandleDemonstrationControl(ArtelWebSocketMessage message)
-        {
-            PumpDemonstrationControl();
-            var control = jsonCodec.Deserialize<DemonstrationControlDto>(message.Text);
-            var accepted = control != null &&
-                !(control.Operation == "ACQUIRE" && processingActions && !processingDemonstration) &&
-                demonstrationLease.Apply(control);
-            if (accepted && control.Operation != "RENEW")
-            {
-                demonstrationExecutionEpoch++;
-                ReleaseAgentInput();
-                ArtelInput.PointerHeldForRun = control.Operation == "ACQUIRE";
-                if (control.Operation == "ACQUIRE" && !Reading)
-                {
-                    accepted = StartReadings();
-                    demonstrationOwnsReadings = accepted;
-                    if (!accepted)
-                    {
-                        demonstrationLease.Invalidate();
-                        demonstrationExecutionEpoch++;
-                        ReleaseAgentInput();
-                    }
-                }
-                else if (control.Operation == "RELEASE") StopDemonstrationReadings();
-            }
-            message.Reply(jsonCodec.Serialize(new DemonstrationControlResultDto
-            {
-                SessionId = control?.SessionId,
-                Generation = control?.Generation ?? 0,
-                Operation = control?.Operation,
-                Accepted = accepted
-            }));
-        }
-
-        private void RejectDemonstrationAction(ArtelRequestDto request)
-        {
-            var results = new List<ActionResultDto>();
-            foreach (var action in request.Actions ?? new List<ActionRequestDto>())
-                results.Add(ActionResultDto.Failure(action?.Id ?? 0, "Demonstration control rejected."));
-            if (webSocketTransport == null || !webSocketTransport.IsConnected) return;
-            webSocketTransport.Send(jsonCodec.Serialize(new ActionResultMessage
-            {
-                Type = "ACTION_RESULT", Id = nextMessageId++, RequestId = request.Id,
-                Frame = Time.frameCount, Results = results
-            }));
-        }
-
-        private void StopDemonstrationReadings()
-        {
-            if (!demonstrationOwnsReadings) return;
-            StopReadings();
-            demonstrationOwnsReadings = false;
-        }
-
-        private IEnumerator ExecuteDemonstration(
-            IEnumerator execution, DemonstrationReferenceDto reference, long executionEpoch)
-        {
-            // 중첩 coroutine도 직접 진행해야 만료 뒤 MoveTo/EnterText가 다시 입력을 적용하지 않는다.
-            var stack = new Stack<IEnumerator>();
-            stack.Push(execution);
-            try
-            {
-                while (stack.Count > 0 && executionEpoch == demonstrationExecutionEpoch &&
-                       demonstrationLease.Allows(reference))
-                {
-                    var current = stack.Peek();
-                    if (!current.MoveNext())
-                    {
-                        (stack.Pop() as IDisposable)?.Dispose();
-                        continue;
-                    }
-                    if (current.Current is IEnumerator nested) stack.Push(nested);
-                    else yield return current.Current;
-                }
-            }
-            finally
-            {
-                while (stack.Count > 0) (stack.Pop() as IDisposable)?.Dispose();
-            }
-        }
-
         private void EnqueueAction(ArtelRequestDto request)
         {
-            if (!demonstrationLease.Allows(request.Demonstration) ||
-                (request.Demonstration != null && actionRequests.Count >= 32))
-            {
-                RejectDemonstrationAction(request);
-                return;
-            }
             actionRequests.Enqueue(request);
             if (!processingActions)
             {
@@ -1043,9 +911,6 @@ namespace Artel
         /// </remarks>
         internal void TakePointerBack()
         {
-            demonstrationLease.Invalidate();
-            demonstrationExecutionEpoch++;
-            StopDemonstrationReadings();
             ReleaseAgentInput();
             Debug.Log("[Artel] The person took the pointer back during a run (Ctrl+Shift+M).");
         }
@@ -1056,9 +921,7 @@ namespace Artel
             while (actionRequests.Count > 0)
             {
                 var request = actionRequests.Dequeue();
-                processingDemonstration = request.Demonstration != null;
                 yield return ExecuteActionRequest(request);
-                processingDemonstration = false;
             }
 
             processingActions = false;
@@ -1066,12 +929,6 @@ namespace Artel
 
         private IEnumerator ExecuteActionRequest(ArtelRequestDto request)
         {
-            if (!demonstrationLease.Allows(request.Demonstration))
-            {
-                RejectDemonstrationAction(request);
-                yield break;
-            }
-            var executionEpoch = demonstrationExecutionEpoch;
             var results = new List<ActionResultDto>();
 
             // 배치를 꺼낸 frame. 이 frame 부터 찍힌 예외를 답에 붙인다(ARTEL-1218).
@@ -1079,22 +936,9 @@ namespace Artel
 
             foreach (var action in request.Actions ?? new List<ActionRequestDto>())
             {
-                if (request.Demonstration != null &&
-                    (executionEpoch != demonstrationExecutionEpoch || !demonstrationLease.Allows(request.Demonstration)))
-                {
-                    results.Add(ActionResultDto.Failure(action?.Id ?? 0, "Demonstration control expired."));
-                    continue;
-                }
                 if (action == null)
                 {
                     results.Add(ActionResultDto.Failure(0, "Action item must be an object."));
-                    continue;
-                }
-
-                if (request.Demonstration != null &&
-                    Array.IndexOf(new DemonstrationCapabilitiesDto().Methods, action.Method) < 0)
-                {
-                    results.Add(ActionResultDto.Failure(action.Id, "Unsupported demonstration action."));
                     continue;
                 }
 
@@ -1126,27 +970,11 @@ namespace Artel
                     continue;
                 }
 
-                var parameters = action.Parameters;
-                if (request.Demonstration != null && action.Method == "move_mouse" &&
-                    !DemonstrationPointer.TryResolve(parameters, Screen.width, Screen.height, out parameters))
-                {
-                    results.Add(ActionResultDto.Failure(action.Id, "Demonstration pointer requires normalized coordinates in [0, 1]."));
-                    continue;
-                }
-                var execution = actionExecutor.Execute(
+                yield return actionExecutor.Execute(
                     action.Id,
                     action.Method,
-                    parameters,
-                    result => results.Add(result),
-                    glideMouse: request.Demonstration == null);
-                if (request.Demonstration == null) yield return execution;
-                else
-                {
-                    var beforeCount = results.Count;
-                    yield return ExecuteDemonstration(execution, request.Demonstration, executionEpoch);
-                    if (results.Count == beforeCount)
-                        results.Add(ActionResultDto.Failure(action.Id, "Demonstration control expired."));
-                }
+                    action.Parameters,
+                    result => results.Add(result));
             }
 
             var response = new ActionResultMessage

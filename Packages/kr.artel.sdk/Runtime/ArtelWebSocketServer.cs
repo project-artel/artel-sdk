@@ -21,7 +21,7 @@ namespace Artel
         internal Func<bool> IsCurrent { get; private set; }
     }
 
-    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport, IArtelConnectionEpoch, IArtelMediaWebSocketTransport
+    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport, IArtelMediaWebSocketTransport
     {
         private readonly string bindAddress;
         private readonly int port;
@@ -140,8 +140,6 @@ namespace Artel
                         currentConnectionId = connectionId;
                         System.Threading.Interlocked.Increment(ref connectionEpoch);
                     }
-                    send(Newtonsoft.Json.JsonConvert.SerializeObject(
-                        new Artel.Protocol.Dto.DemonstrationCapabilitiesDto()));
                 },
                 connectionId =>
                 {

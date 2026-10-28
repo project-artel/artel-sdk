@@ -1,5 +1,7 @@
 # SDK PR 9개 통합 기록
 
+2026-10-28 후속 변경으로 TC 시연 기능을 제거했다. 아래 원본 PR 설명은 변경 이력이며 현재 시연 지원을 뜻하지 않는다. 현재 동작과 삭제 범위는 [TC 시연 기능 제거](remove-tc-demonstration.md)를 따른다.
+
 2026-10-28 `dev-yunseong`의 아래 PR만 `codex/pr-bundle-20261028`에 통합했다. `origin/develop`의 `b3c3eb225de49c8b736670f6111d1c6de5e650ce`에서 시작했고, 원본 branch와 commit author를 유지한 merge를 사용했다. 원본 branch 삭제·force push·develop merge는 하지 않는다.
 
 ## 원본 PR과 commit 포함 확인

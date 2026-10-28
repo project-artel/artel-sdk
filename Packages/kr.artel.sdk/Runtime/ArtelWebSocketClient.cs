@@ -7,7 +7,7 @@ using WebSocketSharp;
 
 namespace Artel
 {
-    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelConnectionEpoch, IArtelMediaWebSocketTransport
+    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelMediaWebSocketTransport
     {
         private const string SdkWebSocketPath = "/ws/sdk";
         private long connectionEpoch;
@@ -195,8 +195,6 @@ namespace Artel
                 Interlocked.Increment(ref connectionEpoch);
                 phase = ArtelTransportPhase.Connected;
                 StartKeepAlive();
-                socket.Send(Newtonsoft.Json.JsonConvert.SerializeObject(
-                    new Artel.Protocol.Dto.DemonstrationCapabilitiesDto()));
             }
 
             UnityEngine.Debug.Log("[Artel] WebSocket connected.");
