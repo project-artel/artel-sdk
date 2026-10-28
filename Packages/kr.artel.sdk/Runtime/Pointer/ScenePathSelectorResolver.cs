@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using Artel.Affordances.Scan;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -30,6 +32,14 @@ namespace Artel.Pointer
     {
         private const string TruncatedPrefix = ".../";
 
+        /// <summary>
+        /// selector 를 지금 로드된 씬에서 객체로. 활성 씬 → <c>DontDestroyOnLoad</c> → 나머지 로드된 씬 순.
+        /// </summary>
+        /// <remarks>
+        /// selector 의 root 번호는 그 객체가 사는 씬의 root 순서다. 활성 씬만 보면 <c>DontDestroyOnLoad</c> 에 사는 객체 —
+        /// WordVenture 의 튜토리얼 오버레이가 그렇다 — 는 pulse 가 보고하는데 액션은 "없다" 고 답했다(ARTEL-1287).
+        /// 같은 selector 가 두 씬에 있으면 활성 씬이 이긴다. 전과 같은 답이다.
+        /// </remarks>
         internal static bool TryResolve(string selector, out Transform transform, out string error)
         {
             transform = null;
@@ -48,16 +58,72 @@ namespace Artel.Pointer
 
             var segments = selector.Split('/');
 
-            if (!TryParseSegment(segments[0], out var rootName, out var rootIndex))
+            foreach (var scene in Candidates())
             {
-                error = "Nothing at selector: " + selector;
+                if (TryResolveIn(scene, segments, out transform))
+                {
+                    error = null;
+                    return true;
+                }
+            }
+
+            error = "Nothing at selector: " + selector;
+            return false;
+        }
+
+        private static IEnumerable<Scene> Candidates()
+        {
+            var active = SceneManager.GetActiveScene();
+            yield return active;
+
+            var persistent = PersistentScene();
+
+            if (persistent.IsValid() && persistent != active)
+            {
+                yield return persistent;
+            }
+
+            for (var at = 0; at < SceneManager.sceneCount; at++)
+            {
+                var scene = SceneManager.GetSceneAt(at);
+
+                if (scene.isLoaded && scene != active && scene != persistent)
+                {
+                    yield return scene;
+                }
+            }
+        }
+
+        private static Scene _persistent;
+
+        /// <summary>한 번 받아 둔다. 씬 핸들은 프로세스가 사는 동안 그대로이고, 받는 길이 객체 하나를 만들어 옮기는 것이다.</summary>
+        private static Scene PersistentScene()
+        {
+            if (!_persistent.IsValid())
+            {
+                _persistent = StraySpawnTracker.DontDestroyOnLoadScene();
+            }
+
+            return _persistent;
+        }
+
+        private static bool TryResolveIn(Scene scene, string[] segments, out Transform transform)
+        {
+            transform = null;
+
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
                 return false;
             }
 
-            var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+            if (!TryParseSegment(segments[0], out var rootName, out var rootIndex))
+            {
+                return false;
+            }
+
+            var roots = scene.GetRootGameObjects();
             if (rootIndex < 0 || rootIndex >= roots.Length || roots[rootIndex].name != rootName)
             {
-                error = "Nothing at selector: " + selector;
                 return false;
             }
 
@@ -66,13 +132,11 @@ namespace Artel.Pointer
             {
                 if (!TryParseSegment(segments[i], out var name, out var siblingIndex))
                 {
-                    error = "Nothing at selector: " + selector;
                     return false;
                 }
 
                 if (siblingIndex < 0 || siblingIndex >= current.childCount)
                 {
-                    error = "Nothing at selector: " + selector;
                     return false;
                 }
 
@@ -82,7 +146,6 @@ namespace Artel.Pointer
                 // 것이므로, 조용히 넘어가지 않고 여기서 거절한다.
                 if (child.name != name)
                 {
-                    error = "Nothing at selector: " + selector;
                     return false;
                 }
 
@@ -90,14 +153,9 @@ namespace Artel.Pointer
             }
 
             transform = current;
-            error = null;
             return true;
         }
 
-        /// <summary>
-        /// 한 세그먼트 <c>name[index]</c> 를 이름과 인덱스로 가른다. 이름 자체가 <c>[</c> 나 <c>]</c> 를
-        /// 담을 수 있으므로, 인덱스는 세그먼트의 마지막 <c>[...]</c> 에서만 읽는다.
-        /// </summary>
         private static bool TryParseSegment(string segment, out string name, out int index)
         {
             name = null;
