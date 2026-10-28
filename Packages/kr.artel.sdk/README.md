@@ -625,6 +625,15 @@ what uGUI accepts (`interactable`, `isOn`, slider and dropdown `value`, `fill`,
 playing, whether a `SpriteRenderer` is enabled and how opaque). `flush` reads and sends one
 reading right now, for a check that cannot wait for the next tick.
 
+What happened, as opposed to what is, rides `events` on the same reading: the
+engine calls the game made since the previous reading — a sound played, an
+animator trigger set, a prefab instantiated or destroyed, a scene load, a
+`PlayerPrefs` write. These are caught at the call site: the same IL
+post-processor that redirects `Input` redirects those calls to `ArtelEngine`,
+which makes the original call and records it. Repeats within one reading fold
+into a `count`, so an `Update` that sets an animator float every frame is one
+line, not sixty.
+
 What a pulse carries is decided by the evidence document baked at build time —
 the members the analysed conditions and effects name — plus the objects that
 carry text on screen. Each reading names the `instanceId` of the object it came
@@ -671,7 +680,8 @@ Current limits:
 
 - `[ArtelAction]` supports synchronous instance methods on `Component` classes.
 - Async methods, iterators, and coroutines are rejected during compilation.
-- Method parameters are not captured.
+- Method parameters are captured as `args`: boxed at entry, Unity objects by name,
+  anything Newtonsoft cannot serialize by type name; `ref`/`out` slots are null.
 - Return values must be serializable by Newtonsoft.Json.
 - Each component keeps at most 256 pending actions; overflow drops the oldest.
 

@@ -28,6 +28,13 @@ namespace Artel.Tracking
 
         public void Record(string tag, string name, bool success, object returnValue, string errorType, string errorMessage)
         {
+            Record(tag, name, success, returnValue, errorType, errorMessage, null);
+        }
+
+        public void Record(
+            string tag, string name, bool success, object returnValue, string errorType, string errorMessage,
+            object[] arguments)
+        {
             lock (gate)
             {
                 if (actions.Count == capacity)
@@ -36,7 +43,8 @@ namespace Artel.Tracking
                 }
 
                 actions.Add(new ActionInvocation(
-                    nextSequence++, tag, name, success, returnValue, errorType, errorMessage, DateTimeOffset.UtcNow));
+                    nextSequence++, tag, name, success, returnValue, errorType, errorMessage, DateTimeOffset.UtcNow,
+                    arguments));
             }
         }
 

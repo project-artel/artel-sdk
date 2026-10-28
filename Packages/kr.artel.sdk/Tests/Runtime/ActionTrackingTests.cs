@@ -38,11 +38,14 @@ namespace Artel.Tests.Tracking
             Assert.That(snapshot.Actions[0].Success, Is.True);
             Assert.That(snapshot.Actions[0].ReturnValue, Is.EqualTo(6));
             Assert.That(snapshot.Actions[0].Timestamp, Is.Not.EqualTo(default(DateTimeOffset)));
+            // 인자도 기록한다(ARTEL-1283). 진입에서 박싱한 값이다.
+            Assert.That(snapshot.Actions[0].Arguments, Is.EqualTo(new object[] { 3 }));
 
             fixture.Ping();
             var voidAction = ActionSource.ArtelActionBuffer.Snapshot().Actions[1];
             Assert.That(voidAction.Tag, Is.EqualTo("ping"));
             Assert.That(voidAction.ReturnValue, Is.Null);
+            Assert.That(voidAction.Arguments, Is.Empty);
         }
 
         [Test]

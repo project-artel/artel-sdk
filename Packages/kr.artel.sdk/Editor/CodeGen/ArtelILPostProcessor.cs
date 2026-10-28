@@ -66,19 +66,34 @@ namespace Artel.CodeGen
 
                     var inputWeaver = inputAttempt.Weaver;
 
+                    // 엔진 호출 훅(ARTEL-1283). 입력과 같은 pass 다 — 세 번째 ILPP 를 만들면 순서가 문제가 된다.
+                    var engineAttempt = EngineCallWeaver.TryCreate(assembly.MainModule, compiledAssembly.References);
+
+                    if (engineAttempt.Refusal != null)
+                    {
+                        diagnostics.Add(new DiagnosticMessage
+                        {
+                            DiagnosticType = DiagnosticType.Warning,
+                            MessageData = "[Artel] " + compiledAssembly.Name + ": " + engineAttempt.Refusal
+                        });
+                    }
+
+                    var engineWeaver = engineAttempt.Weaver;
+
                     // cheat 와 behavior 등록은 에디터와 DEVELOPMENT_BUILD 에서만 만든다. 출시 빌드에서는 attribute 가 아무 일도
                     // 하지 않고, 런타임의 네 action 이 "not available in this build" 로 거절한다.
                     var gameFunctionWeaver = IsDiscoveryBuild(compiledAssembly)
                         ? GameFunctionWeaver.TryCreate(assembly.MainModule)
                         : null;
 
-                    if (actionWeaver == null && inputWeaver == null && gameFunctionWeaver == null)
+                    if (actionWeaver == null && inputWeaver == null && gameFunctionWeaver == null && engineWeaver == null)
                     {
                         return new ILPostProcessResult(null, diagnostics);
                     }
 
                     var changed = actionWeaver != null && actionWeaver.Process();
                     changed |= inputWeaver != null && inputWeaver.Process();
+                    changed |= engineWeaver != null && engineWeaver.Process();
                     changed |= gameFunctionWeaver != null && gameFunctionWeaver.Process();
 
                     if (gameFunctionWeaver != null)
