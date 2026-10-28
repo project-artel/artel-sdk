@@ -50,7 +50,7 @@ sequenceDiagram
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
 | `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
-| `flush` | `[]` | 지금 한 번 읽어 바로 `PULSE` 로 보낸다. 판정 직전의 신선도용. 돌고 있지 않으면 실패 |
+| `flush` | `[]` | 지금 한 번 읽어 움직인 것이 있으면 바로 `PULSE` 로 보낸다. 아무것도 안 움직였으면 `PULSE` 는 없고 `ACTION_RESULT.frame` 이 "이 frame 까지 변화 없음" 의 증거다. 돌고 있지 않으면 실패 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
 | `invoke_cheat` | `[{ "name", "args"?, "target"? }]` | 게임이 등록한 cheat. 출시 빌드에서는 거절. 아래 |
