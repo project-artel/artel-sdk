@@ -623,7 +623,16 @@ what uGUI accepts (`interactable`, `isOn`, slider and dropdown `value`, `fill`,
 `CanvasGroup` alpha and flags) and `engine` carries what the engine is doing
 (the current `Animator` state, whether an `AudioSource` or `ParticleSystem` is
 playing, whether a `SpriteRenderer` is enabled and how opaque). `flush` reads and sends one
-reading right now, for a check that cannot wait for the next tick.
+reading right now, for a check that cannot wait for the next tick. A UI Toolkit
+screen has no object per element, so the object carrying the `UIDocument` lists
+its named and textual elements under `uitk`.
+
+`wait_until` waits inside the game: `["Game.Player::hp <= 0", 5]` yields every
+frame until the condition holds or the seconds run out, and answers with
+`{held, waitedFrames, timedOut}`. Conditions are `exists(selector)`,
+`active(selector)`, `Type::member op literal`, `and`, `or` and parentheses; no
+expressions. A timeout is a value, not a failure — only an unreadable condition
+fails the action.
 
 What happened, as opposed to what is, rides `events` on the same reading: the
 engine calls the game made since the previous reading — a sound played, an
