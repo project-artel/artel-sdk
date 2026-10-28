@@ -91,7 +91,9 @@ sequenceDiagram
 ### watch · read_member 의 이름과 returnValue
 
 - 이름은 `Type::member` 또는 `Type::member.path.to.value`. `Type` 은 전체 이름이거나, 게임 타입 가운데 하나뿐이면 짧은 이름.
-  `member` 는 필드·자동 프로퍼티·프로퍼티(getter 를 돈다). 경로는 필드가 쥔 것에서 필드·프로퍼티로 걸어간다 — `Items.Count`
+  `member` 는 필드·자동 프로퍼티. 그 밖의 프로퍼티는 getter 가 코드를 도므로 `[ArtelObserve]` 를 붙인 것만 받고, 아니면
+  `property runs code: mark it [ArtelObserve] or name the field` 로 거절한다(`read_member`·`wait_until` 도 같은 해석). 경로는 필드가 쥔
+  것에서 필드·프로퍼티로 걸어간다 — `Items.Count`
 - 어디서 읽히는지는 `kind` 로 답한다: `static`, `component`(씬 걷기가 매 판독 만남), `object`(ScriptableObject 는 Unity 에
   묻고, 그 밖의 객체는 static 필드와 씬 위 컴포넌트에서 참조를 따라가 찾음. 깊이 4, 컬렉션 앞 64 개, 50 ms)
 - `watch` 의 `returnValue`: `{ resolved: [{ name, kind, holders, declaring, member }], unresolvable: [{ name, reason }], walk: { visited, ms, exhausted } }`.
