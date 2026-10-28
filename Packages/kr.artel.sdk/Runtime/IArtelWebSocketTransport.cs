@@ -2,6 +2,11 @@ using System;
 
 namespace Artel
 {
+    internal interface IArtelConnectionEpoch
+    {
+        long ConnectionEpoch { get; }
+    }
+
     internal interface IArtelWebSocketTransport : IDisposable
     {
         bool IsConnected { get; }

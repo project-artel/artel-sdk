@@ -18,6 +18,9 @@ namespace Artel.Protocol.Dto
         [JsonProperty("id")]
         public long Id { get; set; }
 
+        [JsonProperty("demonstration", NullValueHandling = NullValueHandling.Ignore)]
+        public DemonstrationReferenceDto Demonstration { get; set; }
+
         [JsonProperty("method")]
         public string Method { get; set; }
 
