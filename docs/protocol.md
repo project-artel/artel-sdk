@@ -198,6 +198,7 @@ behavior 가 끝나는 이유.
   가만히 있어도 behavior 가 도는 동안은 1 초에 한 번 `pulse` 를 보낸다
 - `PULSE.audio`: 재생 중인 `AudioSource` 수와 직전 `pulse` 이후 재생을 시작한 것. 아래 「소리」
 - `PULSE.errors`: 직전 `pulse` 이후 새로 생기거나 `count` 가 늘어난 예외·Error 로그 묶음. 아래 「예외와 Error 로그」
+- `PULSE.events`: 직전 `pulse` 이후 게임이 엔진에 건 호출들. 아래 「엔진 호출」. `schema` 3 부터
 - `PERFORMANCE` 가 나르는 지표군 이름은 서버가 정한 계약
 - 지금 `MetricGroupNames.Collected()` 가 선언하는 것은 `frameTiming` 과 `editorRender` 둘
 
@@ -229,6 +230,31 @@ behavior 가 끝나는 이유.
 - 전량 `pulse` 에도 이미 보낸 묶음을 다시 싣지 않는다. 예외는 상태가 아니라 일어난 일이라서다. 그래서 전달에 실패한
   `pulse` 에 실렸던 묶음은 다시 찍히기 전까지 다시 오지 않는다
 - live readings 가 꺼져 있는 동안 찍힌 묶음은 쌓여 있다가 켜진 뒤 첫 `pulse` 부터 나간다
+
+### 엔진 호출
+
+소리 재생, 애니메이션 트리거, 스폰·파괴, 씬 로드, 저장은 상태가 아니라 호출이라 `pulse` 가 보지 못했다. 빌드 때 `EngineCallWeaver` 가 게임
+어셈블리의 호출부를 `Artel.ArtelEngine` 프록시로 바꾸고(입력 위빙과 같은 pass), 프록시가 원래 호출을 그대로 한 뒤 적는다. 실을 것이 있으면
+감시 대상 값이 가만히 있어도 `pulse` 가 나간다. 에디터와 DEVELOPMENT_BUILD 에서만 실린다(다른 attachment 와 같다).
+
+항목 하나: `{ kind, target, detail, value, frame, count }`
+
+| key | 뜻 |
+| --- | --- |
+| `kind` | `audio.play` · `audio.stop` · `anim.trigger` · `anim.bool` · `anim.int` · `anim.float` · `anim.play` · `spawn` · `destroy` · `scene.load` · `prefs.set` · `prefs.delete` · `prefs.save` · `prefs.delete_all` |
+| `target` | 호출을 받은 컴포넌트가 사는 객체의 path. static 호출(`scene.load`·`prefs.*`·`PlayClipAtPoint`)은 null. `spawn` 은 만들어진 객체 |
+| `detail` | clip·trigger·parameter 이름, state 이름, prefab 이름, 씬 이름(`#index` 는 build index), prefs key |
+| `value` | 인자가 있으면 그것. `anim.bool`·`anim.int`·`anim.float`·`prefs.set` 의 값, `scene.load` 의 `LoadSceneMode`, `destroy` 의 지연 초 |
+| `frame` | 그 사건이 한 판독 안에서 처음 일어난 frame |
+| `count` | 한 판독 안에서 `kind`·`target`·`detail`·`value` 가 같은 사건의 수. `Update` 의 `SetFloat` 반복은 하나로 접힌다 |
+
+판독 하나에 50 개. 넘친 수는 `eventsDropped` 로 적는다. 잡는 호출: `AudioSource.Play/PlayDelayed/PlayOneShot/Stop`, `AudioSource.PlayClipAtPoint`,
+`Animator.SetTrigger/SetBool/SetInteger/SetFloat/Play/CrossFade`, `Object.Instantiate`(generic 포함)·`Destroy`, `SceneManager.LoadScene/LoadSceneAsync`,
+`PlayerPrefs.SetInt/SetFloat/SetString/DeleteKey/Save/DeleteAll`. 프록시에 없는 overload 는 바뀌지 않는다. `ParticleSystem` 은 모듈 참조를
+더하지 않기 위해 뺐다 — 상태는 `engine.particles` 로 읽힌다.
+
+`[ArtelAction]` 메서드의 기록(`GAME_STATE` 의 `actions[]`)에는 `args` 가 붙는다. 진입에서 박싱한 인자들이고, Unity 객체는 이름, 직렬화 못 하는
+것은 타입 이름이다. `ref`·`out` 자리는 null.
 
 ### 소리
 

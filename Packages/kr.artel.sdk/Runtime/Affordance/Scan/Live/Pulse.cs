@@ -52,7 +52,11 @@ namespace Artel.Affordances.Live
         /// 말하는 플래그를 더는 나르지 않는다 — 같은 사실이 두 자리가 아니라 한 자리에 있다. 한 모양에 대고 쓰인 독자는 다른
         /// 모양을 읽을 수 없으므로, 그것을 발견하도록 두는 대신 번호가 움직인다.
         /// </remarks>
-        internal const int SchemaVersion = 2;
+        /// <remarks>
+        /// 셋. 문서가 <c>events</c> 를 나르기 때문이다 — 직전 판독 이후 게임이 엔진에 건 호출들. 모양이 바뀐 것이 아니라 더해진
+        /// 것이고 옛 독자는 모르는 키를 지나가지만, 사건을 읽는 독자가 "없는 것" 과 "안 보내는 SDK" 를 가르려면 번호가 필요하다.
+        /// </remarks>
+        internal const int SchemaVersion = 3;
 
         /// <summary>판독 사이의 초.</summary>
         /// <remarks>

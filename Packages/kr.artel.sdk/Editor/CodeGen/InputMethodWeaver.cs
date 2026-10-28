@@ -155,7 +155,7 @@ namespace Artel.CodeGen
         /// 아무것도 그것을 가리키지 않았을 때에도 이 패키지가 만드는 어셈블리는 게임이 대고
         /// 컴파일된 것들 옆에 있다.
         /// </remarks>
-        private static string FindRuntimeAssembly(string[] references)
+        internal static string FindRuntimeAssembly(string[] references)
         {
             if (references == null)
             {
