@@ -832,6 +832,16 @@ namespace Artel.Affordances.Scan
                     {
                         // 걸을 수 없는 애셋 하나가 씬 서술을 멈출 이유는 아니다.
                     }
+
+                    // ScriptableObject 이면 그 값도 읽는다. 상성표나 적 HP 처럼 코드가 아니라 asset 에 든 규칙이다(ARTEL-1226).
+                    try
+                    {
+                        AssetValues.Read(reference.Held);
+                    }
+                    catch (Exception)
+                    {
+                        // 값을 못 읽은 asset 하나가 씬 서술을 멈출 이유는 아니다.
+                    }
                 }
             }
 
