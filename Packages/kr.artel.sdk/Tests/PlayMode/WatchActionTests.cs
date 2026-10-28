@@ -158,6 +158,39 @@ namespace Artel.Tests
                 string.Join("\n", Pulses().Skip(before)));
         }
 
+        [UnityTest]
+        public IEnumerator wait_until_은_값이_바뀌는_프레임에_잡고_시간_초과는_값으로_답한다()
+        {
+            yield return StartManager();
+            fixture = new GameObject("Artel watch fixture");
+            var behaviour = fixture.AddComponent<WatchFixtureBehaviour>();
+
+            transport.Receive(Batch(7, "{\"id\":1,\"method\":\"wait_until\",\"params\":[\"" + Score + " == 5\", 3]}"));
+            yield return null;
+            yield return null;
+            yield return null;
+            behaviour.Score = 5;
+
+            yield return Until(() => transport.Sent.Any(message => Type(message) == "ACTION_RESULT"), 4f);
+
+            var result = JObject.Parse(transport.Sent.First(message => Type(message) == "ACTION_RESULT"))["results"][0];
+
+            Assert.That((bool)result["success"], Is.True, result.ToString());
+            Assert.That((bool)result["returnValue"]["held"], Is.True);
+            Assert.That((bool)result["returnValue"]["timedOut"], Is.False);
+            Assert.That((int)result["returnValue"]["waitedFrames"], Is.InRange(1, 10));
+
+            transport.Sent.Clear();
+            transport.Receive(Batch(8, "{\"id\":1,\"method\":\"wait_until\",\"params\":[\"" + Score + " == 99\", 0.2]}"));
+            yield return Until(() => transport.Sent.Any(message => Type(message) == "ACTION_RESULT"), 4f);
+
+            var late = JObject.Parse(transport.Sent.First(message => Type(message) == "ACTION_RESULT"))["results"][0];
+
+            Assert.That((bool)late["success"], Is.True, "시간 초과는 실패가 아니다.");
+            Assert.That((bool)late["returnValue"]["timedOut"], Is.True);
+            Assert.That((bool)late["returnValue"]["held"], Is.False);
+        }
+
         private List<string> Pulses()
         {
             return transport.Sent.Where(message => Type(message) == "PULSE").ToList();

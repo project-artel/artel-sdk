@@ -29,7 +29,7 @@ sequenceDiagram
 - `ACTION_RESULT` 의 `Frame` 은 배치를 받은 프레임이 아니라 마지막 action 이 끝난 프레임 (ARTEL-620)
 - `RequestId` 로 어느 `ACTION` 에 대한 답인지 알림. `Id` 는 이 메시지 자신의 번호라 그 자리에 못 씀
 
-`ActionExecutor` 가 처리하는 24 개.
+`ActionExecutor` 가 처리하는 25 개.
 
 | method | params | 비고 |
 | --- | --- | --- |
@@ -50,6 +50,7 @@ sequenceDiagram
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
 | `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
+| `wait_until` | `[condition]` · `[condition, timeoutSeconds]` | 조건이 참이 될 때까지 매 프레임 기다린다. 아래. 기본 5초, 최대 60초 |
 | `flush` | `[]` | 지금 한 번 읽어 움직인 것이 있으면 바로 `PULSE` 로 보낸다. 아무것도 안 움직였으면 `PULSE` 는 없고 `ACTION_RESULT.frame` 이 "이 frame 까지 변화 없음" 의 증거다. 돌고 있지 않으면 실패 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
@@ -100,16 +101,29 @@ sequenceDiagram
 - 청한 멤버는 `pulse` 의 `statics` 에 `declaring`·`member` 로 실린다. 쥔 인스턴스가 둘 이상이면 `instance` 번호가 붙고, 지금
   하나도 없으면 `unread: "no-holder"`. 청한 멤버를 쥔 씬 객체는 holders 상한(256) 밖이다
 
-### pulse 의 객체 항목에 실리는 `ui` · `engine`
+### wait_until 의 조건과 returnValue
+
+반응을 게임 안으로 들인다. agent 의 macro `wait_until` 은 새 `pulse` 마다 조건을 다시 읽어 전달 지연(0.1~0.2 초)과 왕복에 묶이는데, 배치 안의
+`[wait_until(X), click(Y)]` 는 네트워크 없이 프레임 단위로 잇는다. 리듬·QTE 처럼 100 ms 안에 눌러야 하는 창이 쓸 자리다.
+
+- 조건은 선언형 소수만. 식은 받지 않는다.
+  - `exists(selector)` · `active(selector)` — selector 는 `pulse`·`GAME_STATE` 가 보고한 그것(`Canvas/Start[0]`). 없으면 거짓
+  - `Type::member op literal` — 이름은 `watch` 와 같은 해석(`Lookup`). `op` 는 `==` `!=` `<` `<=` `>` `>=`. literal 은 수·`true`/`false`·`"글자"`·`null`·따옴표 없는 글자(enum 이름)
+  - `and` · `or` · 괄호. `and` 가 먼저 묶인다
+- `returnValue`: `{ held, waitedFrames, timedOut, frame }`. **시간 초과는 실패가 아니라 값이다** — agent 가 읽는다.
+- 실패는 조건을 못 읽는 것만: 문법, 이름이 안 풀림(`no such type` 등), getter 가 던짐. 쥔 인스턴스가 아직 없는 멤버는 거짓이다 — 아직 안 생긴 객체를 기다리는 조건일 수 있다.
+
+### pulse 의 객체 항목에 실리는 `ui` · `engine` · `uitk`
 
 멤버가 아닌 상태를 adapter 가 읽어 객체 항목에 조각 하나로 싣는다. 장부가 통째로 비교하므로 안 바뀐 객체에는 없다.
 
 | key | 읽는 것 | 안의 키 |
 | --- | --- | --- |
 | `ui` | uGUI(이름으로 맞춤, 참조 없음) | `interactable`(Selectable) · `isOn`(Toggle) · `value`(Slider·Scrollbar·Dropdown·TMP_Dropdown) · `fill`·`sprite`(Image) · `alpha`·`groupInteractable`·`blocksRaycasts`(CanvasGroup) |
+| `uitk` | `UIDocument`(UI Toolkit, 이름으로 맞춤) | root 아래 이름이나 글자가 있는 element 들: `[{name, type, text?, enabled, visible}]`. 깊이 8, 120 개까지 |
 | `engine` | 엔진 컴포넌트 | `anim`{`stateHash`, `state`?}(Animator, layer 0) · `audio`{`playing`, `clip`}(AudioSource) · `particles`{`playing`}(ParticleSystem) · `sprite`{`alpha`, `enabled`}(SpriteRenderer. 스프라이트 이름은 싣지 않는다 — 프레임 애니메이션이 매 tick 바꾼다) · `renderer`{`enabled`} |
 
-연속값은 셋째 자리에서 끊고(`value`·`fill`·`alpha`), `normalizedTime` 처럼 매 프레임 바뀌는 것은 싣지 않는다. `Selectable`·`Animator`·`AudioSource`·`ParticleSystem` 을 가진 객체는 holders 상한 안에서 순회에 든다. `Renderer` 만으로는 들지 않는다.
+연속값은 셋째 자리에서 끊고(`value`·`fill`·`alpha`), `normalizedTime` 처럼 매 프레임 바뀌는 것은 싣지 않는다. `Selectable`·`Animator`·`AudioSource`·`ParticleSystem`·`UIDocument` 를 가진 객체는 holders 상한 안에서 순회에 든다. `Renderer` 만으로는 들지 않는다.
 
 watch list 의 셋째 출처: 게임 코드가 필드·프로퍼티에 `[ArtelObserve]` 를 붙이면 `WatchList.All()` 이 게임 어셈블리를 한 번 훑어 `asked` 로 더한다. 프로퍼티는 getter 가 판독마다 돈다. 컴포넌트가 아닌 타입의 인스턴스는 `watch` 와 같은 걷기로 찾는다.
 

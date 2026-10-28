@@ -190,6 +190,10 @@ namespace Artel
                     completed(ExecuteFlush(actionId));
                     yield break;
 
+                case "wait_until":
+                    yield return ExecuteWaitUntil(actionId, parameters, completed);
+                    yield break;
+
                 case "watch":
                     completed(ExecuteWatch(actionId, parameters));
                     yield break;
@@ -631,6 +635,72 @@ namespace Artel
                 ? ActionResultDto.Success(actionId)
                 : ActionResultDto.Failure(
                     actionId, "Live readings could not start. A release build does not take them.");
+        }
+
+        private const float DefaultWaitSeconds = 5f;
+        private const float MaxWaitSeconds = 60f;
+
+        /// <summary>
+        /// <c>wait_until [condition, timeoutSeconds?]</c>: 조건이 참이 될 때까지 매 프레임 기다린다. 시간 초과는 실패가 아니라 값이다.
+        /// </summary>
+        /// <remarks>
+        /// 반응을 게임 안으로 들인다. agent 의 <c>wait_until</c> 은 새 <c>pulse</c> 마다 조건을 다시 읽어 전달 지연에 묶이는데, 배치
+        /// 안의 <c>[wait_until(X), click(Y)]</c> 는 네트워크 없이 프레임 단위로 잇는다. 조건을 못 읽는 것(이름이 안 풀림, 문법)만
+        /// 실패다 — 기다렸는데 안 된 것은 agent 가 읽어야 할 결과다.
+        /// </remarks>
+        private IEnumerator ExecuteWaitUntil(int actionId, List<object> parameters, Action<ActionResultDto> completed)
+        {
+            if (parameters == null || parameters.Count == 0 || !(parameters[0] is string text))
+            {
+                completed(ActionResultDto.Failure(actionId, "wait_until params are [condition] or [condition, timeoutSeconds]."));
+                yield break;
+            }
+
+            var timeout = DefaultWaitSeconds;
+
+            if (parameters.Count > 1 && parameters[1] != null)
+            {
+                try
+                {
+                    timeout = Mathf.Clamp(Convert.ToSingle(parameters[1], CultureInfo.InvariantCulture), 0f, MaxWaitSeconds);
+                }
+                catch (Exception)
+                {
+                    completed(ActionResultDto.Failure(actionId, "wait_until timeoutSeconds must be a number."));
+                    yield break;
+                }
+            }
+
+            if (!WaitCondition.TryParse(text, out var condition, out var parseError))
+            {
+                completed(ActionResultDto.Failure(actionId, parseError));
+                yield break;
+            }
+
+            var started = Time.realtimeSinceStartup;
+            var waited = 0;
+            var held = condition.Holds(out var error);
+
+            while (!held && error == null && Time.realtimeSinceStartup - started < timeout)
+            {
+                yield return null;
+                waited++;
+                held = condition.Holds(out error);
+            }
+
+            if (error != null)
+            {
+                completed(ActionResultDto.Failure(actionId, "wait_until " + error));
+                yield break;
+            }
+
+            completed(ActionResultDto.Success(actionId, new Dictionary<string, object>
+            {
+                ["held"] = held,
+                ["waitedFrames"] = waited,
+                ["timedOut"] = !held,
+                ["frame"] = Time.frameCount
+            }));
         }
 
         /// <summary><c>flush</c>: 지금 한 번 읽어 바로 보낸다. 판정 직전과 <c>read_member</c> 뒤의 신선도용.</summary>

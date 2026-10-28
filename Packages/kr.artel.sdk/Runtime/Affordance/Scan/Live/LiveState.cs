@@ -690,6 +690,8 @@ namespace Artel.Affordances.Live
 
             moved |= Fragment(text, EngineState.Of(transform.gameObject), ledger, identity + "|engine");
 
+            moved |= Fragment(text, UiDocumentState.Of(transform.gameObject), ledger, identity + "|uitk");
+
             moved |= Where(text, transform, ledger, identity);
 
             moved |= Offered(text, transform, ledger, identity);
@@ -878,6 +880,38 @@ namespace Artel.Affordances.Live
         /// 거기 없는 걸음은 없는 값이 아니라 이름으로 보고한다. 난독화는 멤버의 이름을 바꾸고, null 로 답하는 판독은 게임의 입에
         /// 말을 넣는 일이 된다 — 읽을 수 없는 필드가 0 대신 <c>unread</c> 라고 말하는 것과 같은 이유다.
         /// </remarks>
+        /// <summary>
+        /// 멤버의 지금 값을 객체로. JSON 이 아니라 비교할 값이 필요한 쪽(<c>wait_until</c>)이 쓴다. 읽지 못하면 false 와 이유.
+        /// </summary>
+        internal static bool TryValue(Watched member, object on, out object value, out string unread)
+        {
+            value = null;
+            unread = null;
+
+            if (!member.Static && on == null)
+            {
+                unread = "no-holder";
+                return false;
+            }
+
+            try
+            {
+                value = member.Getter != null ? member.Getter.GetValue(on, null) : member.Field.GetValue(on);
+
+                if (member.Via != null && value != null)
+                {
+                    value = Along(value, member.Via);
+                }
+            }
+            catch (Exception exception)
+            {
+                unread = exception.GetType().Name;
+                return false;
+            }
+
+            return true;
+        }
+
         private static object Along(object from, string path)
         {
             const BindingFlags Flags =
