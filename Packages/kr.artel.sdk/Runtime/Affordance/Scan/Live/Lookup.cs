@@ -189,6 +189,13 @@ namespace Artel.Affordances.Live
             return holders;
         }
 
+        /// <summary>찾아 둔 인스턴스를 다음 판독에 다시 찾게 한다. 선언된 멤버가 목록에 들어올 때.</summary>
+        internal static void MarkStale()
+        {
+            _stale = true;
+            Listen();
+        }
+
         private static void Listen()
         {
             if (_listening)
@@ -205,7 +212,8 @@ namespace Artel.Affordances.Live
             var wanted = new List<Type>();
             var plain = new List<Watched>();
 
-            foreach (var member in WatchList.Requested)
+            // 청한 것과 선언된 것 둘 다. 둘 다 씬 걷기가 만나지 못하는 owner 를 가질 수 있다.
+            foreach (var member in WatchList.All())
             {
                 if (member.Holders == null)
                 {
@@ -680,7 +688,7 @@ namespace Artel.Affordances.Live
             return _roots;
         }
 
-        private static List<Type> GameTypes()
+        internal static List<Type> GameTypes()
         {
             if (_gameTypes != null)
             {

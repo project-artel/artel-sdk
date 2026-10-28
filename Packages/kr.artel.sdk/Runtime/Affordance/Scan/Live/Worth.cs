@@ -140,6 +140,13 @@ namespace Artel.Affordances.Live
                 return true;
             }
 
+            // 입력을 받는 객체(`Selectable`)와 엔진 상태를 가진 객체(`Animator`·`AudioSource`·`ParticleSystem`). 상한 안에서만 —
+            // 청한 멤버를 쥔 객체와 달리 이것들은 배경에도 많다(ARTEL-1282).
+            if (UiState.CanCarry(subject) || EngineState.CanCarry(subject))
+            {
+                return true;
+            }
+
             var calls = new List<PersistentCall>();
 
             foreach (var component in components)
@@ -181,6 +188,8 @@ namespace Artel.Affordances.Live
             Answered.Clear();
             Denied.Clear();
             Legible.Forget();
+            UiState.Forget();
+            EngineState.Forget();
         }
     }
 }

@@ -125,6 +125,39 @@ namespace Artel.Tests
             Assert.That(host.GetComponent<ArtelManager>().Reading, Is.False);
         }
 
+        [UnityTest]
+        public IEnumerator flush_는_돌고_있을_때만_지금_읽어_바로_보낸다()
+        {
+            yield return StartManager();
+            fixture = new GameObject("Artel watch fixture");
+            var behaviour = fixture.AddComponent<WatchFixtureBehaviour>();
+
+            transport.Receive(Batch(4, "{\"id\":1,\"method\":\"flush\",\"params\":[]}"));
+            yield return Until(() => transport.Sent.Any(message => Type(message) == "ACTION_RESULT"), 3f);
+
+            var refused = JObject.Parse(transport.Sent.First(message => Type(message) == "ACTION_RESULT"));
+            Assert.That((bool)refused["results"][0]["success"], Is.False);
+            Assert.That((string)refused["results"][0]["error"], Does.StartWith("flush:"));
+
+            transport.Receive(Batch(5,
+                "{\"id\":1,\"method\":\"watch\",\"params\":[[\"" + Score + "\"]]}," +
+                "{\"id\":2,\"method\":\"start_readings\",\"params\":[{\"minDelivery\":5,\"delivery\":5}]}"));
+            yield return Until(() => Pulses().Count > 0, 3f);
+
+            // 바닥을 5초로 두어 박자는 아무것도 보내지 못한다. 그 사이에 바뀐 값은 flush 만이 내보낸다.
+            var before = Pulses().Count;
+            behaviour.Score = 77;
+            yield return null;
+            yield return null;
+            Assert.That(Pulses().Count, Is.EqualTo(before));
+
+            transport.Receive(Batch(6, "{\"id\":1,\"method\":\"flush\",\"params\":[]}"));
+            yield return Until(() => Pulses().Skip(before).Any(pulse => pulse.Contains("\"value\":77")), 3f);
+
+            Assert.That(Pulses().Skip(before).Any(pulse => pulse.Contains("\"value\":77")), Is.True,
+                string.Join("\n", Pulses().Skip(before)));
+        }
+
         private List<string> Pulses()
         {
             return transport.Sent.Where(message => Type(message) == "PULSE").ToList();
