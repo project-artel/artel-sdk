@@ -35,7 +35,7 @@ sequenceDiagram
 | --- | --- | --- |
 | `button_click` | `[targetId]` | **deprecated.** `onClick` 을 `EventSystem` 없이 직접 부른다. 이 저장소 밖에서 아직 보내므로 남아 있다 |
 | `enter_text` | `[targetId, value]` | `InputField` 와 `TMP_InputField` |
-| `move_mouse` | `[x, y]` · `[instanceId]` · `[selector]` | 좌표는 스캔이 보고한 좌상단 원점 픽셀 |
+| `move_mouse` | `[x, y]` · `[instanceId]` · `[selector]` | 좌표는 스캔이 보고한 좌상단 원점 픽셀. selector 는 활성 씬 → `DontDestroyOnLoad` → 로드된 다른 씬 순으로 푼다(ARTEL-1287) |
 | `mouse_down` | `[]` 또는 `[button]` (0·1·2) | 한 프레임 뒤 `returnValue` 에 `reached` 와 `pointerHeldByPerson` |
 | `mouse_up` | `[]` 또는 `[button]` | |
 | `key_click` | `[keyCode, positiveDurationSeconds]` | |
