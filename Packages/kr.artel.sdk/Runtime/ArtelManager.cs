@@ -894,7 +894,7 @@ namespace Artel
                           LegacyInput.GetKey(KeyCode.RightControl);
             var shift = LegacyInput.GetKey(KeyCode.LeftShift) ||
                         LegacyInput.GetKey(KeyCode.RightShift);
-            return control && shift && LegacyInput.GetKeyDown(KeyCode.M);
+            return NewInputMouse.TakeoverPressed || control && shift && LegacyInput.GetKeyDown(KeyCode.M);
         }
 
         /// <summary>

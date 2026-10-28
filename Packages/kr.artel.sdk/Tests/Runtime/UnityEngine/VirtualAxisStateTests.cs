@@ -221,7 +221,7 @@ namespace Artel.Tests.Input
             var result = ExecuteAction(6, method, new List<object> { MissingAxis, parameter });
 
             Assert.That(result.IsSuccess, Is.False);
-            Assert.That(result.Error, Does.Contain(MissingAxis));
+            Assert.That(result.Error, Does.Contain(LegacyInput.IsAvailable ? MissingAxis : "Input Manager axes are not available"));
         }
 
         [UnityTest]
@@ -237,12 +237,17 @@ namespace Artel.Tests.Input
                     "an axis nobody is driving reports the real input, not a virtual zero");
                 Assert.That(fixture.ReadJumpButton(), Is.False);
 
-                Assert.That(
-                    ExecuteAction(7, "set_axis", new List<object> { "Horizontal", 1d }).IsSuccess,
-                    Is.True);
-                Assert.That(
-                    ExecuteAction(8, "set_button", new List<object> { "Jump", true }).IsSuccess,
-                    Is.True);
+                var axisResult = ExecuteAction(7, "set_axis", new List<object> { "Horizontal", 1d });
+                var buttonResult = ExecuteAction(8, "set_button", new List<object> { "Jump", true });
+                if (!LegacyInput.IsAvailable)
+                {
+                    Assert.That(axisResult.IsSuccess, Is.False);
+                    Assert.That(buttonResult.IsSuccess, Is.False);
+                    Assert.That(axisResult.Error, Does.Contain("Input Manager axes are not available"));
+                    yield break;
+                }
+                Assert.That(axisResult.IsSuccess, Is.True);
+                Assert.That(buttonResult.IsSuccess, Is.True);
                 yield return null;
 
                 Assert.That(fixture.ReadHorizontalAxis(), Is.EqualTo(1f));

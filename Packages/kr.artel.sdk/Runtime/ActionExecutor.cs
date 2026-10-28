@@ -102,7 +102,7 @@ namespace Artel
             pointerMoved = position =>
             {
                 ArtelInput.MoveMouse(position);
-                pointerEvents.MoveTo(position);
+                if (!NewInputMouse.UsesNativeUi) pointerEvents.MoveTo(position);
             };
         }
 
@@ -119,6 +119,46 @@ namespace Artel
         }
 
         public IEnumerator Execute(
+            int actionId,
+            string method,
+            List<object> parameters,
+            Action<ActionResultDto> completed)
+        {
+            var mouseAction = method == "move_mouse" || method == "mouse_down" || method == "mouse_up" ||
+                ((method == "key_down" || method == "key_up" || method == "key_click") &&
+                 parameters != null && parameters.Count > 0 && TryReadKeyCode(parameters[0], out var key) &&
+                 MouseButtonKeyCode.TryGetButton(key, out _));
+            var error = mouseAction ? NewInputMouse.ValidationError : null;
+            if (error != null)
+            {
+                completed(ActionResultDto.Failure(actionId, error));
+                yield break;
+            }
+
+            ActionResultDto result = null;
+            yield return ExecuteCore(actionId, method, parameters, value => result = value);
+            if (mouseAction && result != null && result.IsSuccess && NewInputMouse.IsActive)
+            {
+                var targetFrame = Time.frameCount + 1;
+                var deadline = Time.realtimeSinceStartup + 2f;
+                while (!NewInputMouse.HasProcessed(targetFrame))
+                {
+                    if (Time.realtimeSinceStartup >= deadline || !NewInputMouse.IsActive)
+                    {
+                        ArtelInput.ReleaseAllVirtualInput();
+                        completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse action."));
+                        yield break;
+                    }
+                    yield return null;
+                }
+                // input update가 끝나도 EventSystem.Update는 아직일 수 있다.
+                yield return null;
+                if (method == "mouse_down") result.ReturnValue = PressOutcome(pointerEvents.LastPressReceiver);
+            }
+            completed(result);
+        }
+
+        private IEnumerator ExecuteCore(
             int actionId,
             string method,
             List<object> parameters,
@@ -399,13 +439,15 @@ namespace Artel
         /// </remarks>
         private static Dictionary<string, object> PressOutcome(string eventReceiver)
         {
-            var reached = string.IsNullOrEmpty(eventReceiver)
-                ? ArtelInput.LastPressReceiver
-                : eventReceiver;
+            // native UI의 후속 raycast는 실제 수신 증거가 아니다.
+            var nativeUi = NewInputMouse.UsesNativeUi;
+            var reached = nativeUi ? null : string.IsNullOrEmpty(eventReceiver)
+                ? ArtelInput.LastPressReceiver : eventReceiver;
             return new Dictionary<string, object>
             {
                 { "reached", string.IsNullOrEmpty(reached) ? null : reached },
-                { "pointerHeldByPerson", string.IsNullOrEmpty(eventReceiver) && !ArtelInput.SawPress }
+                { "pointerHeldByPerson", nativeUi ? !ArtelInput.OwnsVirtualPointer :
+                    string.IsNullOrEmpty(eventReceiver) && !ArtelInput.SawPress }
             };
         }
 
@@ -436,12 +478,12 @@ namespace Artel
             if (press)
             {
                 ArtelInput.PressMouseButton(button);
-                pointerEvents.Press(button);
+                if (!NewInputMouse.UsesNativeUi) pointerEvents.Press(button);
             }
             else
             {
                 ArtelInput.ReleaseMouseButton(button);
-                pointerEvents.Release(button);
+                if (!NewInputMouse.UsesNativeUi) pointerEvents.Release(button);
             }
         }
 
@@ -878,6 +920,23 @@ namespace Artel
             }
 
             SetButton(button, true);
+            if (NewInputMouse.IsActive)
+            {
+                // 짧은 click도 FixedUpdate가 press를 처리하고 UI가 읽은 뒤에 놓는다.
+                var targetFrame = Time.frameCount + 1;
+                var deadline = Time.realtimeSinceStartup + 2f;
+                while (!NewInputMouse.HasProcessed(targetFrame))
+                {
+                    if (Time.realtimeSinceStartup >= deadline || !NewInputMouse.IsActive)
+                    {
+                        ArtelInput.ReleaseAllVirtualInput();
+                        completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse press."));
+                        yield break;
+                    }
+                    yield return null;
+                }
+                yield return null;
+            }
             yield return new WaitForSecondsRealtime(durationSeconds);
             SetButton(button, false);
             completed(ActionResultDto.Success(actionId));

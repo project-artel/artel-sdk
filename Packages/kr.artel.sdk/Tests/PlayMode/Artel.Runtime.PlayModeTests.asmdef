@@ -15,8 +15,16 @@
     "Newtonsoft.Json.dll"
   ],
   "autoReferenced": false,
-  "defineConstraints": ["UNITY_EDITOR || !UNITY_WEBGL"],
-  "versionDefines": [],
+  "defineConstraints": [
+    "UNITY_EDITOR || !UNITY_WEBGL"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.inputsystem",
+      "expression": "",
+      "define": "ARTEL_INPUT_SYSTEM_INSTALLED"
+    }
+  ],
   "noEngineReferences": false,
   "optionalUnityReferences": [
     "TestAssemblies"
