@@ -685,6 +685,11 @@ namespace Artel.Affordances.Live
 
             moved |= Said(text, transform, ledger, identity);
 
+            // uGUI 와 엔진 컴포넌트의 상태. 어느 멤버에도 없는 값이라 adapter 가 읽고, 객체 항목에 한 조각으로 싣는다.
+            moved |= Fragment(text, UiState.Of(transform.gameObject), ledger, identity + "|ui");
+
+            moved |= Fragment(text, EngineState.Of(transform.gameObject), ledger, identity + "|engine");
+
             moved |= Where(text, transform, ledger, identity);
 
             moved |= Offered(text, transform, ledger, identity);
@@ -1182,6 +1187,18 @@ namespace Artel.Affordances.Live
         /// 제 데드밴드를 거치고, 그것은 픽셀로 잰다. 월드 쪽은 어느 패키지도 축척을 알 수 없는 단위에 대한 추측이지만, 픽셀은
         /// 어디서나 픽셀이고 그 하나 아래로는 아무것도 다르게 그려지지 않는다.
         /// </remarks>
+        /// <summary>adapter 가 만든 조각 하나를 장부에 대고 비교해 바뀌었을 때만 싣는다.</summary>
+        private static bool Fragment(StringBuilder text, string rendered, Ledger ledger, string key)
+        {
+            if (rendered == null || !ledger.Keep(key, rendered))
+            {
+                return false;
+            }
+
+            text.Append(rendered);
+            return true;
+        }
+
         private static bool Where(
             StringBuilder text, Transform transform, Ledger ledger, string identity)
         {

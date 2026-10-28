@@ -218,6 +218,12 @@ namespace Artel.Affordances.Scan
         private static Live.PulseFile _ours;
 
         /// <summary>살아 있는 값 보내기를 멈춘다.</summary>
+        /// <summary>지금 한 번 읽어 바로 보낸다. 감시 중이 아니면 false.</summary>
+        public static bool FlushReadings()
+        {
+            return Live.Pulse.Flush();
+        }
+
         public static void StopWatching()
         {
             Live.Pulse.Stop();

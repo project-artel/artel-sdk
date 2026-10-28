@@ -186,6 +186,10 @@ namespace Artel
                     completed(ExecuteStopReadings(actionId));
                     yield break;
 
+                case "flush":
+                    completed(ExecuteFlush(actionId));
+                    yield break;
+
                 case "watch":
                     completed(ExecuteWatch(actionId, parameters));
                     yield break;
@@ -627,6 +631,19 @@ namespace Artel
                 ? ActionResultDto.Success(actionId)
                 : ActionResultDto.Failure(
                     actionId, "Live readings could not start. A release build does not take them.");
+        }
+
+        /// <summary><c>flush</c>: 지금 한 번 읽어 바로 보낸다. 판정 직전과 <c>read_member</c> 뒤의 신선도용.</summary>
+        private ActionResultDto ExecuteFlush(int actionId)
+        {
+            if (readings == null)
+            {
+                return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
+            }
+
+            return readings.FlushReadings()
+                ? ActionResultDto.Success(actionId)
+                : ActionResultDto.Failure(actionId, "flush: live readings are not running. Send start_readings first.");
         }
 
         /// <summary><c>watch [names]</c>: 이름을 풀어 watch list 에 더한다. 풀린 것과 못 푼 것을 둘 다 돌려준다.</summary>

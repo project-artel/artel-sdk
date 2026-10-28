@@ -605,11 +605,25 @@ options when a run wants to measure with different ones.
 A member the evidence did not name can still be asked for by name while the game
 runs: `watch [["Game.Player::hp", "Progress::stage"]]` resolves each name against
 the loaded assemblies and adds it to the watch list, and `read_member` reads one
-once. A member on a scene component is read where the walk meets it; a static is
+once. A field or auto-property is enough; a property whose getter runs code is
+refused unless the game marks it `[ArtelObserve]` — name the field instead. A
+member on a scene component is read where the walk meets it; a static is
 read directly; anything else — a ScriptableObject, a plain object behind a static
 or a container — is found by following references from static fields and scene
 components, four levels deep and within a time budget, and the action's result
 says which names resolved, where each is read from, and which did not and why.
+
+A game can also say so in its own code: `[ArtelObserve]` on a field or property
+puts that member on the watch list at startup, with no build step involved. A
+property's getter then runs on every reading, which is the one place the pulse
+runs game code, and only because the game asked for it.
+
+Two kinds of state no member holds ride each object entry as well: `ui` carries
+what uGUI accepts (`interactable`, `isOn`, slider and dropdown `value`, `fill`,
+`CanvasGroup` alpha and flags) and `engine` carries what the engine is doing
+(the current `Animator` state, whether an `AudioSource` or `ParticleSystem` is
+playing, whether a `SpriteRenderer` is enabled and how opaque). `flush` reads and sends one
+reading right now, for a check that cannot wait for the next tick.
 
 What a pulse carries is decided by the evidence document baked at build time —
 the members the analysed conditions and effects name — plus the objects that
