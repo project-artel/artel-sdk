@@ -627,6 +627,20 @@ namespace Artel.Affordances.Scan
                 calls.Clear();
             }
 
+            // collider 위의 OnMouse* handler 는 그 객체를 누르는 조작이다. evidence 가 있는 type 에만 적는다 — 근거가 없는
+            // handler 를 calls 에 넣으면 소비자가 어떤 evidence 에도 잇지 못하는 항목만 는다(ARTEL-1227).
+            if (!string.IsNullOrEmpty(evidence))
+            {
+                try
+                {
+                    MouseMessageReader.Read(component, calls);
+                }
+                catch (Exception)
+                {
+                    // 마우스 handler 하나를 못 읽었다고 컴포넌트 서술을 멈추지 않는다.
+                }
+            }
+
             // 컴포넌트 대부분은 배경이다. 모든 transform 과 스프라이트를 쓰면 테스트가 작용할 수 있는 몇 개가 파묻힌다.
             if (string.IsNullOrEmpty(evidence) && calls.Count == 0)
             {

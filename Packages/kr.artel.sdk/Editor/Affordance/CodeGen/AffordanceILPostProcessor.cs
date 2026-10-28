@@ -229,6 +229,9 @@ namespace Artel.Affordances.CodeGen
                 // 인식되도록.
                 flow.Folded = DuplicateVariants.Fold(variants);
 
+                // 접은 뒤에 한다. 남는 기록에만 붙이면 된다.
+                AwaitedInputs.Mark(variants);
+
                 flow.Variants = variants.Count;
                 flow.Roots = roots.Count;
                 flow.Truncated = truncated;
