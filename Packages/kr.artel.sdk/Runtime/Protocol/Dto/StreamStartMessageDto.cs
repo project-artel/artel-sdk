@@ -3,13 +3,7 @@ using Newtonsoft.Json;
 
 namespace Artel.Protocol.Dto
 {
-    /// <summary>
-    /// Opens one watching session.
-    ///
-    /// <see cref="IceServers"/> is delivered here rather than compiled into the SDK. The SDK ships
-    /// to customers, so a baked default would have every customer's game contacting a third-party
-    /// STUN host; keeping it on the wire makes that a deployment choice.
-    /// </summary>
+    /// <summary>서버가 정한 JPEG 전송 상한과 lease로 영상 session을 연다.</summary>
     internal sealed class StreamStartMessageDto
     {
         [JsonProperty("type")]
@@ -17,6 +11,9 @@ namespace Artel.Protocol.Dto
 
         [JsonProperty("streamId")]
         public string StreamId { get; set; }
+
+        [JsonProperty("transport")]
+        public string Transport { get; set; }
 
         [JsonProperty("iceServers")]
         public List<StreamIceServerDto> IceServers { get; set; } = new List<StreamIceServerDto>();

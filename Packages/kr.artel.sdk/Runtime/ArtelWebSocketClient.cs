@@ -7,7 +7,7 @@ using WebSocketSharp;
 
 namespace Artel
 {
-    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport
+    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelMediaWebSocketTransport
     {
         private const string SdkWebSocketPath = "/ws/sdk";
 
@@ -57,16 +57,26 @@ namespace Artel
         private Timer handshakeTimer;
         private int reconnectAttempt;
         private bool stopped;
+        private bool mediaSending;
+        private int mediaGeneration;
+        private Timer mediaDeadline;
+        private bool mediaAborting;
+        private readonly TimeSpan mediaSendTimeout;
+        private readonly Action<WebSocket, string, Action<bool>> sendMedia;
 
         // 쓰기는 gate 아래에서만 하고 읽기는 잠금 없이 한다. 오버레이가 프레임마다 읽으므로,
         // 그 읽기가 dial 이나 닫힘 뒤에서 기다리면 안 된다.
         private volatile ArtelTransportPhase phase = ArtelTransportPhase.Idle;
 
-        public ArtelWebSocketClient(Server server, Func<string> token, Func<string> instanceId)
+        public ArtelWebSocketClient(Server server, Func<string> token, Func<string> instanceId,
+            TimeSpan? mediaSendTimeout = null, Action<WebSocket, string, Action<bool>> sendMedia = null)
         {
             this.server = server ?? throw new ArgumentNullException(nameof(server));
             tokenSource = token ?? throw new ArgumentNullException(nameof(token));
             instanceIdSource = instanceId ?? throw new ArgumentNullException(nameof(instanceId));
+            this.mediaSendTimeout = mediaSendTimeout ?? TimeSpan.FromSeconds(10);
+            if (this.mediaSendTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(mediaSendTimeout));
+            this.sendMedia = sendMedia ?? ((socket, text, completed) => socket.SendAsync(text, completed));
         }
 
         /// <summary>
@@ -89,7 +99,7 @@ namespace Artel
                 reconnectAttempt = 0;
                 DisposeTimer(ref reconnectTimer);
 
-                if (IsLive(client))
+                if (mediaAborting || IsLive(client))
                 {
                     return;
                 }
@@ -187,8 +197,9 @@ namespace Artel
             UnityEngine.Debug.Log("[Artel] WebSocket connected.");
         }
 
-        private void HandleError(ErrorEventArgs e)
+        private void HandleError(WebSocket socket, ErrorEventArgs e)
         {
+            lock (gate) { if (!ReferenceEquals(socket, client)) return; }
             UnityEngine.Debug.LogError("[Artel] WebSocket error: " + e.Message);
         }
 
@@ -207,6 +218,7 @@ namespace Artel
 
                 DisposeTimer(ref keepAliveTimer);
                 DisposeTimer(ref handshakeTimer);
+                DisposeTimer(ref mediaDeadline);
 
                 if (stopped)
                 {
@@ -248,11 +260,99 @@ namespace Artel
             socket.Send(text);
         }
 
+        public bool TrySendMedia(string text, Action<bool> completed)
+        {
+            if (text == null || System.Text.Encoding.UTF8.GetByteCount(text) > 184 * 1024) return false;
+            WebSocket socket;
+            int generation;
+            lock (gate)
+            {
+                socket = client;
+                if (stopped || mediaSending || mediaAborting || socket == null || socket.ReadyState != WebSocketState.Open)
+                {
+                    return false;
+                }
+                mediaSending = true;
+                generation = ++mediaGeneration;
+                mediaDeadline = new Timer(_ => AbandonStalledMedia(socket, generation), null,
+                    mediaSendTimeout, Timeout.InfiniteTimeSpan);
+            }
+
+            try
+            {
+                sendMedia(socket, text, success =>
+                {
+                    lock (gate)
+                    {
+                        // 이전 소켓의 callback이 새 소켓의 송신 자리를 풀지 않는다.
+                        if (generation == mediaGeneration)
+                        {
+                            mediaSending = false;
+                            DisposeTimer(ref mediaDeadline);
+                        }
+                    }
+                    completed(success);
+                });
+                return true;
+            }
+            catch (Exception)
+            {
+                lock (gate)
+                {
+                    if (generation == mediaGeneration)
+                    {
+                        mediaSending = false;
+                        DisposeTimer(ref mediaDeadline);
+                    }
+                }
+                return false;
+            }
+        }
+
+        private void AbandonStalledMedia(WebSocket socket, int generation)
+        {
+            lock (gate)
+            {
+                if (stopped || !mediaSending || generation != mediaGeneration || !ReferenceEquals(socket, client)) return;
+                DisposeTimer(ref mediaDeadline);
+                DisposeTimer(ref keepAliveTimer);
+                DisposeTimer(ref handshakeTimer);
+                client = null;
+                mediaGeneration++;
+                mediaAborting = true;
+            }
+            try
+            {
+                // 1006은 close frame을 보내거나 ACK를 기다리지 않고 실제 stream을 해제한다.
+                // 막힌 송신을 남겨 둔 채 busy만 풀면 같은 소켓에 task가 계속 쌓인다.
+                socket.Close(CloseStatusCode.Abnormal);
+                if (socket.ReadyState != WebSocketState.Closed)
+                    throw new InvalidOperationException("영상 송신 소켓을 해제하지 못했습니다.");
+                lock (gate)
+                {
+                    mediaSending = false;
+                    mediaAborting = false;
+                    if (!stopped && client == null) ScheduleReconnect(AbnormalCloseCode);
+                }
+            }
+            catch (Exception error)
+            {
+                // 해제가 끝나지 않았다면 새 송신을 만들지 않는다. 남은 task 수도 하나로 제한한다.
+                lock (gate) { phase = ArtelTransportPhase.Refused; }
+                UnityEngine.Debug.LogError("[Artel] 영상 송신 소켓 종료 실패: " + error.Message);
+            }
+        }
+
         public void Stop()
         {
             WebSocket closing;
+            bool abortMedia;
             lock (gate)
             {
+                abortMedia = mediaSending;
+                if (abortMedia) mediaAborting = true;
+                mediaGeneration++;
+                mediaSending = false;
                 // 재시도를 막는 것은 이 표시다. 닫힘 핸들러는 그대로 달려 있고 로그도 그대로 남는다 —
                 // client 를 비웠으므로 그 핸들러는 재시도까지 가지 않고 로그만 남기고 돌아선다.
                 stopped = true;
@@ -260,6 +360,7 @@ namespace Artel
                 DisposeTimer(ref reconnectTimer);
                 DisposeTimer(ref keepAliveTimer);
                 DisposeTimer(ref handshakeTimer);
+                DisposeTimer(ref mediaDeadline);
                 connectionUptime.Reset();
                 phase = ArtelTransportPhase.Idle;
 
@@ -272,8 +373,12 @@ namespace Artel
                 client = null;
             }
 
-            // CloseAsync 는 닫힘 handshake 를 기다리며 막힐 수 있다. gate 를 놓고 부른다.
-            closing.CloseAsync();
+            if (abortMedia)
+            {
+                closing.Close(CloseStatusCode.Abnormal);
+                lock (gate) { if (closing.ReadyState == WebSocketState.Closed) mediaAborting = false; }
+            }
+            else closing.CloseAsync();
         }
 
         public void Dispose()
@@ -343,6 +448,7 @@ namespace Artel
             client = null;
             Discard(previous);
             DisposeTimer(ref handshakeTimer);
+            DisposeTimer(ref mediaDeadline);
 
             Uri endpoint;
             try
@@ -364,9 +470,11 @@ namespace Artel
             EnableModernTls(socket);
             socket.OnMessage += (sender, e) => HandleMessage(socket, e);
             socket.OnOpen += (sender, e) => HandleOpen(socket);
-            socket.OnError += (sender, e) => HandleError(e);
+            socket.OnError += (sender, e) => HandleError(socket, e);
             socket.OnClose += (sender, e) => HandleClose(socket, e);
             client = socket;
+            mediaGeneration++;
+            mediaSending = false;
             phase = ArtelTransportPhase.Connecting;
 
             var deadline = TimeSpan.FromSeconds(HandshakeDeadlineSeconds);
@@ -477,7 +585,7 @@ namespace Artel
             {
                 lock (gate)
                 {
-                    if (stopped || IsLive(client))
+                    if (stopped || mediaAborting || IsLive(client))
                     {
                         return;
                     }

@@ -1,5 +1,6 @@
 using System;
 using Artel.Serialization;
+using Artel.Protocol.Dto;
 
 namespace Artel.Streaming
 {
@@ -8,10 +9,15 @@ namespace Artel.Streaming
         void Send(object message);
     }
 
+    internal interface IStreamFrameSender
+    {
+        bool TrySendFrame(StreamFrameMessageDto frame, Action<bool> completed);
+    }
+
     /// <summary>
     /// Puts signalling on the existing /ws/sdk connection.
     /// </summary>
-    internal sealed class WebSocketStreamSignalSender : IStreamSignalSender
+    internal sealed class WebSocketStreamSignalSender : IStreamSignalSender, IStreamFrameSender
     {
         private readonly IJsonCodec jsonCodec;
         private readonly Func<IArtelWebSocketTransport> currentTransport;
@@ -39,6 +45,14 @@ namespace Artel.Streaming
             }
 
             transport.Send(jsonCodec.Serialize(message));
+        }
+
+        public bool TrySendFrame(StreamFrameMessageDto frame, Action<bool> completed)
+        {
+            var transport = currentTransport();
+            var media = transport as IArtelMediaWebSocketTransport;
+            return transport != null && transport.IsConnected && media != null &&
+                   media.TrySendMedia(jsonCodec.Serialize(frame), completed);
         }
     }
 }

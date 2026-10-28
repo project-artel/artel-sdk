@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 using WebSocketSharp;
 using WebSocketSharp.Server;
 
@@ -18,7 +19,7 @@ namespace Artel
         public Action<string> Reply { get; private set; }
     }
 
-    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport
+    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport, IArtelMediaWebSocketTransport
     {
         private readonly string bindAddress;
         private readonly int port;
@@ -27,6 +28,8 @@ namespace Artel
         private readonly Dictionary<string, Action<string>> sendByConnectionId =
             new Dictionary<string, Action<string>>();
         private WebSocketServer server;
+        private int mediaSending;
+        private int mediaGeneration;
 
         public ArtelWebSocketServer(string bindAddress, int port)
         {
@@ -82,12 +85,36 @@ namespace Artel
 
         public void Stop()
         {
+            Interlocked.Increment(ref mediaGeneration);
+            Interlocked.Exchange(ref mediaSending, 0);
             server?.Stop();
             server = null;
 
             lock (sendByConnectionId)
             {
                 sendByConnectionId.Clear();
+            }
+        }
+
+        public bool TrySendMedia(string text, Action<bool> completed)
+        {
+            if (text == null || System.Text.Encoding.UTF8.GetByteCount(text) > 184 * 1024) return false;
+            var current = server;
+            var generation = mediaGeneration;
+            if (current == null || Interlocked.CompareExchange(ref mediaSending, 1, 0) != 0) return false;
+            try
+            {
+                current.WebSocketServices.BroadcastAsync(text, () =>
+                {
+                    if (generation == mediaGeneration) Interlocked.Exchange(ref mediaSending, 0);
+                    completed(generation == mediaGeneration);
+                });
+                return true;
+            }
+            catch (Exception)
+            {
+                if (generation == mediaGeneration) Interlocked.Exchange(ref mediaSending, 0);
+                return false;
             }
         }
 

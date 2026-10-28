@@ -2,8 +2,8 @@
 
 ## WebGL player 제외
 
-WebGL player에서는 `Artel.Runtime`을 컴파일하지 않는다. WebGL용 `Unity.WebRTC`가
-없으므로 SDK 연결, 화면 스트리밍, overlay와 가상 입력은 WebGL에서 지원하지 않는다.
+WebGL player에서는 `Artel.Runtime`을 컴파일하지 않는다. SDK의 native WebSocket·입력 경로는
+WebGL에서 지원하지 않는다. 영상 전송은 WebSocket JPEG를 사용하며 `Unity.WebRTC` 의존성은 제거했다.
 입력 ILPostProcessor도 WebGL player에는 `ArtelInput` 참조를 추가하지 않는다.
 WebGL을 Build Target으로 선택한 Unity Editor에서는 기존 SDK 기능을 사용할 수 있다.
 별도 affordance 메타데이터·scan 어셈블리는 유지한다.
@@ -764,11 +764,9 @@ value back. That covers the time the socket is down or retrying, not only the
 time it is up. A build that never connects to Artel is left with whatever its
 own Player Settings say.
 
-It is needed because everything a run depends on lives in `Update()`: the WebRTC
-encode pump, the screen capture loop, and the draining of the incoming message
-queue. With the Player Settings default, losing window focus stops all three —
-so switching from the game to a browser to watch the stream would be the very
-thing that froze it, and no later message could restart it either.
+QA 실행에 필요한 JPEG capture·전송 상태 확인과 수신 메시지 처리는 `Update()`에서 돈다.
+Player Settings 기본값으로는 게임 창이 focus를 잃을 때 이 작업들이 멈출 수 있다.
+브라우저로 전환해도 영상과 제어가 계속되도록 연결을 소유하는 동안 background 실행을 유지한다.
 
 Performance reports also continue while the window is not focused. Their frame
 statistics include the background frames, which may reflect platform

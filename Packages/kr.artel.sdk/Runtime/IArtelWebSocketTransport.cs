@@ -2,6 +2,11 @@ using System;
 
 namespace Artel
 {
+    internal interface IArtelMediaWebSocketTransport
+    {
+        bool TrySendMedia(string text, Action<bool> completed);
+    }
+
     internal interface IArtelWebSocketTransport : IDisposable
     {
         bool IsConnected { get; }
