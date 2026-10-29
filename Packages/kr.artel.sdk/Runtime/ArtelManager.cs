@@ -92,7 +92,7 @@ namespace Artel
         private bool processingActions;
 
         /// <summary>False on a duplicate that Awake destroyed before it built anything.</summary>
-        private bool ownsRuntime;
+        [NonSerialized] private bool ownsRuntime;
 
         /// <summary>Separates the first connection, which is Start's, from a later re-enable.</summary>
         private bool hasStarted;
@@ -276,6 +276,7 @@ namespace Artel
             pointerEvents = new PointerEventDispatcher();
             jsonCodec = new NewtonsoftJsonCodec();
             gameFunctions = new GameFunctionActions();
+            loggedErrors?.Dispose();
             loggedErrors = new LoggedErrors();
             loggedErrors.Listen();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -333,6 +334,16 @@ namespace Artel
 
         private void OnEnable()
         {
+            // script reload 뒤에는 Awake가 다시 실행되지 않고 일반 C# 객체는 사라진다.
+            // 중복 매니저는 runtime을 만들거나 기존 매니저의 연결을 건드리지 않는다.
+            if (instance != null && instance != this)
+            {
+                return;
+            }
+
+            instance = this;
+            EnsureRuntime();
+
             // Only a re-enable reaches this. The first connection is Start's, and until Start has
             // run there is nothing here to repeat.
             if (hasStarted && connectOnStart)
@@ -394,6 +405,11 @@ namespace Artel
 
         private void Update()
         {
+            if (!ownsRuntime)
+            {
+                return;
+            }
+
             using (ArtelProfilerMarkers.ManagerUpdate.Auto())
             {
                 RecordFrameTime();
@@ -629,7 +645,7 @@ namespace Artel
 
             // Before the socket goes, so the closing STREAM_STATE still has somewhere to go and
             // capture never outlives the connection that asked for it.
-            streamHost.Stop();
+            streamHost?.Stop();
 
             // Ahead of the ownership checks: whoever owns the socket, a run that ends mid-drag must
             // not leave the game holding a button nobody will ever send the release for.
