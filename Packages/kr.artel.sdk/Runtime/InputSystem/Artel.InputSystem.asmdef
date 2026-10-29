@@ -1,0 +1,22 @@
+{
+  "name": "Artel.InputSystem",
+  "rootNamespace": "Artel",
+  "references": [
+    "Artel.Runtime",
+    "Unity.InputSystem",
+    "UnityEngine.UI"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "ARTEL_INPUT_SYSTEM_AVAILABLE",
+    "ENABLE_INPUT_SYSTEM",
+    "UNITY_EDITOR || !UNITY_WEBGL"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.inputsystem",
+      "expression": "1.7.0",
+      "define": "ARTEL_INPUT_SYSTEM_AVAILABLE"
+    }
+  ]
+}

@@ -55,6 +55,26 @@ namespace Artel.Streaming
         private readonly WaitForEndOfFrame endOfFrame = new WaitForEndOfFrame();
         private RenderTexture frame;
         private float nextCaptureTime;
+        private Texture2D readback;
+        private Func<bool> canCapture;
+        private Action<byte[]> captured;
+        private int jpegQuality;
+        private int maxFrameBytes;
+        private int maxJpegHeight;
+        private Action<string> captureFailed;
+        public double LastJpegEncodeMilliseconds { get; private set; }
+        public int LastJpegBytes { get; private set; }
+
+        public void ConfigureJpeg(Func<bool> canCapture, Action<byte[]> captured, Action<string> failed, int quality, int maxBytes, int maxHeight)
+        {
+            if (frame != null) throw new InvalidOperationException("이미 시작한 capture 설정은 바꿀 수 없습니다.");
+            this.canCapture = canCapture ?? throw new ArgumentNullException(nameof(canCapture));
+            this.captured = captured ?? throw new ArgumentNullException(nameof(captured));
+            captureFailed = failed ?? throw new ArgumentNullException(nameof(failed));
+            jpegQuality = Mathf.Clamp(quality, 20, 80);
+            maxFrameBytes = Mathf.Clamp(maxBytes, 1024, 131072);
+            maxJpegHeight = Mathf.Clamp(maxHeight, 2, 720);
+        }
 
         /// <param name="maxWidth">Zero or less means the screen's own width.</param>
         /// <param name="maxFramerate">Zero or less means every frame.</param>
@@ -81,6 +101,8 @@ namespace Artel.Streaming
             }
 
             ResolveSize(out var width, out var height);
+            if ((long)Screen.width * Screen.height > 4096L * 2160)
+                throw new InvalidOperationException("영상 capture 화면은 4096×2160 이하여야 합니다.");
 
             // BGRA32 is the layout com.unity.webrtc reads a RenderTexture-backed track in. The
             // depth buffer is deliberately zero: nothing renders into this, it is only blitted to.
@@ -89,6 +111,7 @@ namespace Artel.Streaming
                 name = "ArtelScreenVideoSource"
             };
             frame.Create();
+            if (captured != null) readback = new Texture2D(width, height, TextureFormat.RGB24, false);
 
             nextCaptureTime = 0f;
             captureLoop.Begin(CaptureFrames());
@@ -98,6 +121,12 @@ namespace Artel.Streaming
         public void Stop()
         {
             captureLoop.End();
+            if (readback != null)
+            {
+                if (Application.isPlaying) UnityEngine.Object.Destroy(readback);
+                else UnityEngine.Object.DestroyImmediate(readback);
+                readback = null;
+            }
 
             if (frame == null)
             {
@@ -133,10 +162,96 @@ namespace Artel.Streaming
                     continue;
                 }
 
+                // ACK를 기다리는 동안 GPU readback과 JPEG encode도 생략한다.
+                if (canCapture != null && !canCapture()) continue;
+
                 nextCaptureTime = Time.unscaledTime + captureIntervalSeconds;
-                CaptureFrame();
+                try
+                {
+                    CaptureFrame();
+                    if (captured != null) CaptureJpeg();
+                }
+                catch (Exception error)
+                {
+                    if (captureFailed != null) captureFailed("영상 capture 실패: " + error.Message);
+                    else Debug.LogException(error);
+                    yield break;
+                }
             }
         }
+
+        internal void CaptureJpeg()
+        {
+            var previous = RenderTexture.active;
+            var encodeTimer = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                var quality = jpegQuality;
+                for (var attempt = 0; attempt < 7; attempt++)
+                {
+                    RenderTexture.active = frame;
+                    readback.ReadPixels(new Rect(0, 0, frame.width, frame.height), 0, 0, false);
+                    readback.Apply(false, false);
+                    var jpeg = readback.EncodeToJPG(quality);
+                    if (jpeg.Length > maxFrameBytes && quality > 35)
+                    {
+                        quality = 35;
+                        jpeg = readback.EncodeToJPG(quality);
+                    }
+                    LastJpegBytes = jpeg.Length;
+                    if (jpeg.Length <= maxFrameBytes) { captured(jpeg); return; }
+                    if (frame.width <= 2 || frame.height <= 2) break;
+                    DownscaleFrame();
+                }
+                throw new InvalidOperationException("화면을 축소해도 JPEG frame 크기 제한을 맞추지 못했습니다.");
+            }
+            finally
+            {
+                encodeTimer.Stop();
+                LastJpegEncodeMilliseconds = encodeTimer.Elapsed.TotalMilliseconds;
+                RenderTexture.active = previous;
+            }
+        }
+
+        private void DownscaleFrame()
+        {
+            var previousFrame = frame;
+            var previousReadback = readback;
+            var width = Mathf.Max(2, (previousFrame.width / 2) & ~1);
+            var height = Mathf.Max(2, (previousFrame.height / 2) & ~1);
+            var smaller = new RenderTexture(width, height, 0, RenderTextureFormat.BGRA32)
+            {
+                name = "ArtelScreenVideoSource"
+            };
+            Texture2D smallerReadback = null;
+            try
+            {
+                smaller.Create();
+                smallerReadback = new Texture2D(width, height, TextureFormat.RGB24, false);
+                Graphics.Blit(previousFrame, smaller);
+                RenderTexture.active = null;
+            }
+            catch
+            {
+                smaller.Release();
+                DestroyCaptureObject(smaller);
+                if (smallerReadback != null) DestroyCaptureObject(smallerReadback);
+                throw;
+            }
+            frame = smaller;
+            readback = smallerReadback;
+            previousFrame.Release();
+            DestroyCaptureObject(previousFrame);
+            DestroyCaptureObject(previousReadback);
+        }
+
+        private static void DestroyCaptureObject(UnityEngine.Object resource)
+        {
+            if (Application.isPlaying) UnityEngine.Object.Destroy(resource);
+            else UnityEngine.Object.DestroyImmediate(resource);
+        }
+
+        internal static bool RequiresVerticalFlip(bool graphicsUvStartsAtTop) { return graphicsUvStartsAtTop; }
 
         private void CaptureFrame()
         {
@@ -161,7 +276,9 @@ namespace Artel.Streaming
                     // down relative to what the encoder expects. The flip is not optional: getting it
                     // wrong produces a working-but-inverted stream, which reads as success in a smoke
                     // test and is only caught against on-screen text.
-                    Graphics.Blit(backBuffer, frame, new Vector2(1f, -1f), new Vector2(0f, 1f));
+                    if (captured == null || RequiresVerticalFlip(SystemInfo.graphicsUVStartsAtTop))
+                        Graphics.Blit(backBuffer, frame, new Vector2(1f, -1f), new Vector2(0f, 1f));
+                    else Graphics.Blit(backBuffer, frame);
                 }
                 finally
                 {
@@ -178,6 +295,11 @@ namespace Artel.Streaming
 
             width = maxWidth > 0 ? Mathf.Min(screenWidth, maxWidth) : screenWidth;
             height = Mathf.RoundToInt(screenHeight * (width / (float)screenWidth));
+            if (captured != null && height > maxJpegHeight)
+            {
+                width = Mathf.RoundToInt(width * (maxJpegHeight / (float)height));
+                height = maxJpegHeight;
+            }
 
             // Video encoders reject odd dimensions, and the rejection surfaces at track creation
             // rather than here, which puts it a long way from the aspect-ratio maths that caused it.

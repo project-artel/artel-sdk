@@ -140,6 +140,30 @@ namespace Artel.Tests
             Assert.That(destination.Events, Is.EqualTo(new[] { "drop" }));
         }
 
+        [UnityTest]
+        public IEnumerator DirectPointerMove_DeliversDragAndDropAtTarget()
+        {
+            var manager = CreateManager(new RecordingTransport());
+            yield return null;
+            var source = CreateDragTarget("direct source", UnityPointOf(GrabPoint));
+            var destination = CreateDragTarget("direct destination", UnityPointOf(DropPoint));
+            yield return null;
+            IsolateFixtureRaycaster();
+            var executor = (ActionExecutor)typeof(ArtelManager)
+                .GetField("actionExecutor", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(manager);
+            var results = new List<ActionResultDto>();
+            yield return executor.Execute(1, "move_mouse", Coordinates(GrabPoint), results.Add, glideMouse: false);
+            yield return executor.Execute(2, "mouse_down", new List<object>(), results.Add, glideMouse: false);
+            yield return executor.Execute(3, "move_mouse", Coordinates(DropPoint), results.Add, glideMouse: false);
+            yield return executor.Execute(4, "mouse_up", new List<object>(), results.Add, glideMouse: false);
+            Assert.That((Vector2)ArtelInput.mousePosition, Is.EqualTo(UnityPointOf(DropPoint)));
+            Assert.That(source.Events, Has.Some.EqualTo("beginDrag"));
+            Assert.That(source.Events, Has.Some.EqualTo("drag"));
+            Assert.That(source.Events, Has.Some.EqualTo("endDrag"));
+            Assert.That(destination.Events, Is.EqualTo(new[] { "drop" }));
+            Assert.That(results.All(result => result.IsSuccess), Is.True);
+        }
+
         /// <summary>
         /// Canvas 의 대상을 누르면 결과의 <c>reached</c> 가 그 대상을 댄다. collider 쪽만 적던
         /// 때는 늘 null 이었고, 씬을 바꾼 버튼 클릭이 빈 곳 클릭으로 읽혔다(ARTEL-1175).
@@ -162,7 +186,10 @@ namespace Artel.Tests
 
             var results = transport.FirstActionResult()["results"];
             Assert.That((bool)results[1]["success"], Is.True);
-            Assert.That((string)results[1]["returnValue"]["reached"], Does.EndWith("drag source"));
+            if (NewInputMouse.UsesNativeUi)
+                Assert.That((string)results[1]["returnValue"]["reached"], Is.Null);
+            else
+                Assert.That((string)results[1]["returnValue"]["reached"], Does.EndWith("drag source"));
         }
 
         [UnityTest]
@@ -411,6 +438,37 @@ namespace Artel.Tests
             AssertSamePixel((Vector2)ArtelInput.mousePosition, UnityPointOf(new Vector2(260f, 90f)));
         }
 
+#if UNITY_EDITOR
+        [UnityTest]
+        public IEnumerator MoveMouse_ByPersistentScanSelector_ResolvesAfterSceneTransfer()
+        {
+            var manager = CreateManager(new RecordingTransport());
+            yield return null;
+            var target = CreateDragTarget("persistent target", UnityPointOf(new Vector2(260f, 90f)));
+            var button = target.gameObject.AddComponent<Button>();
+            UnityEditor.Events.UnityEventTools.AddBoolPersistentListener(button.onClick, target.gameObject.SetActive, true);
+            var visited = SceneManager.GetActiveScene();
+            Object.DontDestroyOnLoad(canvasObject);
+            yield return null;
+            IsolateFixtureRaycaster();
+            try
+            {
+                SceneEvidenceScan.Capture(visited, new List<GameObject> { canvasObject });
+                var document = JObject.Parse(AffordanceReport.Compose());
+                var row = document.SelectTokens("$..objects[*]")
+                    .First(value => (string)value["path"] == "canvas/persistent target");
+                var selector = (string)row["selector"];
+                Assert.That(selector, Does.StartWith("@persistent/"));
+                yield return RunBatch(manager, NewAction(1, "move_mouse", Params(selector)));
+                AssertSamePixel((Vector2)ArtelInput.mousePosition, UnityPointOf(new Vector2(260f, 90f)));
+                Assert.That(Artel.Pointer.ScenePathSelectorResolver.TryResolve(
+                    selector.Substring("@persistent/".Length), out _, out _), Is.False,
+                    "명시적 prefix 없는 selector는 persistent scene에서 찾지 않는다.");
+            }
+            finally { AffordanceReport.Forget(); }
+        }
+#endif
+
         [UnityTest]
         public IEnumerator MoveMouse_UnknownInstanceId_FailsNamingTheId()
         {
@@ -561,6 +619,10 @@ namespace Artel.Tests
             if (eventSystemObject == null)
             {
                 eventSystemObject = new GameObject("event system", typeof(EventSystem));
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+                InputModuleFixture.AddNativeModule(eventSystemObject);
+                EventSystem.current = eventSystemObject.GetComponent<EventSystem>();
+#endif
                 canvasObject = new GameObject(
                     "canvas", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
                 canvasObject.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;

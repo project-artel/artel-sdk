@@ -11,7 +11,7 @@
 | 씬 스캔 | 로드된 씬의 UI 와 `MonoBehaviour` 값을 읽어 `GAME_STATE` 로 보고 | [ADR 0003](adr/0003-state-without-vision.md) |
 | affordance 분석 | 컴파일된 게임 코드를 읽어 evidence 를 어셈블리에 구움 | [ADR 0004](adr/0004-evidence-payload.md), [ADR 0005](adr/0005-affordance-analyser-gate.md) |
 | `pulse` | 감시 대상 값이 움직였을 때만 내보내는 채널 | 아래 「`pulse`」 절 |
-| screen capture · 스트리밍 | 합성된 화면을 찍어 올리고 WebRTC 로 내보냄 | `artel-orchestration-server/docs/streaming-protocol.md` |
+| screen capture · 스트리밍 | 합성된 화면을 찍어 올리고 WebSocket JPEG frame으로 orch에 전송 | `artel-orchestration-server/docs/streaming-protocol.md` |
 | 입력 후킹 | `UnityEngine.Input` 호출을 빌드 시점에 갈아 끼움 | [ADR 0001](adr/0001-input-hooking.md) |
 | 인증 | loopback 로그인과 JWT | [`.plan/general/2026-07-31-sdk-loopback-login-jwt-auth.md`](../.plan/general/2026-07-31-sdk-loopback-login-jwt-auth.md) |
 
@@ -41,16 +41,17 @@ flowchart LR
     viewer["보는 사람의 브라우저"]
 
     agent <-->|"action 배치와 그 결과, content map"| orch
-    orch <-->|"/ws/sdk — ACTION · ACTION_RESULT · GAME_STATE · PULSE · PERFORMANCE · WebRTC signalling"| sdk
+    orch <-->|"/ws/sdk — ACTION · ACTION_RESULT · GAME_STATE · PULSE · PERFORMANCE · JPEG frame/ACK"| sdk
     sdk -->|"REST — evidence 문서 업로드"| orch
     orch <-->|"/ws/viewer"| viewer
-    sdk -.->|"WebRTC media, P2P"| viewer
+    orch -->|"JPEG frame"| viewer
+    orch -->|"H.264 MP4 녹화"| s3["S3"]
 ```
 
 - orchestration 과의 통로는 WebSocket 하나
   - 두 번째 소켓은 두 번째 인증, 두 번째 재연결, 두 번째 끊김을 만듦
   - `pulse` 도 스트리밍 신호도 전부 이 소켓으로 나감
-- **WebRTC media 는 orchestration 을 지나지 않음** — SDK 와 브라우저 사이 P2P
+- 영상도 orch를 지난다. SDK는 JPEG frame을 보내고 orch가 viewer 중계와 H.264 MP4 변환·S3 저장을 처리한다.
 - 오고 가는 메시지 타입은 [`docs/protocol.md`](protocol.md)
 - 끊긴 뒤 돌아오는 규칙은 [ADR 0006](adr/0006-websocket-reconnect.md) 이 전부 적음. 요약하면
 
@@ -135,7 +136,7 @@ flowchart TB
 | scene walk 과 함께 | 8 초에 125,548 바이트 | 플레이어가 있은 적 없는 씬 셋 |
 | scene walk 이 끝난 뒤 | 4,369 바이트 문서 하나, 이어서 14 초 침묵 | 사람이 실제로 있는 화면 |
 
-## screen capture 와 WebRTC 스트리밍
+## screen capture 와 WebSocket 스트리밍
 
 - `capture_screen` 은 합성된 화면을 back buffer 에서 읽음 — 카메라 렌더는 Screen Space Overlay UI 를
   빼먹는데 QA agent 가 판정할 것의 대부분이 그 UI
@@ -144,7 +145,10 @@ flowchart TB
 - keyboard status 패널만 예외로 찍는 프레임 동안 꺼짐 — 그것은 게임이 아니라 SDK 자신의 상태인데
   agent 가 게임 화면의 아래쪽 띠로 읽음
   (`.plan/general/2026-09-09-hide-keyboard-status-during-capture.md`)
-- 스트리밍은 WebRTC. `ArtelStreamHost` 가 세션을 최대 하나 들고 lease 로 수명을 잼
+- 스트리밍은 기존 인증된 `/ws/sdk`의 JPEG frame/ACK다. `ArtelStreamHost`가 세션을 최대 하나 들고 lease로 수명을 관리한다.
+- 기본 capture 상한은 1280×720·10fps·JPEG quality 65·128KiB다. 느린 연결에서는 ACK를 기다리는 동안 capture를 생략한다. SDK에서 대기 중인 frame을 누적하지 않는다.
+- 송신은 비동기이며 최대 1개다. ACK와 송신 callback을 모두 받아야 다음 frame을 보낸다. 10초 동안 완료되지 않으면 FAILED를 보고하고 capture 자원을 해제한다.
+- UDP·SDP·ICE·TURN과 Unity.WebRTC runtime은 사용하지 않는다. 전송 계약과 실제 검증은 [WebSocket 영상 전송](websocket-streaming.md)에 기록한다.
 - lease 만료는 결함이 아니라 스트림의 평범한 끝 — 닫힌 노트북 뚜껑·죽은 브라우저·죽은 서버는
   `STREAM_STOP` 을 보내지 않음
 - 신호 메시지는 `/ws/sdk` 를 타고, 그 계약 문서는 이 저장소가 아니라

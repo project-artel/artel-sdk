@@ -2,8 +2,8 @@
 
 ## WebGL player 제외
 
-WebGL player에서는 `Artel.Runtime`을 컴파일하지 않는다. WebGL용 `Unity.WebRTC`가
-없으므로 SDK 연결, 화면 스트리밍, overlay와 가상 입력은 WebGL에서 지원하지 않는다.
+WebGL player에서는 `Artel.Runtime`을 컴파일하지 않는다. SDK의 native WebSocket·입력 경로는
+WebGL에서 지원하지 않는다. 영상 전송은 WebSocket JPEG를 사용하며 `Unity.WebRTC` 의존성은 제거했다.
 입력 ILPostProcessor도 WebGL player에는 `ArtelInput` 참조를 추가하지 않는다.
 WebGL을 Build Target으로 선택한 Unity Editor에서는 기존 SDK 기능을 사용할 수 있다.
 별도 affordance 메타데이터·scan 어셈블리는 유지한다.
@@ -237,15 +237,14 @@ What that cannot undo:
 
 ## Agent keyboard input
 
-A project whose Active Input Handling is "Input System Package (New)" alone is
-not supported. Its game code never calls `UnityEngine.Input`, so the agent's keys
-and clicks do not reach it. The SDK still runs there without exceptions: its own
-`UnityEngine.Input` reads are compiled out when `ENABLE_LEGACY_INPUT_MANAGER` is
-not defined, the overlay's `EventSystem` gets the Input System package's
-`InputSystemUIInputModule`, the overlay status line says
-`신 Input System은 지원하지 않습니다.`, and `set_axis` fails with a message. Setting
-Active Input Handling to "Both" keeps the game's Input System code and makes
-Artel's input work for code that reads `UnityEngine.Input`.
+마우스 QA 명령(`move_mouse`, `mouse_down`, `mouse_up`, `Mouse0/1/2` 별칭)은 Legacy와 New Input System을 지원한다. Input System 패키지는 선택 사항이며 SDK 설치 시 자동으로 추가하지 않는다. 패키지가 없는 Legacy 프로젝트는 기존 입력 경로를 사용한다. `com.unity.inputsystem` 1.7.0 이상이 설치되어 있고 New 또는 Both 설정인 경우에만 별도 `Artel.InputSystem` assembly가 활성화되며, 가상 `Mouse`의 상태를 Input System 업데이트에 전달한다. 게임의 `InputAction`과 `Mouse.current`에서 읽을 수 있다. New/Both에서 패키지 버전이 1.7.0 미만이거나 adapter가 등록되지 않았다면 마우스 명령은 오류를 반환한다. Legacy 설정의 기존 입력 경로는 유지한다.
+
+`InputSystemUIInputModule`을 사용하는 UI는 native 입력으로 처리하므로 SDK의 직접 이벤트 전달과 중복되지 않는다. `StandaloneInputModule`은 기존 dispatcher를 사용한다. native UI 경로의 `mouse_down` 결과는 실제 수신 대상을 추측하지 않아 `reached=null`이며, `pointerHeldByPerson`은 포인터 소유권으로 판단한다.
+
+- Dynamic Update와 Fixed Update를 지원한다. Manual Update, `timeScale=0`인 Fixed Update는 QA 마우스 명령을 거절한다. Dynamic Update는 일시 정지 중에도 동작한다.
+- Mouse를 소유한 `InputUser`가 하나이면 가상 Mouse도 pairing한다. 복수 Mouse 사용자 환경은 거절한다. 특정 장치 ID에 고정한 binding이나 게임이 직접 제한한 action device 목록은 자동 수정하지 않는다.
+- QA 마우스가 활성화된 동안 원본 asset을 변경하지 않고 Input Settings 복사본에서 focus와 background 입력을 허용하며 종료 시 원래 설정을 복원한다. QA가 포인터를 소유하는 동안 실제 마우스 이벤트를 차단한다. run 종료, reset, 연결 해제, Ctrl+Shift+M 제어권 반환 때 버튼을 놓고 장치를 정리한다. 기존 release와 마찬가지로 같은 UI 대상에서 놓으면 click이 발생할 수 있다.
+- New Input System 키보드/gamepad 주입은 지원하지 않는다. 키보드 QA는 아래 Legacy proxy 경로를 사용한다.
 
 Keep using `UnityEngine.Input` for keyboard polling. Artel's IL post-processor
 rewrites supported calls to the `ArtelInput` proxy during compilation:
@@ -764,11 +763,9 @@ value back. That covers the time the socket is down or retrying, not only the
 time it is up. A build that never connects to Artel is left with whatever its
 own Player Settings say.
 
-It is needed because everything a run depends on lives in `Update()`: the WebRTC
-encode pump, the screen capture loop, and the draining of the incoming message
-queue. With the Player Settings default, losing window focus stops all three —
-so switching from the game to a browser to watch the stream would be the very
-thing that froze it, and no later message could restart it either.
+QA 실행에 필요한 JPEG capture·전송 상태 확인과 수신 메시지 처리는 `Update()`에서 돈다.
+Player Settings 기본값으로는 게임 창이 focus를 잃을 때 이 작업들이 멈출 수 있다.
+브라우저로 전환해도 영상과 제어가 계속되도록 연결을 소유하는 동안 background 실행을 유지한다.
 
 Performance reports also continue while the window is not focused. Their frame
 statistics include the background frames, which may reflect platform

@@ -1,0 +1,1 @@
+PASS: two entries without domain reload

@@ -34,6 +34,13 @@ namespace Artel.Affordances.Scan
         private readonly StraySpawnTracker strays = new StraySpawnTracker();
         private int removed;
 
+        /// <summary>walk 전의 <c>PlayerPrefs</c>. walk 이 끝나면 이 값으로 되돌린다(ARTEL-1231).</summary>
+        private PlayerPrefsSnapshot prefs;
+
+        /// <summary>walk 중에 게임 코드가 던진 예외 수. 전체와, 지금 여는 scene 하나.</summary>
+        private int exceptions;
+        private int sceneExceptions;
+
         internal static bool InProgress => _walking != null;
 
         internal static bool Begin()
@@ -55,6 +62,7 @@ namespace Artel.Affordances.Scan
         {
             // 돌지 않는 동안 도착한 취소가 남아 이 순회를 첫 씬에서 죽이지 않게, 시작할 때 지운다.
             SceneWalkHooks.ClearCancel();
+            BeforeWalk();
 
             var count = SceneManager.sceneCountInBuildSettings;
             var addressed = Addressed();
@@ -73,6 +81,7 @@ namespace Artel.Affordances.Scan
                     ExtraScenes.Available ? "no-scenes-anywhere" : "no-scenes-in-build-settings"
                 });
 
+                AfterWalk();
                 Finish();
                 yield break;
             }
@@ -95,7 +104,9 @@ namespace Artel.Affordances.Scan
                 SceneWalkHooks.OnSceneOpening(index, total,
                     System.IO.Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(index)));
                 strays.Capture();
+                sceneExceptions = 0;
                 yield return Read(index);
+                NoteExceptions(SceneManager.GetActiveScene());
             }
 
             for (var index = 0; index < addressed.Count; index++)
@@ -109,7 +120,9 @@ namespace Artel.Affordances.Scan
                 Debug.Log("[Artel] Walking addressed scene " + (index + 1) + " of " + addressed.Count + ".");
                 SceneWalkHooks.OnSceneOpening(count + index, total, addressed[index]);
                 strays.Capture();
+                sceneExceptions = 0;
                 yield return Read(addressed[index]);
+                NoteExceptions(SceneManager.GetActiveScene());
             }
 
             SceneWalkHooks.OnSceneOpening(total, total, null);
@@ -122,6 +135,7 @@ namespace Artel.Affordances.Scan
             // 마지막에, 한 번 읽는다. 게임이 씬 로드를 건너 쥐고 있던 것은 순회가 끝날 무렵까지 쌓인 무엇이고, 이 carrier 가
             // 바로 그 같은 씬에 산다 — 스스로 설치되는 패키지가 그 씬에 대해 가진 유일한 손잡이다.
             SceneEvidenceScan.CapturePersistent(gameObject.scene);
+            AfterWalk();
 
             Debug.Log("[Artel] Walk finished. " + AffordanceReport.SceneCount + " scenes in the report; removed " +
                       removed + " object(s) left behind: " + AffordanceBootstrap.Save());
@@ -210,7 +224,7 @@ namespace Artel.Affordances.Scan
                 yield break;
             }
 
-            SceneEvidenceScan.Capture(scene);
+            SceneEvidenceScan.Capture(scene, strays.Strays(scene));
 
             var afterScene = SceneWalkHooks.OnSceneRead(scene.name);
 
@@ -298,7 +312,94 @@ namespace Artel.Affordances.Scan
                 yield return Load(origin);
             }
 
+            AfterWalk();
             Finish();
+        }
+
+        /// <summary>walk 이 게임에 남길 수 있는 것을 담아 두고, 게임 코드의 예외를 세기 시작한다.</summary>
+        private void BeforeWalk()
+        {
+            exceptions = 0;
+            sceneExceptions = 0;
+            AffordanceReport.ForgetWalkNotes();
+            Application.logMessageReceived += Count;
+
+            try
+            {
+                prefs = PlayerPrefsSnapshot.Take(PlayerPrefsSnapshot.EvidenceKeys());
+            }
+            catch (System.Exception exception)
+            {
+                prefs = null;
+                Debug.LogWarning("[Artel] PlayerPrefs could not be saved before the walk: " + exception.Message);
+            }
+        }
+
+        /// <summary>
+        /// <c>PlayerPrefs</c> 를 walk 전 값으로 되돌리고, 무엇을 되돌렸는지와 예외 수를 리포트의 gap 에 적는다.
+        /// </summary>
+        /// <remarks>
+        /// 원래 scene 을 다시 load 한 뒤에 한다. 그 load 도 게임 코드를 돌리므로, 앞에서 되돌리면 그 사이에 쓴 값이 남는다.
+        /// </remarks>
+        private void AfterWalk()
+        {
+            Application.logMessageReceived -= Count;
+            AffordanceReport.NoteWalk("game-exceptions-during-walk:" + exceptions);
+
+            if (prefs == null)
+            {
+                AffordanceReport.NoteWalk("player-prefs-not-restored");
+                return;
+            }
+
+            try
+            {
+                var touched = prefs.Restore();
+                AffordanceReport.NoteWalk("player-prefs-restored:" + touched);
+
+                if (!prefs.Enumerated)
+                {
+                    // 이 플랫폼에서는 저장소를 나열하지 못해 evidence 가 적은 key 만 되돌렸다.
+                    AffordanceReport.NoteWalk("player-prefs-keys-from-evidence-only");
+                }
+
+                Debug.Log("[Artel] Restored " + touched + " PlayerPrefs key(s) the walk changed.");
+            }
+            catch (System.Exception exception)
+            {
+                AffordanceReport.NoteWalk("player-prefs-not-restored");
+                Debug.LogWarning("[Artel] PlayerPrefs could not be restored after the walk: " + exception.Message);
+            }
+            finally
+            {
+                prefs = null;
+            }
+        }
+
+        private void Count(string condition, string stackTrace, LogType type)
+        {
+            if (type != LogType.Exception)
+            {
+                return;
+            }
+
+            exceptions++;
+            sceneExceptions++;
+        }
+
+        /// <summary>방금 읽은 scene 을 여는 동안 난 예외 수를 그 scene 의 gap 에 적는다.</summary>
+        private void NoteExceptions(Scene scene)
+        {
+            if (sceneExceptions > 0)
+            {
+                AffordanceReport.Note(scene.name, "game-exceptions:" + sceneExceptions);
+            }
+        }
+
+        private void OnDestroy()
+        {
+            // walk 이 끝나기 전에 carrier 가 파괴돼도 log 구독이 남지 않게 한다.
+            Application.logMessageReceived -= Count;
         }
 
         private void Finish()

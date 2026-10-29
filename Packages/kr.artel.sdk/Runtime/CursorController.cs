@@ -81,7 +81,8 @@ namespace Artel
         /// the path is the point: a held button turns it into a drag, and a jump from start to end
         /// gives the game a single drag event to work out what happened from.
         /// </param>
-        public IEnumerator MoveTo(Vector2 screenPosition, Action<Vector2> moved, bool glide = false)
+        /// <param name="immediate">사람의 연속 입력은 smoothMovement 설정과 무관하게 현재 좌표에 바로 적용한다.</param>
+        public IEnumerator MoveTo(Vector2 screenPosition, Action<Vector2> moved, bool glide = false, bool immediate = false)
         {
             if (cursorTransform == null)
             {
@@ -91,7 +92,7 @@ namespace Artel
             cursorTransform.gameObject.SetActive(true);
             cursorTransform.SetAsLastSibling();
 
-            if ((!smoothMovement && !glide) || movementDurationSeconds <= 0f)
+            if (immediate || (!smoothMovement && !glide) || movementDurationSeconds <= 0f)
             {
                 PlaceCursor(screenPosition, moved);
                 yield break;

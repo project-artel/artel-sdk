@@ -1,11 +1,13 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
 using Artel.Protocol.Dto;
 using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.TestTools;
 
 namespace Artel.Tests
 {
@@ -175,6 +177,40 @@ namespace Artel.Tests
 
             Assert.That((string)JObject.Parse(reply)["type"], Is.EqualTo("GAME_STATE"));
             Assert.That(transport.Sent, Is.Empty);
+        }
+
+        [UnityTest]
+        public IEnumerator UnsupportedControl_DoesNotClaimInputOrBlockNextQaAction()
+        {
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            string reply = null;
+            var handle = typeof(ArtelManager)
+                .GetMethod("HandleMessage", BindingFlags.Instance | BindingFlags.NonPublic);
+            handle.Invoke(manager, new object[]
+            {
+                new ArtelWebSocketMessage(
+                    "{\"type\":\"DEMONSTRATION_CONTROL\",\"sessionId\":\"old-session\",\"generation\":1,\"operation\":\"ACQUIRE\",\"leaseMilliseconds\":8000}",
+                    text => reply = text)
+            });
+
+            Assert.That((string)JObject.Parse(reply)["type"], Is.EqualTo("ERROR"));
+            Assert.That(manager.Reading, Is.False);
+            Assert.That(ArtelInput.PointerHeldForRun, Is.False);
+            Assert.That(manager.HasWebSocketTransport, Is.True);
+            handle.Invoke(manager, new object[]
+            {
+                new ArtelWebSocketMessage(
+                    "{\"type\":\"ACTION\",\"id\":73,\"actions\":[{\"id\":1,\"method\":\"scan_scene\"}]}",
+                    transport.Send)
+            });
+            yield return null;
+            yield return null;
+
+            var result = transport.Sent.Select(JObject.Parse).Last(message => (string)message["type"] == "ACTION_RESULT");
+            Assert.That((string)result["type"], Is.EqualTo("ACTION_RESULT"));
+            Assert.That((long)result["requestId"], Is.EqualTo(73));
+            Assert.That((bool)result["results"][0]["success"], Is.True);
         }
 
         private ArtelManager CreateManager(RecordingTransport transport)

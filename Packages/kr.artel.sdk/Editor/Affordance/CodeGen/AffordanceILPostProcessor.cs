@@ -125,6 +125,9 @@ namespace Artel.Affordances.CodeGen
             // 술어의 조건도 마찬가지다. 쥐고 있는 열쇠가 그것을 읽은 모듈의 MethodDefinition 이다.
             PredicateConditions.Forget();
 
+            // dictionary 의 key 표도 마찬가지다. 쥐고 있는 열쇠가 그 module 의 FieldDefinition 이다.
+            DictionaryKeys.Forget();
+
             var carriedSymbols = HasSymbols(compiledAssembly);
             var readSymbols = carriedSymbols;
 
@@ -225,9 +228,24 @@ namespace Artel.Affordances.CodeGen
 
                 flow.Milliseconds = clock.ElapsedMilliseconds;
 
+                // 접기 전에 한다. 버튼에 잘못 묶이는 기록이 다른 기록 밑으로 접혀 들어가면 지울 수 없다(ARTEL-1229).
+                var rootNames = new HashSet<string>();
+
+                foreach (var root in roots)
+                {
+                    rootNames.Add(root.FullName);
+                }
+
+                flow.Dropped = ButtonJoin.DropHandedRoots(variants, rootNames) +
+                               ButtonJoin.DropValueConstructors(variants, name =>
+                                   AnalysisScope.Inspect(assembly.MainModule.GetType(name)) == TypeVerdict.Behaviour);
+
                 // 아래의 공백들이 그것들에 매달리기 전에 한다. 결국 같은 공백을 나르게 될 두 경우가 여전히 같은 경우로
                 // 인식되도록.
                 flow.Folded = DuplicateVariants.Fold(variants);
+
+                // 접은 뒤에 한다. 남는 기록에만 붙이면 된다.
+                AwaitedInputs.Mark(variants);
 
                 flow.Variants = variants.Count;
                 flow.Roots = roots.Count;
@@ -302,6 +320,12 @@ namespace Artel.Affordances.CodeGen
                 message += written.Unattached > 0
                     ? "; " + written.Unattached + " belong to no component and were dropped."
                     : ".";
+
+                if (written.Inherited > 0)
+                {
+                    message += " " + written.Inherited + " were also baked onto subclasses that inherit their entry point.";
+                }
+
                 message += " " + written.ResourceBytes + " bytes as a resource.";
 
                 // 두 숫자를 함께 내거나 둘 다 내지 않는다. 목록만 있으면 게임이 도는 동안 확인할 수 있는 것의 전부처럼
@@ -454,6 +478,9 @@ namespace Artel.Affordances.CodeGen
             /// <summary>메서드가 불린 것이 아니라 건네진 경우들.</summary>
             internal int Handed;
 
+            /// <summary>버튼 click 에 잘못 묶이는 기록이라 지운 경우들(ARTEL-1229).</summary>
+            internal int Dropped;
+
             internal string Describe()
             {
                 if (Methods == 0 && Abandoned == 0)
@@ -483,6 +510,12 @@ namespace Artel.Affordances.CodeGen
                 if (Handed > 0)
                 {
                     text += " " + Handed + " were handed over rather than called.";
+                }
+
+                if (Dropped > 0)
+                {
+                    text += " " + Dropped + " were dropped: a listener's body already recorded from its own entry, " +
+                            "or a value type's constructor.";
                 }
 
                 // 합계에 접어 넣지 않고 따로 말한다. 해내지 못한 것을 조용히 빼놓은 개수는 완전한 답으로 읽힌다.

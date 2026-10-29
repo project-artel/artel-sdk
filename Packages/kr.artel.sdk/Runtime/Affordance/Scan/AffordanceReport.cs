@@ -359,6 +359,25 @@ namespace Artel.Affordances.Scan
 
         private static void WalkGap(string gap) => _walkGaps.Add(gap);
 
+        /// <summary>
+        /// 마지막 walk 한 번에 대한 사실. 게임 코드의 예외 수, <c>PlayerPrefs</c> 를 되돌린 수 같은 것이다(ARTEL-1231).
+        /// </summary>
+        /// <remarks>
+        /// <see cref="_walkGaps"/> 와 따로 두는 이유는 수명이다. 이것들은 walk 마다 새로 정해지는 수라서, 앞선 walk 의
+        /// 값이 남으면 같은 이름의 gap 이 값만 다르게 둘 실린다. walk 이 시작할 때 <see cref="ForgetWalkNotes"/> 로 비운다.
+        /// </remarks>
+        private static readonly List<string> _walkNotes = new List<string>();
+
+        internal static void NoteWalk(string gap)
+        {
+            if (!string.IsNullOrEmpty(gap) && !_walkNotes.Contains(gap))
+            {
+                _walkNotes.Add(gap);
+            }
+        }
+
+        internal static void ForgetWalkNotes() => _walkNotes.Clear();
+
         /// <summary>이미 읽은 씬에 대해 할 말을 하나 더한다.</summary>
         internal static void Note(string scene, string gap)
         {
@@ -423,7 +442,9 @@ namespace Artel.Affordances.Scan
             _persistentRead = false;
             _persistentGaps.Clear();
             _walkGaps.Clear();
+            _walkNotes.Clear();
             SerializedReferences.Forget();
+            AssetValues.Forget();
         }
 
         /// <summary>
@@ -558,7 +579,10 @@ namespace Artel.Affordances.Scan
 
             // `persistentObjects` 가 게임이 씬 로드를 건너 쥐고 있던 것을 담고, 아무도 보지 않았다고 말하던 공백은 아무도 볼 수
             // 없었을 때만 쓰인다.
-            "persistent-objects-v1"
+            "persistent-objects-v1",
+
+            // `assets` 가 refs[].id 를 key 로 ScriptableObject 의 직렬화된 값을 담는다(ARTEL-1226).
+            "asset-values-v1"
         };
 
         private static void Built(StringBuilder text)
@@ -755,7 +779,11 @@ namespace Artel.Affordances.Scan
                 wrote = true;
             }
 
-            text.Append("],\"persistentObjects\":[").Append(_persistent).Append("],\"gaps\":[");
+            text.Append("],\"persistentObjects\":[").Append(_persistent).Append("],");
+
+            // refs[].id 로 찾아가는 ScriptableObject 의 값. 더하기만 하는 최상위 필드다(ARTEL-1226).
+            AssetValues.Compose(text);
+            text.Append(",\"gaps\":[");
 
             var said = new HashSet<string>();
             var first = true;
@@ -807,6 +835,17 @@ namespace Artel.Affordances.Scan
                 first = false;
             }
 
+            foreach (var gap in _walkNotes)
+            {
+                if (!first)
+                {
+                    text.Append(',');
+                }
+
+                Json.String(text, gap);
+                first = false;
+            }
+
             foreach (var gap in _persistentGaps)
             {
                 if (!first)
@@ -827,6 +866,17 @@ namespace Artel.Affordances.Scan
                 }
 
                 Json.String(text, "evidence-never-placed-count:" + missing.Count);
+                first = false;
+            }
+
+            if (AssetValues.Skipped > 0)
+            {
+                if (!first)
+                {
+                    text.Append(',');
+                }
+
+                Json.String(text, "asset-values-omitted:" + AssetValues.Skipped);
                 first = false;
             }
 
