@@ -34,6 +34,31 @@ namespace Artel.Tests.Streaming
         }
 
         [Test]
+        public void 종료_통지_전송이_실패해도_session을_정리하고_새로_시작한다()
+        {
+            host.TryHandleMessage(StreamMessageType.StreamStart, StreamStartJson(FirstStreamId), 0f);
+            signals.FailSend = true;
+            Assert.Throws<InvalidOperationException>(() => host.Stop());
+            Assert.That(host.HasLiveSession, Is.False);
+            Assert.That(sessions.Created[0].IsStopped, Is.True);
+            Assert.DoesNotThrow(host.Stop);
+            signals.FailSend = false;
+            host.TryHandleMessage(StreamMessageType.StreamStart, StreamStartJson(SecondStreamId), 1f);
+            Assert.That(host.HasLiveSession, Is.True);
+        }
+
+        [Test]
+        public void 새_연결에서는_이전_session의_종료_통지를_보내지_않는다()
+        {
+            host.TryHandleMessage(StreamMessageType.StreamStart, StreamStartJson(FirstStreamId), 0f);
+            var statesBefore = signals.States.Count;
+            host.Abandon();
+            Assert.That(signals.States.Count, Is.EqualTo(statesBefore));
+            Assert.That(host.HasLiveSession, Is.False);
+            Assert.That(sessions.Created[0].IsStopped, Is.True);
+        }
+
+        [Test]
         public void TryHandleMessage_LeavesUnrelatedMessagesToTheCaller()
         {
             Assert.That(host.TryHandleMessage("GAME_STATE", "{\"type\":\"GAME_STATE\"}", 0f), Is.False);
@@ -273,10 +298,12 @@ namespace Artel.Tests.Streaming
 
         private sealed class RecordingSignalSender : IStreamSignalSender
         {
+            public bool FailSend;
             public List<StreamStateMessageDto> States { get; } = new List<StreamStateMessageDto>();
 
             public void Send(object message)
             {
+                if (FailSend) throw new InvalidOperationException("injected signal failure");
                 var state = message as StreamStateMessageDto;
                 if (state != null)
                 {

@@ -117,6 +117,7 @@ namespace Artel
 
         private ArtelOverlayViewModel viewModel;
         [NonSerialized] private bool initialized;
+        private float nextInitializationTime;
 
         // 가장 최근에 받은 RUN_STATUS (ARTEL-835). 아직 없으면 null 이고, CreateRunStatusLine
         // 은 이 값으로 시작 문구를 정한다 — 다크 모드 토글로 CreateGui 가 다시 도는 동안에도
@@ -168,7 +169,20 @@ namespace Artel
 
         private void EnsureInitialized()
         {
-            if (initialized || artelManager == null || viewModel == null) return;
+            if (initialized || artelManager == null || viewModel == null ||
+                Time.unscaledTime < nextInitializationTime) return;
+
+            try { InitializeOverlay(); }
+            catch (Exception exception)
+            {
+                initialized = false;
+                nextInitializationTime = Time.unscaledTime + 5f;
+                Debug.LogWarning("[Artel] Overlay initialization failed; retrying in 5s: " + exception.Message);
+            }
+        }
+
+        private void InitializeOverlay()
+        {
 
             if (!LegacyInput.IsAvailable)
             {
@@ -185,10 +199,10 @@ namespace Artel
             }
             listedProjectIds.Clear();
             hiddenForCapture = false;
-            initialized = true;
             viewModel.Initialize(artelManager.Server);
             CreateGui();
             RefreshView();
+            initialized = true;
 
             if (viewModel.HasStoredSession)
             {
@@ -202,6 +216,16 @@ namespace Artel
             {
                 StartCoroutine(LoadProjectsThenRegister());
             }
+        }
+
+        private void OnDisable()
+        {
+            viewModel?.CancelLogin();
+            StopAllCoroutines();
+            registrationRunning = false;
+            loginRunning = false;
+            initialized = false;
+            nextInitializationTime = 0f;
         }
 
         private void OnDestroy()
