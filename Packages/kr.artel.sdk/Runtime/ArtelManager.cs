@@ -87,9 +87,19 @@ namespace Artel
         /// had the setting on.
         /// </summary>
         private bool hostRunInBackground;
+        private bool changedRunInBackground;
         private long nextMessageId = 1;
-        private readonly Queue<ArtelRequestDto> actionRequests = new Queue<ArtelRequestDto>();
+        private readonly Queue<ArtelWebSocketMessage> actionRequests = new Queue<ArtelWebSocketMessage>();
         private bool processingActions;
+        private Coroutine actionCoroutine;
+        private IEnumerator actionWorker;
+        private readonly Stack<IEnumerator> actionStack = new Stack<IEnumerator>();
+        private Func<bool> activeActionIsCurrent;
+        private IArtelWebSocketTransport observedTransport;
+        private long observedConnectionEpoch;
+        private bool observedConnected;
+        private float nextRuntimeRecoveryTime;
+        private float nextRuntimeTickTime;
 
         /// <summary>False on a duplicate that Awake destroyed before it built anything.</summary>
         [NonSerialized] private bool ownsRuntime;
@@ -248,10 +258,15 @@ namespace Artel
         /// </remarks>
         private void EnsureRuntime()
         {
-            if (ownsRuntime)
+            if (ownsRuntime && frameTimeRecorder != null && frameTimingSampler != null &&
+                streamHost != null && actionExecutor != null && gameFunctions != null)
             {
                 return;
             }
+
+            if (ownsRuntime) ResetConnectionRuntime(false);
+            else CancelActions();
+            ownsRuntime = false;
 
             scanner = new SceneScanner();
             allSceneScanner = new AllSceneScanner(scanner);
@@ -342,7 +357,7 @@ namespace Artel
             }
 
             instance = this;
-            EnsureRuntime();
+            if (!TryEnsureRuntime()) return;
 
             // Only a re-enable reaches this. The first connection is Start's, and until Start has
             // run there is nothing here to repeat.
@@ -376,13 +391,6 @@ namespace Artel
 
         private void OnDisable()
         {
-            // Before the transport goes: a game left frozen by pause_time can only be resumed
-            // through this SDK, so shutting down while paused would strand it.
-            if (actionExecutor != null)
-            {
-                actionExecutor.RestoreTimeScale();
-            }
-
             StopTransport();
         }
 
@@ -405,13 +413,27 @@ namespace Artel
 
         private void Update()
         {
+            if (Time.unscaledTime < nextRuntimeTickTime) return;
+            try { UpdateRuntime(); }
+            catch (Exception exception)
+            {
+                ResetConnectionRuntime(false);
+                ownsRuntime = false;
+                nextRuntimeTickTime = Time.unscaledTime + 5f;
+                Debug.LogWarning("[Artel] Runtime update failed; rebuilding in 5s: " + exception.Message);
+            }
+        }
+
+        private void UpdateRuntime()
+        {
             if (!ownsRuntime)
             {
-                return;
+                if (instance != this || Time.unscaledTime < nextRuntimeRecoveryTime || !TryEnsureRuntime()) return;
             }
 
             using (ArtelProfilerMarkers.ManagerUpdate.Auto())
             {
+                ObserveConnection();
                 RecordFrameTime();
 
                 // Before AdvanceFrame, so the frame the person asks for the pointer is already
@@ -463,6 +485,8 @@ namespace Artel
         /// </remarks>
         public bool StartTransport()
         {
+            if (!TryEnsureRuntime()) return false;
+
             if (webSocketTransport == null)
             {
                 if (!ArtelSdkSession.IsFor(server) || !ArtelSdkSession.TryLoadToken(out _) ||
@@ -500,6 +524,7 @@ namespace Artel
                 // that is StreamLease refusing to charge a suspended stretch against the lease.
                 hostRunInBackground = Application.runInBackground;
                 Application.runInBackground = true;
+                changedRunInBackground = true;
             }
 
             if (!ownsTransport)
@@ -638,26 +663,15 @@ namespace Artel
             // and is then destroyed — which calls OnDisable, which lands here. It owns no socket,
             // no stream and no dispatcher, so there is nothing to stop and every field below is
             // null.
-            if (!ownsRuntime)
+            if (!ownsRuntime && actionExecutor == null && streamHost == null && webSocketTransport == null)
             {
                 return;
             }
 
             // Before the socket goes, so the closing STREAM_STATE still has somewhere to go and
             // capture never outlives the connection that asked for it.
-            streamHost?.Stop();
-
-            // Ahead of the ownership checks: whoever owns the socket, a run that ends mid-drag must
-            // not leave the game holding a button nobody will ever send the release for.
-            ReleaseAgentInput();
-
-            // 게임 읽기가 그것을 청한 연결보다 오래 사는 것이 이 짝짓기가 피하려고 존재하는 값이다 — 아무도 없는데 씬 로드마다
-            // 스캔하고 파일이 자라는 것.
-            EndDiscovery();
-
-            // 소켓이 닫히기 전에 끝내고 보낸다. 아직 열려 있으면 BEHAVIOR_ENDED 가 서버에 닿는다.
-            gameFunctions.EndRun("connection closed");
-            SendBehaviorEndedFrames();
+            ResetConnectionRuntime();
+            Cleanup(EndDiscovery, "discovery");
 
             if (webSocketTransport == null)
             {
@@ -669,12 +683,18 @@ namespace Artel
                 return;
             }
 
-            webSocketTransport.Stop();
-            webSocketTransport.Dispose();
+            var closingTransport = webSocketTransport;
             webSocketTransport = null;
+            observedTransport = null;
+            Cleanup(closingTransport.Stop, "transport stop");
+            Cleanup(closingTransport.Dispose, "transport dispose");
 
             // The connection this was taken for is gone, so the host game gets its setting back.
-            Application.runInBackground = hostRunInBackground;
+            if (changedRunInBackground)
+            {
+                Application.runInBackground = hostRunInBackground;
+                changedRunInBackground = false;
+            }
 
             Debug.Log("[Artel] WebSocket transport stopped.");
         }
@@ -686,9 +706,100 @@ namespace Artel
         /// </summary>
         private void ReleaseAgentInput()
         {
-            pointerEvents.ReleaseAll();
-            ArtelInput.ReleaseAllVirtualInput();
-            ArtelInput.PointerHeldForRun = false;
+            try
+            {
+                pointerEvents?.ReleaseAll();
+            }
+            finally
+            {
+                ArtelInput.ReleaseAllVirtualInput();
+                ArtelInput.PointerHeldForRun = false;
+            }
+        }
+
+        private void ObserveConnection()
+        {
+            var connected = webSocketTransport != null && webSocketTransport.IsConnected;
+            var epoch = (webSocketTransport as IArtelConnectionEpochSource)?.ConnectionEpoch ?? 0;
+            if (observedTransport == webSocketTransport && observedConnected == connected &&
+                observedConnectionEpoch == epoch) return;
+
+            // 1프레임 사이에 끊겼다가 다시 붙어도 epoch가 바뀌면 이전 실행은 폐기한다.
+            if (observedTransport != null) ResetConnectionRuntime(false);
+            observedTransport = webSocketTransport;
+            observedConnected = connected;
+            observedConnectionEpoch = epoch;
+        }
+
+        private bool TryEnsureRuntime()
+        {
+            try
+            {
+                EnsureRuntime();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                // 매 frame 같은 예외를 내지 않고 다음 초기화를 5초 뒤에 다시 시도한다.
+                ownsRuntime = false;
+                nextRuntimeRecoveryTime = Time.unscaledTime + 5f;
+                Debug.LogWarning("[Artel] Runtime initialization failed; retrying in 5s: " + exception.Message);
+                return false;
+            }
+        }
+
+        private void ResetConnectionRuntime(bool reportEndings = true)
+        {
+            CancelActions();
+            Cleanup(() => actionExecutor?.RestoreTimeScale(), "time scale");
+            Cleanup(() =>
+            {
+                if (reportEndings) streamHost?.Stop();
+                else streamHost?.Abandon();
+            }, "stream");
+            Cleanup(ReleaseAgentInput, "input");
+            Cleanup(StopReadings, "readings");
+            Cleanup(() => gameFunctions?.EndRun("connection closed"), "behaviors");
+            if (gameFunctions != null)
+            {
+                if (reportEndings) Cleanup(SendBehaviorEndedFrames, "behavior results");
+                else while (gameFunctions.TryDequeueEnded(out _)) { }
+            }
+            reportedDeviceContext = false;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            sentCatalogRevision = 0;
+#endif
+        }
+
+        private static void Cleanup(Action cleanup, string operation)
+        {
+            try { cleanup(); }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("[Artel] " + operation + " cleanup failed: " + exception.Message);
+            }
+        }
+
+        private void CancelActions()
+        {
+            actionRequests.Clear();
+            if (actionCoroutine != null) StopCoroutine(actionCoroutine);
+            var endingWorker = actionWorker;
+            actionWorker = null;
+            actionCoroutine = null;
+            Cleanup(() => (endingWorker as IDisposable)?.Dispose(), "action worker");
+            DisposeActionStack();
+            processingActions = false;
+            activeActionIsCurrent = null;
+        }
+
+        private void DisposeActionStack()
+        {
+            while (actionStack.Count > 0)
+            {
+                var endingAction = actionStack.Pop();
+                Cleanup(() => (endingAction as IDisposable)?.Dispose(), "action");
+            }
         }
 
         internal bool HasWebSocketTransport { get { return webSocketTransport != null; } }
@@ -704,10 +815,7 @@ namespace Artel
                 return;
             }
 
-            ReleaseAgentInput();
-
-            gameFunctions.EndRun("connection closed");
-            SendBehaviorEndedFrames();
+            ResetConnectionRuntime();
             webSocketTransport = null;
             ownsTransport = true;
 
@@ -787,7 +895,7 @@ namespace Artel
 
                 if (request.Type == "ACTION")
                 {
-                    EnqueueAction(request);
+                    EnqueueAction(message);
                     return;
                 }
 
@@ -822,12 +930,13 @@ namespace Artel
             }
         }
 
-        private void EnqueueAction(ArtelRequestDto request)
+        private void EnqueueAction(ArtelWebSocketMessage message)
         {
-            actionRequests.Enqueue(request);
+            actionRequests.Enqueue(message);
             if (!processingActions)
             {
-                StartCoroutine(ProcessActions());
+                actionWorker = ProcessActions();
+                actionCoroutine = StartCoroutine(actionWorker);
             }
         }
 
@@ -934,13 +1043,58 @@ namespace Artel
         private IEnumerator ProcessActions()
         {
             processingActions = true;
-            while (actionRequests.Count > 0)
+            try
             {
-                var request = actionRequests.Dequeue();
-                yield return ExecuteActionRequest(request);
-            }
+                while (actionRequests.Count > 0)
+                {
+                    var message = actionRequests.Dequeue();
+                    if (!message.IsCurrent()) continue;
+                    activeActionIsCurrent = message.IsCurrent;
+                    var request = jsonCodec.Deserialize<ArtelRequestDto>(message.Text);
+                    actionStack.Push(ExecuteActionRequest(request));
+                    while (actionStack.Count > 0 && message.IsCurrent())
+                    {
+                        var action = actionStack.Peek();
+                        object waitingFor = null;
+                        bool moved = false;
+                        Exception failure = null;
+                        try
+                        {
+                            moved = action.MoveNext();
+                            if (moved) waitingFor = action.Current;
+                        }
+                        catch (Exception exception) { failure = exception; }
 
-            processingActions = false;
+                        if (failure != null)
+                        {
+                            Debug.LogWarning("[Artel] Action execution failed: " + failure.Message);
+                            actionRequests.Clear();
+                            Cleanup(() => actionExecutor?.RestoreTimeScale(), "time scale");
+                            Cleanup(ReleaseAgentInput, "input");
+                            break;
+                        }
+                        if (!moved)
+                        {
+                            actionStack.Pop();
+                            Cleanup(() => (action as IDisposable)?.Dispose(), "action");
+                        }
+                        else if (waitingFor is IEnumerator nested)
+                        {
+                            actionStack.Push(nested);
+                        }
+                        else yield return waitingFor;
+                    }
+                    DisposeActionStack();
+                }
+            }
+            finally
+            {
+                DisposeActionStack();
+                processingActions = false;
+                activeActionIsCurrent = null;
+                actionWorker = null;
+                actionCoroutine = null;
+            }
         }
 
         private IEnumerator ExecuteActionRequest(ArtelRequestDto request)
@@ -993,6 +1147,8 @@ namespace Artel
                     result => results.Add(result));
             }
 
+            // 입력을 받은 게임의 Update와 예외 관측이 끝난 다음 결과를 보낸다.
+            yield return null;
             var response = new ActionResultMessage
             {
                 Type = "ACTION_RESULT",
@@ -1009,7 +1165,8 @@ namespace Artel
                 Errors = ErrorsSince(startFrame)
             };
 
-            if (webSocketTransport != null && webSocketTransport.IsConnected)
+            if (webSocketTransport != null && webSocketTransport.IsConnected &&
+                (activeActionIsCurrent == null || activeActionIsCurrent()))
             {
                 webSocketTransport.Send(jsonCodec.Serialize(response));
             }

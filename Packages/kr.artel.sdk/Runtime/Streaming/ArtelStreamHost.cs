@@ -101,6 +101,12 @@ namespace Artel.Streaming
             EndSession(StreamState.Stopped, null);
         }
 
+        // 이전 session의 종료 통지를 새 연결에 보내지 않고 리소스만 정리한다.
+        public void Abandon()
+        {
+            DisposeSession();
+        }
+
         private void StartSession(StreamStartMessageDto start, float currentTime)
         {
             if (start == null || string.IsNullOrEmpty(start.StreamId))
@@ -132,8 +138,8 @@ namespace Artel.Streaming
             try { session.Start(currentTime); }
             catch (Exception error)
             {
-                ReportState(start.StreamId, StreamState.Failed, "영상 capture 시작 실패: " + error.Message);
-                DisposeSession();
+                try { ReportState(start.StreamId, StreamState.Failed, "영상 capture 시작 실패: " + error.Message); }
+                finally { DisposeSession(); }
             }
         }
 
@@ -172,15 +178,15 @@ namespace Artel.Streaming
                 return;
             }
 
-            ReportState(session.StreamId, state, error);
-
             if (state != StreamState.Failed)
             {
+                ReportState(session.StreamId, state, error);
                 return;
             }
 
             // 실패한 session이 texture와 capture loop를 계속 보유하지 않게 한다.
-            DisposeSession();
+            try { ReportState(session.StreamId, state, error); }
+            finally { DisposeSession(); }
         }
 
         private void EndSession(string state, string error)
@@ -190,8 +196,14 @@ namespace Artel.Streaming
                 return;
             }
 
-            ReportState(session.StreamId, state, error);
-            DisposeSession();
+            try
+            {
+                ReportState(session.StreamId, state, error);
+            }
+            finally
+            {
+                DisposeSession();
+            }
         }
 
         private void DisposeSession()
@@ -201,9 +213,10 @@ namespace Artel.Streaming
                 return;
             }
 
-            session.StateChanged -= OnSessionStateChanged;
-            session.Stop();
+            var endingSession = session;
             session = null;
+            endingSession.StateChanged -= OnSessionStateChanged;
+            endingSession.Stop();
         }
 
         private void ReportState(string streamId, string state, string error)
