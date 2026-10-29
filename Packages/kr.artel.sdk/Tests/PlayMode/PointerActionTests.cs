@@ -438,6 +438,37 @@ namespace Artel.Tests
             AssertSamePixel((Vector2)ArtelInput.mousePosition, UnityPointOf(new Vector2(260f, 90f)));
         }
 
+#if UNITY_EDITOR
+        [UnityTest]
+        public IEnumerator MoveMouse_ByPersistentScanSelector_ResolvesAfterSceneTransfer()
+        {
+            var manager = CreateManager(new RecordingTransport());
+            yield return null;
+            var target = CreateDragTarget("persistent target", UnityPointOf(new Vector2(260f, 90f)));
+            var button = target.gameObject.AddComponent<Button>();
+            UnityEditor.Events.UnityEventTools.AddBoolPersistentListener(button.onClick, target.gameObject.SetActive, true);
+            var visited = SceneManager.GetActiveScene();
+            Object.DontDestroyOnLoad(canvasObject);
+            yield return null;
+            IsolateFixtureRaycaster();
+            try
+            {
+                SceneEvidenceScan.Capture(visited, new List<GameObject> { canvasObject });
+                var document = JObject.Parse(AffordanceReport.Compose());
+                var row = document.SelectTokens("$..objects[*]")
+                    .First(value => (string)value["path"] == "canvas/persistent target");
+                var selector = (string)row["selector"];
+                Assert.That(selector, Does.StartWith("@persistent/"));
+                yield return RunBatch(manager, NewAction(1, "move_mouse", Params(selector)));
+                AssertSamePixel((Vector2)ArtelInput.mousePosition, UnityPointOf(new Vector2(260f, 90f)));
+                Assert.That(Artel.Pointer.ScenePathSelectorResolver.TryResolve(
+                    selector.Substring("@persistent/".Length), out _, out _), Is.False,
+                    "명시적 prefix 없는 selector는 persistent scene에서 찾지 않는다.");
+            }
+            finally { AffordanceReport.Forget(); }
+        }
+#endif
+
         [UnityTest]
         public IEnumerator MoveMouse_UnknownInstanceId_FailsNamingTheId()
         {

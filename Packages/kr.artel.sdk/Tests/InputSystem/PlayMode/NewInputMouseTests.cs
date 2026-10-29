@@ -250,6 +250,39 @@ namespace Artel.Tests
         }
 
         [UnityTest]
+        public IEnumerator PausedFixedUpdate_MouseReleaseClearsExistingHold()
+        {
+            yield return VerifyPausedRelease("mouse_up");
+        }
+
+        [UnityTest]
+        public IEnumerator PausedFixedUpdate_MouseKeyReleaseClearsExistingHold()
+        {
+            yield return VerifyPausedRelease("key_up", "Mouse0");
+        }
+
+        private IEnumerator VerifyPausedRelease(string method, params object[] arguments)
+        {
+            yield return Move(new Vector2(100, 100));
+            using (var click = new InputAction(type: InputActionType.Button, binding: "<Mouse>/leftButton"))
+            {
+                click.Enable();
+                yield return Run("mouse_down");
+                var mouse = Mouse.current;
+                Assert.That(click.IsPressed(), Is.True);
+                InputSystem.settings.updateMode = InputSettings.UpdateMode.ProcessEventsInFixedUpdate;
+                Time.timeScale = 0f;
+                yield return ExpectFailure(method, arguments);
+                Assert.That(click.IsPressed(), Is.False);
+                Assert.That(mouse.leftButton.isPressed, Is.False);
+                Assert.That(ArtelInput.GetMouseButton(0), Is.False);
+                Time.timeScale = 1f;
+                yield return WaitFrames(4);
+                Assert.That(click.IsPressed(), Is.False);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator DynamicUpdate_ProcessesClickWhilePaused()
         {
             Time.timeScale = 0f;

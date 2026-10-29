@@ -1,13 +1,14 @@
 using System;
 using System.Globalization;
+using Artel.Affordances.Scan;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace Artel.Pointer
 {
     /// <summary>
-    /// <c>Artel.Affordances.Scan.ScenePath.SelectorOf</c> 가 쓴 문자열을 거꾸로 읽어, 액티브 씬에서 그
-    /// <see cref="Transform"/> 을 되찾는다.
+    /// <c>ScenePath.SelectorOf</c>의 문자열로 active scene 또는 명시된 persistent scene의
+    /// <see cref="Transform"/>을 찾는다.
     /// </summary>
     /// <remarks>
     /// <c>SelectorOf</c> 는 <c>name[siblingIndex]</c> 를 계층을 따라 <c>/</c> 로 이은 것을 쓴다. 다만 루트
@@ -40,13 +41,15 @@ namespace Artel.Pointer
                 return false;
             }
 
-            if (selector.StartsWith(TruncatedPrefix, StringComparison.Ordinal))
+            var persistent = selector.StartsWith(ScenePath.PersistentSelectorPrefix, StringComparison.Ordinal);
+            var path = persistent ? selector.Substring(ScenePath.PersistentSelectorPrefix.Length) : selector;
+            if (path.StartsWith(TruncatedPrefix, StringComparison.Ordinal))
             {
                 error = "Selector was truncated by the scan and cannot be resolved: " + selector;
                 return false;
             }
 
-            var segments = selector.Split('/');
+            var segments = path.Split('/');
 
             if (!TryParseSegment(segments[0], out var rootName, out var rootIndex))
             {
@@ -54,7 +57,14 @@ namespace Artel.Pointer
                 return false;
             }
 
-            var roots = SceneManager.GetActiveScene().GetRootGameObjects();
+            if (persistent && !Application.isPlaying)
+            {
+                error = "Persistent selector requires play mode: " + selector;
+                return false;
+            }
+
+            var scene = persistent ? StraySpawnTracker.DontDestroyOnLoadScene() : SceneManager.GetActiveScene();
+            var roots = scene.GetRootGameObjects();
             if (rootIndex < 0 || rootIndex >= roots.Length || roots[rootIndex].name != rootName)
             {
                 error = "Nothing at selector: " + selector;

@@ -15,6 +15,8 @@ namespace Artel.Affordances.Scan
         /// <summary>경로를 일부만 남기기 전까지 계층을 얼마나 깊이 따라가는지.</summary>
         private const int MaxDepth = 64;
 
+        internal const string PersistentSelectorPrefix = "@persistent/";
+
         internal static string Of(Transform transform)
         {
             return Of(transform, -1);
@@ -37,7 +39,11 @@ namespace Artel.Affordances.Scan
         /// </remarks>
         internal static string SelectorOf(Transform transform, int rootIndex)
         {
-            return Of(transform, rootIndex);
+            var path = Of(transform, rootIndex);
+            // Persistent scene과 active scene의 같은 이름·root index를 구분한다.
+            return transform != null && Application.isPlaying && transform.gameObject.scene.name == "DontDestroyOnLoad"
+                ? PersistentSelectorPrefix + path
+                : path;
         }
 
         private static string Of(Transform transform, int rootIndex = -1)

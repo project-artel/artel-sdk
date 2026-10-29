@@ -132,6 +132,9 @@ namespace Artel
             var error = mouseAction ? NewInputMouse.ValidationError : null;
             if (error != null)
             {
+                // Input update가 멈춰도 기존 hold는 해제한다. 동작을 처리했다는 성공 응답은 보내지 않는다.
+                if (method == "mouse_up" || (mouseAction && method == "key_up"))
+                    ArtelInput.ReleaseAllVirtualInput();
                 completed(ActionResultDto.Failure(actionId, error));
                 yield break;
             }
