@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="400" viewBox="0 0 680 400" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect width="680" height="400" fill="#ffffff"/>
+
+  <rect x="200" y="30" width="280" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+  <text x="340" y="54" font-size="14" font-weight="500" fill="#3C3489" text-anchor="middle">watch ["Player::hp", "Progress::stage"]</text>
+  <text x="340" y="72" font-size="12" fill="#534AB7" text-anchor="middle">Type::member · 경로는 .Count 처럼</text>
+
+  <line x1="340" y1="86" x2="340" y2="128" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="200" y="130" width="280" height="56" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="0.5"/>
+  <text x="340" y="154" font-size="14" font-weight="500" fill="#444441" text-anchor="middle">Lookup</text>
+  <text x="340" y="172" font-size="12" fill="#5F5E5A" text-anchor="middle">타입 · 필드/프로퍼티 · 어디서 읽나</text>
+
+  <path d="M340 186 L340 210 L120 210 L120 238" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M340 186 L340 238" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M340 186 L340 210 L560 210 L560 238" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="240" width="160" height="56" rx="8" fill="#ffffff" stroke="#5F5E5A" stroke-width="0.5"/>
+  <text x="120" y="264" font-size="14" font-weight="500" fill="#444441" text-anchor="middle">static</text>
+  <text x="120" y="282" font-size="12" fill="#5F5E5A" text-anchor="middle">바로 읽음</text>
+
+  <rect x="260" y="240" width="160" height="56" rx="8" fill="#ffffff" stroke="#5F5E5A" stroke-width="0.5"/>
+  <text x="340" y="264" font-size="14" font-weight="500" fill="#444441" text-anchor="middle">component</text>
+  <text x="340" y="282" font-size="12" fill="#5F5E5A" text-anchor="middle">씬 걷기가 매 판독 만남</text>
+
+  <rect x="480" y="240" width="160" height="56" rx="8" fill="#ffffff" stroke="#5F5E5A" stroke-width="0.5"/>
+  <text x="560" y="264" font-size="14" font-weight="500" fill="#444441" text-anchor="middle">object</text>
+  <text x="560" y="282" font-size="12" fill="#5F5E5A" text-anchor="middle">SO 는 Unity 에 · 나머지는 걷기</text>
+
+  <text x="560" y="318" font-size="11" fill="#5F5E5A" text-anchor="middle">static 필드·씬 컴포넌트에서 참조 따라</text>
+  <text x="560" y="334" font-size="11" fill="#5F5E5A" text-anchor="middle">깊이 4 · 컬렉션 앞 64 · 50 ms · 찾으면 멈춤</text>
+
+  <path d="M120 296 L120 358" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M340 296 L340 358" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M560 346 L560 358" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="360" width="600" height="30" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+  <text x="340" y="380" font-size="12" fill="#085041" text-anchor="middle">PULSE · statics[declaring, member, value] · active[...].by[...] · 청한 멤버를 쥔 객체는 holders 상한 밖</text>
+</svg>

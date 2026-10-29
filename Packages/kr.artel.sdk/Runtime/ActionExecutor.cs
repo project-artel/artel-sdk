@@ -224,11 +224,19 @@ namespace Artel
                     yield break;
 
                 case "start_readings":
-                    completed(ExecuteStartReadings(actionId));
+                    completed(ExecuteStartReadings(actionId, parameters));
                     yield break;
 
                 case "stop_readings":
                     completed(ExecuteStopReadings(actionId));
+                    yield break;
+
+                case "watch":
+                    completed(ExecuteWatch(actionId, parameters));
+                    yield break;
+
+                case "read_member":
+                    completed(ExecuteReadMember(actionId, parameters));
                     yield break;
 
                 case "capture_screen":
@@ -652,17 +660,167 @@ namespace Artel
         /// 실행은 그것이 언제 시작하는지를 말하지만 연결은 그러지 않는다. 연결은 모든 씬을 도는 순회도 함께 시작시키는데, 그 순회
         /// 동안 찍은 판독은 플레이어가 한 번도 걸어가지 않은 화면을 서술한다 — 그래서 둘을 갈랐고, 이쪽이 세션이 다스리는 절반이다.
         /// </remarks>
-        private ActionResultDto ExecuteStartReadings(int actionId)
+        private ActionResultDto ExecuteStartReadings(int actionId, List<object> parameters)
         {
             if (readings == null)
             {
                 return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
             }
 
-            return readings.StartReadings()
+            if (!PaceReader.TryRead(parameters, out var pace, out var error))
+            {
+                return ActionResultDto.Failure(actionId, error);
+            }
+
+            return readings.StartReadings(pace)
                 ? ActionResultDto.Success(actionId)
                 : ActionResultDto.Failure(
                     actionId, "Live readings could not start. A release build does not take them.");
+        }
+
+        /// <summary><c>watch [names]</c>: 이름을 풀어 watch list 에 더한다. 풀린 것과 못 푼 것을 둘 다 돌려준다.</summary>
+        private static ActionResultDto ExecuteWatch(int actionId, List<object> parameters)
+        {
+            if (!TryReadNames(parameters, out var names, out var error))
+            {
+                return ActionResultDto.Failure(actionId, "watch " + error);
+            }
+
+            var walk = new Affordances.Live.Lookup.Walk();
+            var answers = Affordances.Live.Lookup.Watch(names, walk);
+
+            return ActionResultDto.Success(actionId, Described(answers, walk, null));
+        }
+
+        /// <summary><c>read_member [name]</c>: 이름을 풀어 지금 값을 한 번 읽는다. 목록에는 더하지 않는다.</summary>
+        private static ActionResultDto ExecuteReadMember(int actionId, List<object> parameters)
+        {
+            if (!TryReadNames(parameters, out var names, out var error) || names.Count != 1)
+            {
+                return ActionResultDto.Failure(actionId, "read_member params are [name].");
+            }
+
+            var walk = new Affordances.Live.Lookup.Walk();
+            var answers = Affordances.Live.Lookup.Resolve(names, walk);
+            var answer = answers[0];
+
+            if (!answer.Resolved)
+            {
+                return ActionResultDto.Failure(actionId, "read_member " + answer.Name + ": " + answer.Reason);
+            }
+
+            List<object> holders = answer.Member.Holders;
+
+            if (answer.Kind == "component")
+            {
+                holders = new List<object>();
+
+                foreach (var one in Resources.FindObjectsOfTypeAll(answer.Member.Owner))
+                {
+                    if (one is Component component && component != null && component.gameObject.scene.IsValid())
+                    {
+                        holders.Add(component);
+                    }
+                }
+            }
+
+            var values = Newtonsoft.Json.Linq.JObject.Parse(
+                "{" + Affordances.Live.LiveState.Peek(answer.Member, holders) + "}")["values"];
+
+            return ActionResultDto.Success(actionId, Described(answers, walk, values));
+        }
+
+        private static Dictionary<string, object> Described(
+            List<Affordances.Live.Lookup.Answer> answers, Affordances.Live.Lookup.Walk walk, object values)
+        {
+            var resolved = new List<object>();
+            var unresolvable = new List<object>();
+
+            foreach (var answer in answers)
+            {
+                if (!answer.Resolved)
+                {
+                    unresolvable.Add(new Dictionary<string, object>
+                    {
+                        ["name"] = answer.Name, ["reason"] = answer.Reason
+                    });
+                    continue;
+                }
+
+                var member = answer.Member;
+
+                resolved.Add(new Dictionary<string, object>
+                {
+                    ["name"] = answer.Name,
+                    ["kind"] = answer.Kind,
+                    ["holders"] = answer.Holders,
+                    // 판독이 이 멤버를 부르는 이름. 짧게 댄 타입도 여기서는 전체 이름이다.
+                    ["declaring"] = member.Declaring,
+                    ["member"] = (member.Property ?? member.Member) + (member.Via == null ? "" : "." + member.Via)
+                });
+            }
+
+            var described = new Dictionary<string, object>
+            {
+                ["resolved"] = resolved,
+                ["unresolvable"] = unresolvable,
+                ["walk"] = new Dictionary<string, object>
+                {
+                    ["visited"] = walk.Visited,
+                    ["ms"] = Math.Round(walk.Milliseconds, 2),
+                    ["exhausted"] = walk.Exhausted
+                }
+            };
+
+            if (values != null)
+            {
+                described["values"] = values;
+            }
+
+            return described;
+        }
+
+        /// <summary><c>[["A::b","C::d"]]</c> 와 <c>["A::b","C::d"]</c> 둘 다 이름 목록으로 받는다.</summary>
+        private static bool TryReadNames(List<object> parameters, out List<string> names, out string error)
+        {
+            names = new List<string>();
+            error = null;
+
+            if (parameters == null || parameters.Count == 0)
+            {
+                error = "params are [names] or [name, ...].";
+                return false;
+            }
+
+            IEnumerable<object> items = parameters;
+
+            if (parameters.Count == 1 && parameters[0] is System.Collections.IEnumerable nested &&
+                !(parameters[0] is string))
+            {
+                var flattened = new List<object>();
+
+                foreach (var item in nested)
+                {
+                    flattened.Add(item);
+                }
+
+                items = flattened;
+            }
+
+            foreach (var item in items)
+            {
+                var name = item is Newtonsoft.Json.Linq.JValue token ? token.Value as string : item as string;
+
+                if (string.IsNullOrEmpty(name))
+                {
+                    error = "names must be strings like Type::member.";
+                    return false;
+                }
+
+                names.Add(name);
+            }
+
+            return true;
         }
 
         /// <summary>다시 끈다. 돌고 있었든 아니든 성공한다.</summary>
