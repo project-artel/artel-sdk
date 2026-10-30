@@ -119,6 +119,10 @@ namespace Artel
         [NonSerialized] private bool initialized;
         private float nextInitializationTime;
 
+        // Input Manager 경고는 controller 하나에 한 번만 남긴다. 재활성화와 5초 뒤 재시도도
+        // InitializeOverlay 를 다시 부르지만 project 설정은 그 사이에 바뀌지 않는다.
+        [NonSerialized] private bool warnedLegacyInputMissing;
+
         // 가장 최근에 받은 RUN_STATUS (ARTEL-835). 아직 없으면 null 이고, CreateRunStatusLine
         // 은 이 값으로 시작 문구를 정한다 — 다크 모드 토글로 CreateGui 가 다시 도는 동안에도
         // run 이 계속 돌고 있었을 수 있어, 새로 그리는 줄이 지난 값을 잊으면 안 된다.
@@ -183,9 +187,9 @@ namespace Artel
 
         private void InitializeOverlay()
         {
-
-            if (!LegacyInput.IsAvailable)
+            if (!LegacyInput.IsAvailable && !warnedLegacyInputMissing)
             {
+                warnedLegacyInputMissing = true;
                 // 콘솔에도 한 번 남긴다. overlay 를 보지 않고 로그만 읽는 사람도 왜 조작이 게임에 닿지 않는지 알 수 있게.
                 Debug.LogWarning("[Artel] This project uses only the Input System package. " +
                                  "Artel supports mouse actions; keyboard actions require the legacy Input Manager.");

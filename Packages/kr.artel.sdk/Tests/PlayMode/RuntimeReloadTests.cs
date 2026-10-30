@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Artel.Auth;
 using NUnit.Framework;
 using UnityEngine;
@@ -34,6 +35,7 @@ namespace Artel.Tests
         [UnityTest]
         public IEnumerator Runtime객체가_사라진_뒤_재활성화하면_프레임과_종료가_동작한다()
         {
+            ExpectLegacyInputWarningOnce();
             host = new GameObject("Artel reload test");
             var manager = host.AddComponent<ArtelManager>();
             var overlay = host.GetComponent<ArtelOverlayController>();
@@ -75,6 +77,7 @@ namespace Artel.Tests
         [UnityTest]
         public IEnumerator 중복_매니저가_제거되어도_기존_매니저가_유지된다()
         {
+            ExpectLegacyInputWarningOnce();
             host = new GameObject("Artel surviving manager");
             var manager = host.AddComponent<ArtelManager>();
             var duplicateHost = new GameObject("Artel duplicate manager");
@@ -86,6 +89,14 @@ namespace Artel.Tests
             Assert.That(manager != null && manager.isActiveAndEnabled, Is.True);
             Assert.DoesNotThrow(manager.StopTransport);
             LogAssert.NoUnexpectedReceived();
+        }
+
+        // Input System 만 켠 project 에서는 overlay 가 이 경고를 controller 마다 한 번 남긴다.
+        // 재활성화와 재초기화가 같은 경고를 다시 남기면 Expect 하나가 소비하지 못해 실패한다.
+        private static void ExpectLegacyInputWarningOnce()
+        {
+            if (LegacyInput.IsAvailable) return;
+            LogAssert.Expect(LogType.Warning, new Regex("This project uses only the Input System package"));
         }
 
         private static FieldInfo Field(object target, string name)
