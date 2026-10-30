@@ -190,6 +190,10 @@ namespace Artel
                     completed(ExecuteFlush(actionId));
                     yield break;
 
+                case "resync_readings":
+                    completed(ExecuteResync(actionId));
+                    yield break;
+
                 case "wait_until":
                     yield return ExecuteWaitUntil(actionId, parameters, completed);
                     yield break;
@@ -714,6 +718,22 @@ namespace Artel
             return readings.FlushReadings()
                 ? ActionResultDto.Success(actionId)
                 : ActionResultDto.Failure(actionId, "flush: live readings are not running. Send start_readings first.");
+        }
+
+        /// <summary>
+        /// <c>resync_readings</c>: 다음 판독을 whole 로 보낸다(ARTEL-1299). 받는 쪽이 <c>seq</c> 의 빈자리로 누락을 알아챘을 때
+        /// 청한다 — 차이만 나르는 판독은 놓친 하나를 아무도 다시 말해 주지 않는다.
+        /// </summary>
+        private ActionResultDto ExecuteResync(int actionId)
+        {
+            if (readings == null)
+            {
+                return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
+            }
+
+            return readings.ResyncReadings()
+                ? ActionResultDto.Success(actionId)
+                : ActionResultDto.Failure(actionId, "resync_readings: live readings are not running. Send start_readings first.");
         }
 
         /// <summary><c>watch [names]</c>: 이름을 풀어 watch list 에 더한다. 풀린 것과 못 푼 것을 둘 다 돌려준다.</summary>
