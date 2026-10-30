@@ -7,7 +7,7 @@ using WebSocketSharp;
 
 namespace Artel
 {
-    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelMediaWebSocketTransport
+    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelMediaWebSocketTransport, IArtelConnectionEpochSource
     {
         private const string SdkWebSocketPath = "/ws/sdk";
         private long connectionEpoch;

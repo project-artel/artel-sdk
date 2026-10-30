@@ -116,6 +116,12 @@ namespace Artel
         private bool gateDismissed;
 
         private ArtelOverlayViewModel viewModel;
+        [NonSerialized] private bool initialized;
+        private float nextInitializationTime;
+
+        // Input Manager 경고는 controller 하나에 한 번만 남긴다. 재활성화와 5초 뒤 재시도도
+        // InitializeOverlay 를 다시 부르지만 project 설정은 그 사이에 바뀌지 않는다.
+        [NonSerialized] private bool warnedLegacyInputMissing;
 
         // 가장 최근에 받은 RUN_STATUS (ARTEL-835). 아직 없으면 null 이고, CreateRunStatusLine
         // 은 이 값으로 시작 문구를 정한다 — 다크 모드 토글로 CreateGui 가 다시 도는 동안에도
@@ -124,15 +130,31 @@ namespace Artel
 
         private void Awake()
         {
+            EnsureViewModel();
+        }
+
+        private void OnEnable()
+        {
+            EnsureViewModel();
+        }
+
+        private void EnsureViewModel()
+        {
+            if (viewModel != null) return;
+
             if (artelManager == null)
             {
                 artelManager = GetComponent<ArtelManager>();
             }
 
-            // CreateGui 는 다크 모드 토글마다 다시 돌지만 이 컨트롤러 자체는 한 번만
-            // 만들어지므로, 구독도 여기서 한 번만 건다. CreateWindowLabel 안에서 걸면
-            // 토글마다 겹쳐 걸려 한 통에 여러 번 반응한다.
+            // reload 뒤에도 구독은 하나만 유지한다. GUI 재생성은 구독을 추가하지 않는다.
+            if (artelManager == null) return;
+            artelManager.RunStatusReceived -= OnRunStatusReceived;
             artelManager.RunStatusReceived += OnRunStatusReceived;
+
+            initialized = false;
+            registrationRunning = false;
+            loginRunning = false;
 
             var jsonCodec = new NewtonsoftJsonCodec();
             viewModel = new ArtelOverlayViewModel(
@@ -146,16 +168,45 @@ namespace Artel
 
         private void Start()
         {
-            if (!LegacyInput.IsAvailable)
+            EnsureInitialized();
+        }
+
+        private void EnsureInitialized()
+        {
+            if (initialized || artelManager == null || viewModel == null ||
+                Time.unscaledTime < nextInitializationTime) return;
+
+            try { InitializeOverlay(); }
+            catch (Exception exception)
             {
+                initialized = false;
+                nextInitializationTime = Time.unscaledTime + 5f;
+                Debug.LogWarning("[Artel] Overlay initialization failed; retrying in 5s: " + exception.Message);
+            }
+        }
+
+        private void InitializeOverlay()
+        {
+            if (!LegacyInput.IsAvailable && !warnedLegacyInputMissing)
+            {
+                warnedLegacyInputMissing = true;
                 // 콘솔에도 한 번 남긴다. overlay 를 보지 않고 로그만 읽는 사람도 왜 조작이 게임에 닿지 않는지 알 수 있게.
                 Debug.LogWarning("[Artel] This project uses only the Input System package. " +
                                  "Artel supports mouse actions; keyboard actions require the legacy Input Manager.");
             }
 
+            // reload로 유실된 버튼 callback도 다시 연결한다. 기존 canvas는 즉시 숨긴다.
+            if (canvasObject != null)
+            {
+                canvasObject.SetActive(false);
+                Destroy(canvasObject);
+            }
+            listedProjectIds.Clear();
+            hiddenForCapture = false;
             viewModel.Initialize(artelManager.Server);
             CreateGui();
             RefreshView();
+            initialized = true;
 
             if (viewModel.HasStoredSession)
             {
@@ -169,6 +220,16 @@ namespace Artel
             {
                 StartCoroutine(LoadProjectsThenRegister());
             }
+        }
+
+        private void OnDisable()
+        {
+            viewModel?.CancelLogin();
+            StopAllCoroutines();
+            registrationRunning = false;
+            loginRunning = false;
+            initialized = false;
+            nextInitializationTime = 0f;
         }
 
         private void OnDestroy()
@@ -223,6 +284,10 @@ namespace Artel
         /// </remarks>
         private void Update()
         {
+            // reload 뒤에는 Start도 반복되지 않으므로 첫 Update에서 GUI와 세션을 복원한다.
+            EnsureInitialized();
+            if (!initialized || artelManager == null || viewModel == null) return;
+
             viewModel.NoticeTransport(artelManager.TransportPhase);
 
             // 우상단 Artel 버튼은 사람이 마우스를 쥐고 있을 때만 있다. 에이전트가 게임을 모는
