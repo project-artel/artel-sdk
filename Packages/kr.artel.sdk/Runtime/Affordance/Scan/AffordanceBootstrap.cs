@@ -224,6 +224,12 @@ namespace Artel.Affordances.Scan
             return Live.Pulse.Flush();
         }
 
+        /// <summary>다음 판독을 whole 로 만든다. 감시 중이 아니면 false.</summary>
+        public static bool ResyncReadings()
+        {
+            return Live.Pulse.Resync();
+        }
+
         public static void StopWatching()
         {
             Live.Pulse.Stop();

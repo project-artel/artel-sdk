@@ -91,6 +91,24 @@ namespace Artel.Affordances.Live
             text.Append(",\"scene\":");
             Json.String(text, active.IsValid() ? active.name : null);
 
+            // 로드된 씬마다 이름과 Unity 의 handle(ARTEL-1299). handle 은 씬을 다시 로드하면 바뀐다 — 같은 이름의 재로드를 받는 쪽이
+            // 가를 수 있는 유일한 값이다. 이름만으로는 다시 들어온 씬의 객체가 떠난 씬의 객체를 물려받는다.
+            text.Append(",\"scenes\":[");
+            for (var index = 0; index < SceneManager.sceneCount; index++)
+            {
+                var loaded = SceneManager.GetSceneAt(index);
+                if (index > 0)
+                {
+                    text.Append(',');
+                }
+
+                text.Append("{\"name\":");
+                Json.String(text, loaded.name);
+                text.Append(",\"handle\":").Append(loaded.handle).Append('}');
+            }
+
+            text.Append(']');
+
             // 첫 판독은 차이를 잴 대상이 없고, 화면이 바뀌면 어차피 그 위의 모든 것이 갈아치워진다 — 그래서 전량 상태를 보내는 값이
             // 거기서는 거의 들지 않으면서 독자에게 확신할 수 있는 지점을 준다. 그 밖의 모든 판독은 움직인 것만 나른다.
             //

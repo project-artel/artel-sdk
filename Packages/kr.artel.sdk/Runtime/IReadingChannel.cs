@@ -20,5 +20,8 @@ namespace Artel
 
         /// <summary>지금 한 번 읽어 바로 보낸다. 돌고 있지 않으면 false.</summary>
         bool FlushReadings();
+
+        /// <summary>다음 판독을 whole 로 보낸다. 받는 쪽이 누락을 알아챘을 때 청한다(ARTEL-1299). 돌고 있지 않으면 false.</summary>
+        bool ResyncReadings();
     }
 }
