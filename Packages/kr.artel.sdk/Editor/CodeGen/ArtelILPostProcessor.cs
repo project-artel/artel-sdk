@@ -49,6 +49,11 @@ namespace Artel.CodeGen
                     // WillProcess가 통과시켰다고 해서 위빙할 게 있다는 뜻은 아니다. 거기서 보는
                     // 컴파일러 참조 목록에는 autoReferenced 때문에 Artel.Runtime이 항상 들어 있고,
                     // 실제로 SDK 타입을 쓰는지는 IL 메타데이터를 열어 봐야 안다.
+                    // 순수 getter 판정(ARTEL-1294)은 다른 위버보다 먼저 돈다. 엔진 호출 위버가 호출을 프록시로 바꾸고 나면 getter 가
+                    // 원래 무엇을 불렀는지 보이지 않는다.
+                    var pureGetterWeaver = PureGetterWeaver.TryCreate(assembly.MainModule, compiledAssembly.References);
+                    var markedPure = pureGetterWeaver != null && pureGetterWeaver.Process();
+
                     var actionWeaver = ActionMethodWeaver.TryCreate(assembly.MainModule, diagnostics);
                     var inputAttempt = InputMethodWeaver.TryCreate(
                         assembly.MainModule, compiledAssembly.References);
@@ -86,12 +91,13 @@ namespace Artel.CodeGen
                         ? GameFunctionWeaver.TryCreate(assembly.MainModule)
                         : null;
 
-                    if (actionWeaver == null && inputWeaver == null && gameFunctionWeaver == null && engineWeaver == null)
+                    if (!markedPure && actionWeaver == null && inputWeaver == null && gameFunctionWeaver == null && engineWeaver == null)
                     {
                         return new ILPostProcessResult(null, diagnostics);
                     }
 
-                    var changed = actionWeaver != null && actionWeaver.Process();
+                    var changed = markedPure;
+                    changed |= actionWeaver != null && actionWeaver.Process();
                     changed |= inputWeaver != null && inputWeaver.Process();
                     changed |= engineWeaver != null && engineWeaver.Process();
                     changed |= gameFunctionWeaver != null && gameFunctionWeaver.Process();
