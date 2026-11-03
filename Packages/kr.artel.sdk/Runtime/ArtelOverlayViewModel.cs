@@ -284,9 +284,9 @@ namespace Artel
         }
 
         /// <summary>
-        /// 이 토큰으로 붙을 수 있는 프로젝트를 읽는다. 하나뿐이면 고르게 하지 않고 바로 쓴다.
+        /// 접근할 수 있는 프로젝트를 읽는다. 수동 새로고침에서는 자동 선택을 꺼 기존 선택을 유지한다.
         /// </summary>
-        public IEnumerator LoadProjects(Server server)
+        public IEnumerator LoadProjects(Server server, bool autoSelectSingleProject = true)
         {
             var token = string.Empty;
             var refreshRejected = false;
@@ -370,7 +370,7 @@ namespace Artel
                 yield break;
             }
 
-            if (projects.Count == 1)
+            if (autoSelectSingleProject && projects.Count == 1)
             {
                 SelectProject(projects[0].Id);
                 yield break;

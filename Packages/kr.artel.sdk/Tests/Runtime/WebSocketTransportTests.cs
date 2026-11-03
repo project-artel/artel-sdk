@@ -1082,8 +1082,10 @@ namespace Artel.Tests.Transport
                 var cover = canvas.transform.Find("Artel Overlay Cover");
                 var buttons = canvas.GetComponentsInChildren<Button>(true);
 
-                // 나중에가 없으면 등록이 계속 실패할 때 게임으로 돌아갈 길이 없다.
-                Array.Find(buttons, button => button.name == "나중에 Button").onClick.Invoke();
+                // 닫기가 없으면 등록이 계속 실패할 때 게임으로 돌아갈 길이 없다.
+                var dismissButton = Array.Find(buttons, button => button.name == "닫기 Button");
+                Assert.That(dismissButton, Is.Not.Null);
+                dismissButton.onClick.Invoke();
                 Assert.That(cover.gameObject.activeSelf, Is.False);
 
                 // 반대 방향도 막혀 있다. 게이트가 내려가면 게이트의 버튼도 함께 비활성되므로,

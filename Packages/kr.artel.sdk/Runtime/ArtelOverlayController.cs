@@ -89,6 +89,7 @@ namespace Artel
         private Button loginButton;
         private Button cancelLoginButton;
         private Button reloadProjectsButton;
+        private Button refreshProjectsButton;
         private Button gateLogOutButton;
         private Button gateDismissButton;
         private Button serverSettingsButton;
@@ -97,6 +98,7 @@ namespace Artel
         private Text selectedProjectText;
         private Text accountText;
         private Text gateMessageText;
+        private Text gateSelectedProjectText;
         private Text gateErrorText;
         private Text coverMessageText;
         private Text coverStatusText;
@@ -114,6 +116,7 @@ namespace Artel
         // 등록이 계속 실패할 때 이것이 게임으로 돌아가는 유일한 길이다. 되돌아오는 길은
         // 고급 섹션의 키 지우기·연결이며, 둘 다 이 값을 지운다.
         private bool gateDismissed;
+        private bool gateOpenedExplicitly;
 
         private ArtelOverlayViewModel viewModel;
 
@@ -354,13 +357,13 @@ namespace Artel
             }
         }
 
-        private IEnumerator LoadProjectsThenRegister()
+        private IEnumerator LoadProjectsThenRegister(bool registerStoredSession = true)
         {
             loginRunning = true;
             ShowCoverMessage("프로젝트 목록을 불러오는 중입니다.");
             try
             {
-                yield return viewModel.LoadProjects(artelManager.Server);
+                yield return viewModel.LoadProjects(artelManager.Server, registerStoredSession);
             }
             finally
             {
@@ -368,7 +371,7 @@ namespace Artel
                 RefreshView();
             }
 
-            if (viewModel.HasStoredSession)
+            if (registerStoredSession && viewModel.HasStoredSession)
             {
                 RegisterInstance();
             }
@@ -382,12 +385,14 @@ namespace Artel
             }
 
             gateDismissed = false;
-            StartCoroutine(LoadProjectsThenRegister());
+            StartCoroutine(LoadProjectsThenRegister(false));
         }
 
         private void ChooseProject(string projectId)
         {
             gateDismissed = false;
+            serverSettingsOpen = false;
+            gateOpenedExplicitly = false;
             viewModel.SelectProject(projectId);
             RegisterInstance();
         }
@@ -396,6 +401,8 @@ namespace Artel
         {
             registrationRunning = true;
             gateDismissed = false;
+            serverSettingsOpen = false;
+            gateOpenedExplicitly = false;
 
             // registrationRunning은 RefreshView가 읽는다. 뒤집은 직후 직접 불러야 하는데,
             // 이 플래그는 컨트롤러 로컬이라 viewModel.Changed가 뜨지 않는다.
@@ -526,6 +533,7 @@ namespace Artel
         private void DismissGate()
         {
             serverSettingsOpen = false;
+            gateOpenedExplicitly = false;
             gateDismissed = true;
             RefreshView();
         }
@@ -762,6 +770,7 @@ namespace Artel
             settingsToggle.onClick.AddListener(() =>
             {
                 serverSettingsOpen = !serverSettingsOpen;
+                if (serverSettingsOpen) gateOpenedExplicitly = true;
                 serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
                 RefreshView();
             });
@@ -799,11 +808,19 @@ namespace Artel
                 textSecondary);
             SetRect(gateMessageText.rectTransform, new Vector2(36f, -100f), new Vector2(GateContentWidth, 48f));
 
+            gateSelectedProjectText = CreateText(gateContent.transform, string.Empty, 16, TextAnchor.MiddleLeft, textSecondary);
+            gateSelectedProjectText.gameObject.name = "Selected Project";
+            gateSelectedProjectText.supportRichText = false;
+            SetRect(gateSelectedProjectText.rectTransform, new Vector2(36f, -144f), new Vector2(360f, 36f));
+            refreshProjectsButton = CreateButton(gateContent.transform, "새로고침", new Vector2(112f, 36f));
+            SetRect(refreshProjectsButton.GetComponent<RectTransform>(), new Vector2(412f, -144f), new Vector2(112f, 36f));
+            refreshProjectsButton.onClick.AddListener(ReloadProjects);
+
             // 오류 줄은 빈 문자열로도 자리를 차지한다. 나타날 때 아래 버튼이 밀리면 누르려던
             // 위치가 어긋난다.
             gateErrorText = CreateText(
                 gateContent.transform, string.Empty, 14, TextAnchor.UpperLeft, StatusCritical);
-            SetRect(gateErrorText.rectTransform, new Vector2(36f, -152f), new Vector2(GateContentWidth, 44f));
+            SetRect(gateErrorText.rectTransform, new Vector2(36f, -192f), new Vector2(GateContentWidth, 44f));
 
             loginButton = CreateButton(gateContent.transform, "로그인", new Vector2(GateContentWidth, 48f), primary: true);
             loginButton.onClick.AddListener(BeginLogin);
@@ -847,7 +864,7 @@ namespace Artel
             gateLogOutButton.gameObject.name = "게이트 로그아웃 Button";
             gateLogOutButton.onClick.AddListener(LogOut);
 
-            gateDismissButton = CreateButton(gateContent.transform, "나중에", new Vector2(112f, 36f));
+            gateDismissButton = CreateButton(gateContent.transform, "닫기", new Vector2(112f, 36f));
             gateDismissButton.onClick.AddListener(DismissGate);
         }
 
@@ -966,6 +983,7 @@ namespace Artel
             {
                 if (loginRunning || registrationRunning) return;
                 serverSettingsOpen = true;
+                gateOpenedExplicitly = true;
                 gateDismissed = false;
                 serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
                 RefreshView();
@@ -986,6 +1004,8 @@ namespace Artel
                 ? viewModel.SelectedProjectId
                 : viewModel.SelectedProjectName;
             selectedProjectText.text = "프로젝트 · " + (string.IsNullOrEmpty(projectLabel) ? "미선택" : projectLabel);
+            gateSelectedProjectText.text = selectedProjectText.text;
+            gateSelectedProjectText.gameObject.SetActive(viewModel.HasToken);
             statusText.text = LegacyInput.IsAvailable
                 ? viewModel.Status
                 : viewModel.Status + "\n" + NewInputSystemOnlyNotice;
@@ -1008,11 +1028,14 @@ namespace Artel
             cancelLoginButton.gameObject.SetActive(loginRunning && viewModel.CanCancelLogin);
             reloadProjectsButton.gameObject.SetActive(viewModel.HasToken && !choosingProject);
             reloadProjectsButton.interactable = !loginRunning;
+            refreshProjectsButton.gameObject.SetActive(viewModel.HasToken);
+            refreshProjectsButton.interactable = !loginRunning && !registrationRunning;
             projectListObject.SetActive(choosingProject);
             gateLogOutButton.gameObject.SetActive(viewModel.HasToken);
             gateMessageText.text = viewModel.HasToken ? ChooseProjectMessage : LoginMessage;
             RebuildProjectList();
-            var bodyTop = 156f + (viewModel.HasError ? 52f : 0f);
+            var bodyTop = 156f + (viewModel.HasToken ? 40f : 0f) + (viewModel.HasError ? 52f : 0f);
+            SetRect(gateErrorText.rectTransform, new Vector2(36f, -(viewModel.HasToken ? 192f : 152f)), new Vector2(GateContentWidth, 44f));
             SetRect(loginButton.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, 48f));
             SetRect(reloadProjectsButton.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, 48f));
             SetRect(projectListObject.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, VisibleProjectRows * ProjectRowHeight));
@@ -1034,7 +1057,7 @@ namespace Artel
             serverSettingsToggleText.text = serverSettingsOpen ? "고급 설정 닫기" : "고급 설정";
             serverUrlInput.interactable = !busy;
             applyServerButton.interactable = !busy;
-            var showGate = (viewModel.ShowGate || serverSettingsOpen) && !busy && !gateDismissed;
+            var showGate = (viewModel.ShowGate || gateOpenedExplicitly) && !busy && !gateDismissed;
             coverObject.SetActive(showGate || busy);
             gateContent.SetActive(showGate);
             progressContent.SetActive(busy);
