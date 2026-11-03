@@ -89,7 +89,7 @@ namespace Artel.Tests
             Assert.That(manager.InstanceName, Is.Not.Empty);
 
             // Artel 토글, 고급, 연결, 로그아웃, 로그인, 다시 시도, 게이트 로그아웃, 나중에.
-            Assert.That(buttons, Has.Length.EqualTo(13));
+            Assert.That(buttons, Has.Length.EqualTo(14));
             Assert.That(Array.Find(buttons, button => button.name == "취소 Button").gameObject.activeInHierarchy, Is.False);
 
             var serverInput = canvas.GetComponentInChildren<InputField>(true);
@@ -290,6 +290,8 @@ namespace Artel.Tests
                 projects.Add(new Artel.Protocol.Dto.SdkProjectDto { Id = index.ToString(), Name = "Project " + index });
             }
             typeof(ArtelOverlayViewModel).GetProperty("HasToken").SetValue(viewModel, true);
+            typeof(ArtelOverlayViewModel).GetProperty("State").SetValue(viewModel, ArtelConnectionState.ChoosingProject);
+            viewModel.SelectProject("3");
             typeof(ArtelOverlayController).GetMethod("RefreshView", BindingFlags.Instance | BindingFlags.NonPublic)
                 .Invoke(controller, null);
 
@@ -297,6 +299,11 @@ namespace Artel.Tests
             {
                 var canvas = host.transform.Find("Artel Overlay Canvas");
                 var scroll = canvas.GetComponentInChildren<ScrollRect>(true);
+                var refresh = Array.Find(canvas.GetComponentsInChildren<Button>(true), button => button.name == "새로고침 Button");
+                Assert.That(refresh.gameObject.activeInHierarchy, Is.True);
+                Assert.That(refresh.interactable, Is.True);
+                Assert.That(canvas.Find("Artel Overlay Cover/Gate Content/Selected Project").GetComponent<Text>().text,
+                    Is.EqualTo("프로젝트 · Project 3"));
                 Assert.That(scroll.gameObject.activeInHierarchy, Is.True);
                 Assert.That(scroll.content.GetComponentsInChildren<Button>(), Has.Length.EqualTo(10));
                 Canvas.ForceUpdateCanvases();
@@ -368,6 +375,80 @@ namespace Artel.Tests
             Assert.That(label.text, Is.EqualTo("프로젝트 · legacy-id"));
             viewModel.LogOut();
             Assert.That(label.text, Is.EqualTo("프로젝트 · 미선택"));
+        }
+
+        [UnityTest]
+        public IEnumerator 고급_설정을_접어도_선택창은_유지되고_닫기로_나간다()
+        {
+            host = new GameObject("Artel gate close test");
+            host.AddComponent<ArtelManager>();
+            yield return null;
+
+            var controller = host.GetComponent<ArtelOverlayController>();
+            var viewModel = (ArtelOverlayViewModel)typeof(ArtelOverlayController)
+                .GetField("viewModel", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(controller);
+            typeof(ArtelOverlayViewModel).GetProperty("State").SetValue(viewModel, ArtelConnectionState.Connected);
+            var canvas = host.transform.Find("Artel Overlay Canvas");
+            var buttons = canvas.GetComponentsInChildren<Button>(true);
+            Array.Find(buttons, button => button.name == "서버 변경 Button").onClick.Invoke();
+
+            var gate = canvas.Find("Artel Overlay Cover/Gate Content").gameObject;
+            var settings = gate.transform.Find("Server Settings").gameObject;
+            Assert.That(gate.activeInHierarchy, Is.True);
+            Assert.That(settings.activeInHierarchy, Is.True);
+            Array.Find(buttons, button => button.name == "고급 설정 Button").onClick.Invoke();
+            Assert.That(settings.activeSelf, Is.False);
+            Assert.That(gate.activeInHierarchy, Is.True);
+
+            Array.Find(buttons, button => button.name == "닫기 Button").onClick.Invoke();
+            Assert.That(canvas.Find("Artel Overlay Cover").gameObject.activeSelf, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator 수동_새로고침은_새_목록을_불러오고_기존_선택을_유지한다()
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            var server = new Artel.Domain.Server("http://127.0.0.1:" + port);
+            ArtelSdkSession.UseServer(server);
+            ArtelSdkSession.SaveToken("fixture-token", DateTime.UtcNow.AddHours(1).ToString("O"), "Fixture");
+            var jsonCodec = new Artel.Serialization.NewtonsoftJsonCodec();
+            var model = new ArtelOverlayViewModel(new ArtelSdkRegistrationClient(jsonCodec),
+                new ArtelSdkAuthClient(jsonCodec), jsonCodec);
+            model.Initialize(server);
+            model.SelectProject("previous-project");
+            var responseTask = System.Threading.Tasks.Task.Run(async () =>
+            {
+                using (var client = await listener.AcceptTcpClientAsync())
+                using (var stream = client.GetStream())
+                {
+                    var buffer = new byte[4096];
+                    await stream.ReadAsync(buffer, 0, buffer.Length);
+                    const string body = "{\"projects\":[{\"id\":\"new-project\",\"name\":\"New project\"}]}";
+                    var response = System.Text.Encoding.UTF8.GetBytes(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                        System.Text.Encoding.UTF8.GetByteCount(body) + "\r\nConnection: close\r\n\r\n" + body);
+                    await stream.WriteAsync(response, 0, response.Length);
+                }
+            });
+            try
+            {
+                yield return model.LoadProjects(server, false);
+                Assert.That(responseTask.IsFaulted, Is.False);
+                Assert.That(model.HasError, Is.False, model.Status);
+                Assert.That(model.Projects, Has.Count.EqualTo(1));
+                Assert.That(model.Projects[0].Id, Is.EqualTo("new-project"));
+                Assert.That(model.SelectedProjectId, Is.EqualTo("previous-project"));
+                Assert.That(ArtelSdkSession.TryLoadProjectId(out var savedProjectId), Is.True);
+                Assert.That(savedProjectId, Is.EqualTo("previous-project"));
+            }
+            finally
+            {
+                listener.Stop();
+                ArtelSdkSession.Clear();
+                ArtelSdkSession.UseServer(new Artel.Domain.Server());
+            }
         }
 
         private static void ClearSession()
