@@ -18,12 +18,35 @@ namespace Artel.Tests
         [UnitySetUp]
         public IEnumerator SetUp()
         {
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+            // 저장된 sample은 Legacy 모듈을 사용하므로 Start 전에 이번 backend로 맞춘다(`UiToolkitSceneTests` 와 같다).
+            SceneManager.sceneLoaded += UseNewInputModule;
+            try
+            {
+                yield return SceneManager.LoadSceneAsync(SceneName, LoadSceneMode.Additive);
+            }
+            finally { SceneManager.sceneLoaded -= UseNewInputModule; }
+#else
             yield return SceneManager.LoadSceneAsync(SceneName, LoadSceneMode.Additive);
+#endif
             sample = SceneManager.GetSceneByName(SceneName);
             SceneManager.SetActiveScene(sample);
             yield return null;
             yield return null;
         }
+
+#if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
+        private static void UseNewInputModule(Scene scene, LoadSceneMode mode)
+        {
+            foreach (var root in scene.GetRootGameObjects())
+            foreach (var legacy in root.GetComponentsInChildren<UnityEngine.EventSystems.StandaloneInputModule>(true))
+            {
+                var target = legacy.gameObject;
+                Object.DestroyImmediate(legacy);
+                InputModuleFixture.AddNativeModule(target);
+            }
+        }
+#endif
 
         [UnityTearDown]
         public IEnumerator TearDown()
