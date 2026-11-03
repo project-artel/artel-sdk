@@ -189,6 +189,13 @@ namespace Artel.Affordances.Live
             return holders;
         }
 
+        /// <summary>찾아 둔 인스턴스를 다음 판독에 다시 찾게 한다. 선언된 멤버가 목록에 들어올 때.</summary>
+        internal static void MarkStale()
+        {
+            _stale = true;
+            Listen();
+        }
+
         private static void Listen()
         {
             if (_listening)
@@ -205,7 +212,8 @@ namespace Artel.Affordances.Live
             var wanted = new List<Type>();
             var plain = new List<Watched>();
 
-            foreach (var member in WatchList.Requested)
+            // 청한 것과 선언된 것 둘 다. 둘 다 씬 걷기가 만나지 못하는 owner 를 가질 수 있다.
+            foreach (var member in WatchList.All())
             {
                 if (member.Holders == null)
                 {
@@ -312,6 +320,15 @@ namespace Artel.Affordances.Live
                     return answer;
                 }
 
+                // 필드도 backing field 도 없는 프로퍼티는 getter 가 코드를 돈다. 판독은 게임을 하지 않는다는 규칙의 예외라,
+                // 이름을 댄 것만으로는 부족하고 그 코드를 쓴 쪽이 `[ArtelObserve]` 로 허락해야 한다 — `Declared` 와 같은 규칙.
+                // 단순 반환 getter 를 IL 로 가려 받는 것은 별도 작업이다.
+                if (!Marked(getter))
+                {
+                    answer.Reason = "property runs code: mark it [ArtelObserve] or name the field";
+                    return answer;
+                }
+
                 held = getter.PropertyType;
             }
 
@@ -335,6 +352,18 @@ namespace Artel.Affordances.Live
             };
 
             return answer;
+        }
+
+        private static bool Marked(PropertyInfo getter)
+        {
+            try
+            {
+                return getter.IsDefined(typeof(ArtelObserveAttribute), true);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private static Type FindType(string declaring, out string ambiguous)
@@ -680,7 +709,7 @@ namespace Artel.Affordances.Live
             return _roots;
         }
 
-        private static List<Type> GameTypes()
+        internal static List<Type> GameTypes()
         {
             if (_gameTypes != null)
             {

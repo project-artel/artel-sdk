@@ -259,6 +259,9 @@ namespace Artel.Affordances.Live
                 }
             }
 
+            // 게임 코드가 `[ArtelObserve]` 로 표시한 것. 구운 목록과 같은 이름은 한 번만.
+            Declared.AddTo(_resolved);
+
             _resolved.AddRange(_requested);
 
             return _resolved;

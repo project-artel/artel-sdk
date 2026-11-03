@@ -17,5 +17,8 @@ namespace Artel
 
         /// <summary>그것들을 끝낸다. 한 번도 시작하지 않았을 때도 안전하다.</summary>
         void StopReadings();
+
+        /// <summary>지금 한 번 읽어 바로 보낸다. 돌고 있지 않으면 false.</summary>
+        bool FlushReadings();
     }
 }
