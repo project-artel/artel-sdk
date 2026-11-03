@@ -21,7 +21,7 @@ namespace Artel
         internal Func<bool> IsCurrent { get; private set; }
     }
 
-    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport, IArtelMediaWebSocketTransport
+    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport, IArtelMediaWebSocketTransport, IArtelConnectionEpochSource
     {
         private readonly string bindAddress;
         private readonly int port;

@@ -47,59 +47,76 @@ namespace Artel
             var removed = 0;
 
             var sceneCount = SceneManager.sceneCountInBuildSettings;
-            for (var buildIndex = 0; buildIndex < sceneCount; buildIndex++)
+
+            // 워크가 직접 로드했고 아직 언로드를 시작하지 않은 씬. 연결이 끊기면 ArtelManager 가
+            // 이 iterator 를 Dispose 하는데, 그때 이 값이 남아 있으면 finally 가 그 씬을 언로드한다.
+            SceneVisit pendingVisit = null;
+            try
             {
-                progress?.Invoke(buildIndex + 1, sceneCount);
-                var path = SceneUtility.GetScenePathByBuildIndex(buildIndex);
-                var scene = SceneManager.GetSceneByPath(path);
-
-                // Scenes are loaded additively rather than singly: a single load destroys the
-                // running scene, and this SDK lives in it — the coroutine driving this walk would
-                // die halfway through. It also means a scene the game already has open is scanned
-                // in place instead of being duplicated and torn back down.
-                var wasAlreadyLoaded = scene.IsValid() && scene.isLoaded;
-                if (!wasAlreadyLoaded)
+                for (var buildIndex = 0; buildIndex < sceneCount; buildIndex++)
                 {
-                    strays.Capture();
-                    yield return SceneManager.LoadSceneAsync(path, LoadSceneMode.Additive);
-                    scene = SceneManager.GetSceneByPath(path);
+                    progress?.Invoke(buildIndex + 1, sceneCount);
+                    var path = SceneUtility.GetScenePathByBuildIndex(buildIndex);
+                    var scene = SceneManager.GetSceneByPath(path);
 
-                    // Awake and OnEnable ran during the load, Start runs on the next frame, and
-                    // scenes routinely fill their UI a little after that. Unscaled, because a
-                    // game sitting at timeScale 0 would otherwise wait here forever.
-                    yield return new WaitForSecondsRealtime(SettleSeconds);
-                }
-
-                // 워크는 씬 핸들을 두 번의 대기 너머로 들고 있고, 그 사이에 게임이 제 씬을
-                // Single로 로드하는 것을 막을 방법이 없다. 아무 키에나 씬을 바꾸는 Update 하나면
-                // 충분하다 — 등록 덮개는 포인터를 막지 키보드를 막지 않는다. Single 로드는 워크가
-                // 들고 있던 씬을 전부 파괴하고, 그 뒤 아래의 모든 호출은 사라진 것을 가리키는
-                // 핸들에 대고 도는 셈이 된다. 여기서 멈추면 원인이 이름을 갖고, 그냥 진행하면
-                // 가장 먼저 터지는 곳의 예외에 원인이 묻힌다.
-                if (!scene.IsValid() || !scene.isLoaded ||
-                    !originalScene.IsValid() || !originalScene.isLoaded)
-                {
-                    Debug.LogError(
-                        "[Artel] Scene walk stopped at " + path +
-                        ": the game loaded a scene of its own while the walk was running, so the " +
-                        "scenes it was holding are gone. Anything they left behind stays behind.");
-                    break;
-                }
-
-                Scan(scene, buildIndex, path, options, scanned);
-
-                if (!wasAlreadyLoaded)
-                {
-                    // Collected and unloaded without yielding in between, so nothing spawned
-                    // after the comparison slips past it.
-                    removed += Collect(strays, scene, path);
-                    RestoreActiveScene(originalScene);
-
-                    if (scene.isLoaded)
+                    // Scenes are loaded additively rather than singly: a single load destroys the
+                    // running scene, and this SDK lives in it — the coroutine driving this walk would
+                    // die halfway through. It also means a scene the game already has open is scanned
+                    // in place instead of being duplicated and torn back down.
+                    var wasAlreadyLoaded = scene.IsValid() && scene.isLoaded;
+                    if (!wasAlreadyLoaded)
                     {
-                        yield return SceneManager.UnloadSceneAsync(scene);
+                        strays.Capture();
+                        var load = SceneManager.LoadSceneAsync(path, LoadSceneMode.Additive);
+                        pendingVisit = new SceneVisit(path, load, strays, originalScene);
+                        yield return load;
+                        scene = SceneManager.GetSceneByPath(path);
+
+                        // Awake and OnEnable ran during the load, Start runs on the next frame, and
+                        // scenes routinely fill their UI a little after that. Unscaled, because a
+                        // game sitting at timeScale 0 would otherwise wait here forever.
+                        yield return new WaitForSecondsRealtime(SettleSeconds);
+                    }
+
+                    // 워크는 씬 핸들을 두 번의 대기 너머로 들고 있고, 그 사이에 게임이 제 씬을
+                    // Single로 로드하는 것을 막을 방법이 없다. 아무 키에나 씬을 바꾸는 Update 하나면
+                    // 충분하다 — 등록 덮개는 포인터를 막지 키보드를 막지 않는다. Single 로드는 워크가
+                    // 들고 있던 씬을 전부 파괴하고, 그 뒤 아래의 모든 호출은 사라진 것을 가리키는
+                    // 핸들에 대고 도는 셈이 된다. 여기서 멈추면 원인이 이름을 갖고, 그냥 진행하면
+                    // 가장 먼저 터지는 곳의 예외에 원인이 묻힌다.
+                    if (!scene.IsValid() || !scene.isLoaded ||
+                        !originalScene.IsValid() || !originalScene.isLoaded)
+                    {
+                        pendingVisit = null;
+                        Debug.LogError(
+                            "[Artel] Scene walk stopped at " + path +
+                            ": the game loaded a scene of its own while the walk was running, so the " +
+                            "scenes it was holding are gone. Anything they left behind stays behind.");
+                        break;
+                    }
+
+                    Scan(scene, buildIndex, path, options, scanned);
+
+                    if (!wasAlreadyLoaded)
+                    {
+                        // Collected and unloaded without yielding in between, so nothing spawned
+                        // after the comparison slips past it.
+                        pendingVisit = null;
+                        removed += Collect(strays, scene, path);
+                        RestoreActiveScene(originalScene);
+
+                        if (scene.isLoaded)
+                        {
+                            yield return SceneManager.UnloadSceneAsync(scene);
+                        }
                     }
                 }
+            }
+            finally
+            {
+                // 정상 종료와 위의 break 에서는 null 이다. 남아 있으면 load 나 settle 대기 중에
+                // 취소된 것이다.
+                pendingVisit?.Abandon();
             }
 
             RestoreActiveScene(originalScene);
@@ -174,6 +191,64 @@ namespace Artel
                 Debug.LogError("[Artel] Scene walk could not collect what " + path + " left behind.");
                 Debug.LogException(exception);
                 return 0;
+            }
+        }
+
+        /// <summary>
+        /// 워크가 additive 로 로드한 씬 하나. 워크가 load 나 settle 대기 중에 취소되면 Collect 와
+        /// 언로드가 실행되지 않아 그 씬의 UI, 카메라, 게임 로직이 게임 위에 남고, 다음 워크는 그 씬을
+        /// 원래 열려 있던 씬으로 보고 언로드하지 않는다.
+        /// </summary>
+        private sealed class SceneVisit
+        {
+            private readonly string path;
+            private readonly AsyncOperation load;
+            private readonly StraySpawnTracker strays;
+            private readonly Scene originalScene;
+
+            public SceneVisit(string path, AsyncOperation load, StraySpawnTracker strays, Scene originalScene)
+            {
+                this.path = path;
+                this.load = load;
+                this.strays = strays;
+                this.originalScene = originalScene;
+            }
+
+            /// <summary>
+            /// StopCoroutine 은 이미 시작된 LoadSceneAsync 를 멈추지 않는다. load 가 끝나기 전이면
+            /// 끝난 뒤에 언로드한다. 로드 중인 씬은 UnloadSceneAsync 로 언로드할 수 없다.
+            /// </summary>
+            public void Abandon()
+            {
+                if (load != null && !load.isDone)
+                {
+                    load.completed += _ => Unload();
+                    return;
+                }
+
+                Unload();
+            }
+
+            private void Unload()
+            {
+                try
+                {
+                    var scene = SceneManager.GetSceneByPath(path);
+                    if (!scene.IsValid() || !scene.isLoaded)
+                    {
+                        return;
+                    }
+
+                    Collect(strays, scene, path);
+                    RestoreActiveScene(originalScene);
+                    SceneManager.UnloadSceneAsync(scene);
+                    Debug.Log("[Artel] Scene walk was cancelled; unloading " + path + ".");
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError("[Artel] Scene walk could not unload " + path + " after it was cancelled.");
+                    Debug.LogException(exception);
+                }
             }
         }
 

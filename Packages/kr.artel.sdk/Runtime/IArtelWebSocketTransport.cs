@@ -2,6 +2,11 @@ using System;
 
 namespace Artel
 {
+    internal interface IArtelConnectionEpochSource
+    {
+        long ConnectionEpoch { get; }
+    }
+
     internal interface IArtelMediaWebSocketTransport
     {
         bool TrySendMedia(string text, Action<bool> completed);
