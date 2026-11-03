@@ -126,13 +126,21 @@ namespace Artel.Tests
         }
 
         [Test]
-        public void 코드를_도는_프로퍼티는_ArtelObserve_가_있을_때만_받는다()
+        public void 코드를_도는_프로퍼티는_ArtelObserve_나_빌드가_증명한_순수_getter_일_때만_받는다()
         {
-            // 필드도 backing field 도 없는 getter 는 게임 코드다. 이름을 댄 것만으로는 안 돈다.
-            var refused = One("LookupProgress::Stage");
+            // 필드도 backing field 도 없는 getter 는 게임 코드다. 이름을 댄 것만으로는 안 돈다 — 필드를 쓰는 getter 는
+            // 빌드가 순수하다고 증명하지 못해 표시가 없다(ARTEL-1294).
+            var refused = One("LookupProgress::Bumped");
 
             Assert.That(refused.Resolved, Is.False);
             Assert.That(refused.Reason, Is.EqualTo("property runs code: mark it [ArtelObserve] or name the field"));
+
+            // 필드를 읽기만 하는 계산 getter 는 이 테스트 어셈블리가 위빙될 때 표시를 받았다.
+            var proven = One("LookupProgress::Stage");
+
+            Assert.That(proven.Resolved, Is.True, proven.Reason);
+            Assert.That(proven.Member.Getter, Is.Not.Null);
+            Assert.That(Peek(proven), Does.Contain("\"value\":3"));
 
             var allowed = One("LookupProgress::Marked");
 
@@ -143,6 +151,22 @@ namespace Artel.Tests
 
             // 필드를 대면 그대로 읽힌다 — 거절 문장이 가리키는 길.
             Assert.That(One("LookupProgress::stage").Resolved, Is.True);
+        }
+
+        [Test]
+        public void 다른_getter_와_엔진_frame_을_읽는_static_계산_프로퍼티도_이름_그대로_읽힌다()
+        {
+            // WordVenture 의 `Core.InteractionLock` 과 같은 모양(ARTEL-1294). 런 155 에서 거절됐던 이름이다.
+            var locked = One("LookupLock::IsLocked");
+            var paused = One("LookupLock::IsPaused");
+
+            Assert.That(locked.Resolved, Is.True, locked.Reason);
+            Assert.That(paused.Resolved, Is.True, paused.Reason);
+            Assert.That(locked.Member.Static, Is.True);
+            Assert.That(Peek(locked), Does.Contain("\"value\":false"));
+
+            // 같은 타입이라도 디스크를 읽는 getter 는 허용 목록 밖이라 그대로 거절된다.
+            Assert.That(One("LookupLock::HasSave").Resolved, Is.False);
         }
 
         [Test]
@@ -249,9 +273,35 @@ namespace Artel.Tests
 
         public int Stage => stage;
 
+        // 읽을 때마다 필드를 바꾼다 — 빌드가 표시하지 않는다.
+        public int Bumped => ++stage;
+
         [ArtelObserve] public int Marked => stage + 1;
 
         public string Title { get; set; } = "intro";
+    }
+
+    internal static class LookupLock
+    {
+        private static bool locked;
+
+        private static bool paused;
+
+        private static int resumedFrame = -1;
+
+        public static bool IsPaused => paused || Time.frameCount == resumedFrame;
+
+        public static bool IsLocked => locked || IsPaused;
+
+        public static bool HasSave => PlayerPrefs.HasKey("lookup-lock-save");
+
+        // 경고 없이 컴파일되도록 쓰는 곳을 둔다. 테스트는 부르지 않는다.
+        internal static void Set(bool isLocked, bool isPaused, int frame)
+        {
+            locked = isLocked;
+            paused = isPaused;
+            resumedFrame = frame;
+        }
     }
 
     internal sealed class LookupItem
