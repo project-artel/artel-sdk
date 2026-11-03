@@ -89,7 +89,8 @@ namespace Artel
         private bool hostRunInBackground;
         private bool changedRunInBackground;
         private long nextMessageId = 1;
-        private readonly Queue<ArtelWebSocketMessage> actionRequests = new Queue<ArtelWebSocketMessage>();
+        private readonly Queue<PendingAction> actionRequests = new Queue<PendingAction>();
+        private PendingAction activeDeliveryAction;
         private bool processingActions;
         private Coroutine actionCoroutine;
         private IEnumerator actionWorker;
@@ -782,6 +783,7 @@ namespace Artel
 
         private void CancelActions()
         {
+            CompleteInterruptedActions();
             actionRequests.Clear();
             if (actionCoroutine != null) StopCoroutine(actionCoroutine);
             var endingWorker = actionWorker;
@@ -791,6 +793,19 @@ namespace Artel
             DisposeActionStack();
             processingActions = false;
             activeActionIsCurrent = null;
+        }
+
+        private void CompleteInterruptedActions()
+        {
+            CompleteInterruptedAction(activeDeliveryAction);
+            foreach (var pending in actionRequests) CompleteInterruptedAction(pending);
+        }
+
+        private void CompleteInterruptedAction(PendingAction pending)
+        {
+            if (pending?.Delivery == null || pending.Delivery.Result != null) return;
+            pending.Delivery.Complete(jsonCodec.Serialize(DeliveryFailure(pending.Request,
+                "ACTION interrupted; execution outcome unknown. The request will not execute again.")));
         }
 
         private void DisposeActionStack()
@@ -895,7 +910,7 @@ namespace Artel
 
                 if (request.Type == "ACTION")
                 {
-                    EnqueueAction(message);
+                    EnqueueAction(message, request);
                     return;
                 }
 
@@ -930,13 +945,73 @@ namespace Artel
             }
         }
 
-        private void EnqueueAction(ArtelWebSocketMessage message)
+        private void EnqueueAction(ArtelWebSocketMessage message, ArtelRequestDto request)
         {
-            actionRequests.Enqueue(message);
+            ActionDeliveryJournal.Entry delivery = null;
+            if (request.Delivery != null)
+            {
+                var journal = (webSocketTransport as IArtelActionDeliverySource)?.ActionDelivery;
+                if (journal == null)
+                {
+                    message.Reply(jsonCodec.Serialize(DeliveryFailure(request, "ACTION delivery is not supported by this transport.")));
+                    return;
+                }
+                delivery = journal.Register(request, message.Text, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    out var added, out var error);
+                if (delivery == null)
+                {
+                    message.Reply(jsonCodec.Serialize(DeliveryFailure(request, error)));
+                    return;
+                }
+                // 등록된 요청은 ACK 전송이 실패해도 다시 실행하지 않는다.
+                var pending = new PendingAction(message, request, delivery);
+                if (added) actionRequests.Enqueue(pending);
+                try
+                {
+                    message.Reply(jsonCodec.Serialize(new ActionAcceptedMessage
+                    {
+                        RequestId = request.Id,
+                        ProcessId = journal.ProcessId
+                    }));
+                    if (delivery.Result != null) message.Reply(delivery.Result);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning("[Artel] ACTION acknowledgement send failed: " + exception.Message);
+                }
+                if (!added) return;
+            }
+            else actionRequests.Enqueue(new PendingAction(message, request, null));
             if (!processingActions)
             {
                 actionWorker = ProcessActions();
                 actionCoroutine = StartCoroutine(actionWorker);
+            }
+        }
+
+        private ActionResultMessage DeliveryFailure(ArtelRequestDto request, string error)
+        {
+            var results = new List<ActionResultDto>();
+            foreach (var action in request.Actions ?? new List<ActionRequestDto>())
+                results.Add(ActionResultDto.Failure(action?.Id ?? 0, error));
+            return new ActionResultMessage
+            {
+                Type = "ACTION_RESULT", Id = nextMessageId++, RequestId = request.Id,
+                ProcessId = request.Delivery?.ProcessId, Frame = Time.frameCount, Results = results
+            };
+        }
+
+        private sealed class PendingAction
+        {
+            internal readonly ArtelWebSocketMessage Message;
+            internal readonly ArtelRequestDto Request;
+            internal readonly ActionDeliveryJournal.Entry Delivery;
+            internal PendingAction(ArtelWebSocketMessage message, ArtelRequestDto request,
+                ActionDeliveryJournal.Entry delivery)
+            {
+                Message = message;
+                Request = request;
+                Delivery = delivery;
             }
         }
 
@@ -1047,10 +1122,29 @@ namespace Artel
             {
                 while (actionRequests.Count > 0)
                 {
-                    var message = actionRequests.Dequeue();
-                    if (!message.IsCurrent()) continue;
+                    var pending = actionRequests.Dequeue();
+                    var message = pending.Message;
+                    if (!message.IsCurrent())
+                    {
+                        CompleteInterruptedAction(pending);
+                        continue;
+                    }
+                    if (pending.Delivery != null && pending.Request.Delivery.ExpiresAtUnixMs <=
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+                    {
+                        var expired = jsonCodec.Serialize(DeliveryFailure(pending.Request,
+                            "ACTION delivery expired before execution."));
+                        pending.Delivery.Complete(expired);
+                        try { message.Reply(expired); }
+                        catch (Exception exception)
+                        {
+                            Debug.LogWarning("[Artel] ACTION expiration result send failed: " + exception.Message);
+                        }
+                        continue;
+                    }
+                    activeDeliveryAction = pending;
                     activeActionIsCurrent = message.IsCurrent;
-                    var request = jsonCodec.Deserialize<ArtelRequestDto>(message.Text);
+                    var request = pending.Request;
                     actionStack.Push(ExecuteActionRequest(request));
                     while (actionStack.Count > 0 && message.IsCurrent())
                     {
@@ -1068,6 +1162,7 @@ namespace Artel
                         if (failure != null)
                         {
                             Debug.LogWarning("[Artel] Action execution failed: " + failure.Message);
+                            CompleteInterruptedActions();
                             actionRequests.Clear();
                             Cleanup(() => actionExecutor?.RestoreTimeScale(), "time scale");
                             Cleanup(ReleaseAgentInput, "input");
@@ -1085,6 +1180,8 @@ namespace Artel
                         else yield return waitingFor;
                     }
                     DisposeActionStack();
+                    CompleteInterruptedAction(pending);
+                    activeDeliveryAction = null;
                 }
             }
             finally
@@ -1092,6 +1189,7 @@ namespace Artel
                 DisposeActionStack();
                 processingActions = false;
                 activeActionIsCurrent = null;
+                activeDeliveryAction = null;
                 actionWorker = null;
                 actionCoroutine = null;
             }
@@ -1157,6 +1255,7 @@ namespace Artel
                 // cannot serve: it is this message's own number and shares no
                 // sequence with the request's.
                 RequestId = request.Id,
+                ProcessId = request.Delivery?.ProcessId,
                 // 여기서 읽는다. 배치를 받은 자리가 아니라 마지막 액션이 끝난 자리다 — 커서 활강처럼
                 // 여러 프레임에 걸치는 액션이 있고, 그때 둘이 갈린다. 기다리는 쪽이 궁금한 것은 배치가
                 // 끝난 뒤의 화면이므로 끝난 프레임이라야 답이 된다(ARTEL-620).
@@ -1165,10 +1264,13 @@ namespace Artel
                 Errors = ErrorsSince(startFrame)
             };
 
+            var serialized = jsonCodec.Serialize(response);
+            if (activeDeliveryAction?.Request == request)
+                activeDeliveryAction.Delivery?.Complete(serialized);
             if (webSocketTransport != null && webSocketTransport.IsConnected &&
                 (activeActionIsCurrent == null || activeActionIsCurrent()))
             {
-                webSocketTransport.Send(jsonCodec.Serialize(response));
+                webSocketTransport.Send(serialized);
             }
         }
 

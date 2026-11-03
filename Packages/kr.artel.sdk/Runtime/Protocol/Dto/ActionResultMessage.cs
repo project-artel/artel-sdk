@@ -24,6 +24,9 @@ namespace Artel.Protocol.Dto
         [JsonProperty("requestId", NullValueHandling = NullValueHandling.Ignore)]
         public long? RequestId { get; set; }
 
+        [JsonProperty("processId", NullValueHandling = NullValueHandling.Ignore)]
+        public string ProcessId { get; set; }
+
         /// <summary>
         /// 배치의 마지막 액션이 끝난 프레임.
         /// </summary>
