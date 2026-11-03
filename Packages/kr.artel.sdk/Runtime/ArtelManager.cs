@@ -299,7 +299,8 @@ namespace Artel
             Affordances.Live.LiveState.Attachment = new PulseAttachmentSet(
                 new GameFunctionPulse(gameFunctions),
                 new ErrorPulse(loggedErrors),
-                new AudioPulse());
+                new AudioPulse(),
+                new EngineEventPulse());
 #endif
             actionExecutor = new ActionExecutor(
                 scanner,
