@@ -139,6 +139,7 @@ namespace Artel.Protocol.Mapping
                     Name = action.Name,
                     Success = action.Success,
                     ReturnValue = action.ReturnValue,
+                    Args = action.Arguments,
                     Error = action.Success
                         ? null
                         : new ActionErrorDto { Type = action.ErrorType, Message = action.ErrorMessage },

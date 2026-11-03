@@ -19,6 +19,9 @@ namespace Artel.Protocol.Dto
         [JsonProperty("returnValue")]
         public object ReturnValue { get; set; }
 
+        [JsonProperty("args", NullValueHandling = NullValueHandling.Ignore)]
+        public object[] Args { get; set; }
+
         [JsonProperty("error", NullValueHandling = NullValueHandling.Ignore)]
         public ActionErrorDto Error { get; set; }
 
