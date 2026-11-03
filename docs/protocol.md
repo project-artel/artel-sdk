@@ -52,6 +52,7 @@ sequenceDiagram
 | `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
 | `wait_until` | `[condition]` · `[condition, timeoutSeconds]` | 조건이 참이 될 때까지 매 프레임 기다린다. 아래. 기본 5초, 최대 60초 |
 | `flush` | `[]` | 지금 한 번 읽어 움직인 것이 있으면 바로 `PULSE` 로 보낸다. 아무것도 안 움직였으면 `PULSE` 는 없고 `ACTION_RESULT.frame` 이 "이 frame 까지 변화 없음" 의 증거다. 돌고 있지 않으면 실패 |
+| `resync_readings` | `[]` | 다음 `PULSE` 를 `whole` 로 보낸다(ARTEL-1299). 받는 쪽이 `seq` 의 빈자리로 누락을 알아챘을 때 청한다. 돌고 있지 않으면 실패 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
 | `invoke_cheat` | `[{ "name", "args"?, "target"? }]` | 게임이 등록한 cheat. 출시 빌드에서는 거절. 아래 |
@@ -208,6 +209,10 @@ behavior 가 끝나는 이유.
 | `WEBRTC_ICE` | ICE candidate 가 모였을 때 |
 | `ERROR` | 알 수 없는 메시지에 대한 답 |
 
+- `PULSE.runtime`·`PULSE.stream`·`PULSE.seq`(ARTEL-1299): `runtime` 은 게임 프로세스의 세대, `stream` 은 `start_readings` 한 번의
+  세대이고, `seq` 는 그 stream 에서 보내려고 쥔 `pulse` 의 번호(1부터)다. 바뀌지 않아 쥐지 않은 판독은 세지 않으므로 빈자리는 곧
+  누락이다. 받는 쪽은 `runtime` 이 바뀌면 상태를 버리고, `stream` 이 바뀌거나 `seq` 가 비면 `whole` 을 기다린다(`resync_readings`).
+- `PULSE.scenes`: 로드된 씬마다 `{name, handle}`. `handle` 은 Unity `Scene.handle` 이라 같은 이름의 씬도 다시 로드하면 바뀐다.
 - `PULSE.functions`: 함수가 지금 쓸 수 있는지. `whole` 인 `pulse` 에는 전량, 그 밖에는 1 초에 한 번 평가해 바뀐
   항목과 사라진 키(`removed: true`)만 싣는다. 키는 `(kind, name, target)` 이고, instance 가 없는 instance 함수는
   `target: null` 항목 하나로 선다

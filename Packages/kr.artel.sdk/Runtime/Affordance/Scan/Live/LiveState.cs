@@ -91,6 +91,24 @@ namespace Artel.Affordances.Live
             text.Append(",\"scene\":");
             Json.String(text, active.IsValid() ? active.name : null);
 
+            // 로드된 씬마다 이름과 Unity 의 handle(ARTEL-1299). handle 은 씬을 다시 로드하면 바뀐다 — 같은 이름의 재로드를 받는 쪽이
+            // 가를 수 있는 유일한 값이다. 이름만으로는 다시 들어온 씬의 객체가 떠난 씬의 객체를 물려받는다.
+            text.Append(",\"scenes\":[");
+            for (var index = 0; index < SceneManager.sceneCount; index++)
+            {
+                var loaded = SceneManager.GetSceneAt(index);
+                if (index > 0)
+                {
+                    text.Append(',');
+                }
+
+                text.Append("{\"name\":");
+                Json.String(text, loaded.name);
+                text.Append(",\"handle\":").Append(loaded.handle).Append('}');
+            }
+
+            text.Append(']');
+
             // 첫 판독은 차이를 잴 대상이 없고, 화면이 바뀌면 어차피 그 위의 모든 것이 갈아치워진다 — 그래서 전량 상태를 보내는 값이
             // 거기서는 거의 들지 않으면서 독자에게 확신할 수 있는 지점을 준다. 그 밖의 모든 판독은 움직인 것만 나른다.
             //
@@ -595,16 +613,21 @@ namespace Artel.Affordances.Live
                         continue;
                     }
 
-                    var kind = transform.gameObject.GetType();
-                    seen.TryGetValue(kind, out var already);
-                    seen[kind] = already + 1;
-
-                    // 청한 멤버를 쥔 객체는 상한 밖이다. 누군가 이름을 대고 청한 값이 "객체가 많아서" 빠지면 그 조건은 영영
-                    // 확인되지 않는다. 상한을 넘긴 뒤에만 묻는다 — 컴포넌트를 세는 비용이 그때만 든다.
-                    if (already >= MaxHolders * MaxHolders && !WatchList.Holds(transform.gameObject))
+                    // 꺼진 객체는 상한을 먹지 않는다. 지금처럼 `deactive` 로 보내되 세지 않는다 — 꺼진 설정 창의 자식 일흔여섯이
+                    // 예산을 먹어 켜진 조합 버튼이 잘렸다(QA 런 182). 그래서 `holder-limit` 은 켜진 객체가 잘렸다는 뜻만 갖는다.
+                    if (transform.gameObject.activeInHierarchy)
                     {
-                        dropped++;
-                        continue;
+                        var kind = transform.gameObject.GetType();
+                        seen.TryGetValue(kind, out var already);
+                        seen[kind] = already + 1;
+
+                        // 청한 멤버를 쥔 객체는 상한 밖이다. 누군가 이름을 대고 청한 값이 "객체가 많아서" 빠지면 그 조건은 영영
+                        // 확인되지 않는다. 상한을 넘긴 뒤에만 묻는다 — 컴포넌트를 세는 비용이 그때만 든다.
+                        if (already >= MaxHolders * MaxHolders && !WatchList.Holds(transform.gameObject))
+                        {
+                            dropped++;
+                            continue;
+                        }
                     }
 
                     var said = new StringBuilder(256);
