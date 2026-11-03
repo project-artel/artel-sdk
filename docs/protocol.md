@@ -29,7 +29,7 @@ sequenceDiagram
 - `ACTION_RESULT` 의 `Frame` 은 배치를 받은 프레임이 아니라 마지막 action 이 끝난 프레임 (ARTEL-620)
 - `RequestId` 로 어느 `ACTION` 에 대한 답인지 알림. `Id` 는 이 메시지 자신의 번호라 그 자리에 못 씀
 
-`ActionExecutor` 가 처리하는 23 개.
+`ActionExecutor` 가 처리하는 24 개.
 
 | method | params | 비고 |
 | --- | --- | --- |
@@ -50,6 +50,7 @@ sequenceDiagram
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
 | `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
+| `flush` | `[]` | 지금 한 번 읽어 움직인 것이 있으면 바로 `PULSE` 로 보낸다. 아무것도 안 움직였으면 `PULSE` 는 없고 `ACTION_RESULT.frame` 이 "이 frame 까지 변화 없음" 의 증거다. 돌고 있지 않으면 실패 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
 | `invoke_cheat` | `[{ "name", "args"?, "target"? }]` | 게임이 등록한 cheat. 출시 빌드에서는 거절. 아래 |
@@ -89,7 +90,9 @@ sequenceDiagram
 ### watch · read_member 의 이름과 returnValue
 
 - 이름은 `Type::member` 또는 `Type::member.path.to.value`. `Type` 은 전체 이름이거나, 게임 타입 가운데 하나뿐이면 짧은 이름.
-  `member` 는 필드·자동 프로퍼티·프로퍼티(getter 를 돈다). 경로는 필드가 쥔 것에서 필드·프로퍼티로 걸어간다 — `Items.Count`
+  `member` 는 필드·자동 프로퍼티. 그 밖의 프로퍼티는 getter 가 코드를 도므로 `[ArtelObserve]` 를 붙인 것만 받고, 아니면
+  `property runs code: mark it [ArtelObserve] or name the field` 로 거절한다(`read_member`·`wait_until` 도 같은 해석). 경로는 필드가 쥔
+  것에서 필드·프로퍼티로 걸어간다 — `Items.Count`
 - 어디서 읽히는지는 `kind` 로 답한다: `static`, `component`(씬 걷기가 매 판독 만남), `object`(ScriptableObject 는 Unity 에
   묻고, 그 밖의 객체는 static 필드와 씬 위 컴포넌트에서 참조를 따라가 찾음. 깊이 4, 컬렉션 앞 64 개, 50 ms)
 - `watch` 의 `returnValue`: `{ resolved: [{ name, kind, holders, declaring, member }], unresolvable: [{ name, reason }], walk: { visited, ms, exhausted } }`.
@@ -98,6 +101,19 @@ sequenceDiagram
 - `read_member` 는 거기에 `values: [{ path?, value | count | unread }]` 를 더한다
 - 청한 멤버는 `pulse` 의 `statics` 에 `declaring`·`member` 로 실린다. 쥔 인스턴스가 둘 이상이면 `instance` 번호가 붙고, 지금
   하나도 없으면 `unread: "no-holder"`. 청한 멤버를 쥔 씬 객체는 holders 상한(256) 밖이다
+
+### pulse 의 객체 항목에 실리는 `ui` · `engine`
+
+멤버가 아닌 상태를 adapter 가 읽어 객체 항목에 조각 하나로 싣는다. 장부가 통째로 비교하므로 안 바뀐 객체에는 없다.
+
+| key | 읽는 것 | 안의 키 |
+| --- | --- | --- |
+| `ui` | uGUI(이름으로 맞춤, 참조 없음) | `interactable`(Selectable) · `isOn`(Toggle) · `value`(Slider·Scrollbar·Dropdown·TMP_Dropdown) · `fill`·`sprite`(Image) · `alpha`·`groupInteractable`·`blocksRaycasts`(CanvasGroup) |
+| `engine` | 엔진 컴포넌트 | `anim`{`stateHash`, `state`?}(Animator, layer 0) · `audio`{`playing`, `clip`}(AudioSource) · `particles`{`playing`}(ParticleSystem) · `sprite`{`alpha`, `enabled`}(SpriteRenderer. 스프라이트 이름은 싣지 않는다 — 프레임 애니메이션이 매 tick 바꾼다) · `renderer`{`enabled`} |
+
+연속값은 셋째 자리에서 끊고(`value`·`fill`·`alpha`), `normalizedTime` 처럼 매 프레임 바뀌는 것은 싣지 않는다. `Selectable`·`Animator`·`AudioSource`·`ParticleSystem` 을 가진 객체는 holders 상한 안에서 순회에 든다. `Renderer` 만으로는 들지 않는다.
+
+watch list 의 셋째 출처: 게임 코드가 필드·프로퍼티에 `[ArtelObserve]` 를 붙이면 `WatchList.All()` 이 게임 어셈블리를 한 번 훑어 `asked` 로 더한다. 프로퍼티는 getter 가 판독마다 돈다. 컴포넌트가 아닌 타입의 인스턴스는 `watch` 와 같은 걷기로 찾는다.
 
 ### scan_evidence 의 returnValue
 

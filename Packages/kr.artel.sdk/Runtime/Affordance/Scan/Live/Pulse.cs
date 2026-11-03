@@ -183,6 +183,23 @@ namespace Artel.Affordances.Live
             return true;
         }
 
+        /// <summary>지금 한 번 읽고 쥔 것을 바로 건넨다. 돌고 있지 않으면 false.</summary>
+        /// <remarks>
+        /// 판정 직전의 신선도용이다. 바닥을 지키지 않는다 — 부른 쪽이 그 값을 지금 원한다고 말한 것이고, action 하나가
+        /// 판독 하나를 더 보내는 것은 홍수가 아니다.
+        /// </remarks>
+        internal static bool Flush()
+        {
+            if (_beating == null)
+            {
+                return false;
+            }
+
+            _beating.Take();
+            _beating.Deliver();
+            return true;
+        }
+
         internal static void Stop()
         {
             if (_beating == null)

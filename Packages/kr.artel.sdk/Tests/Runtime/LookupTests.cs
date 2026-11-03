@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Artel.Affordances;
 using Artel.Affordances.Live;
 using NUnit.Framework;
 using UnityEngine;
@@ -125,14 +126,23 @@ namespace Artel.Tests
         }
 
         [Test]
-        public void 프로퍼티는_청했을_때만_getter_로_읽는다()
+        public void 코드를_도는_프로퍼티는_ArtelObserve_가_있을_때만_받는다()
         {
-            var answer = One("LookupProgress::Stage");
+            // 필드도 backing field 도 없는 getter 는 게임 코드다. 이름을 댄 것만으로는 안 돈다.
+            var refused = One("LookupProgress::Stage");
 
-            Assert.That(answer.Resolved, Is.True, answer.Reason);
-            Assert.That(answer.Member.Getter, Is.Not.Null);
-            Assert.That(answer.Member.Field, Is.Null);
-            Assert.That(Peek(answer), Does.Contain("\"value\":3"));
+            Assert.That(refused.Resolved, Is.False);
+            Assert.That(refused.Reason, Is.EqualTo("property runs code: mark it [ArtelObserve] or name the field"));
+
+            var allowed = One("LookupProgress::Marked");
+
+            Assert.That(allowed.Resolved, Is.True, allowed.Reason);
+            Assert.That(allowed.Member.Getter, Is.Not.Null);
+            Assert.That(allowed.Member.Field, Is.Null);
+            Assert.That(Peek(allowed), Does.Contain("\"value\":4"));
+
+            // 필드를 대면 그대로 읽힌다 — 거절 문장이 가리키는 길.
+            Assert.That(One("LookupProgress::stage").Resolved, Is.True);
         }
 
         [Test]
@@ -238,6 +248,8 @@ namespace Artel.Tests
         private int stage = 3;
 
         public int Stage => stage;
+
+        [ArtelObserve] public int Marked => stage + 1;
 
         public string Title { get; set; } = "intro";
     }
