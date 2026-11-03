@@ -12,6 +12,9 @@ namespace Artel
         /// <summary>판독을 시작하거나, 왜 안 되는지 말한다. 그 뒤에 돌고 있으면 참.</summary>
         bool StartReadings();
 
+        /// <summary>속도를 정해 시작한다. <c>start_readings</c> 의 params 가 여기로 온다.</summary>
+        bool StartReadings(Affordances.Live.Pulse.Pace pace);
+
         /// <summary>그것들을 끝낸다. 한 번도 시작하지 않았을 때도 안전하다.</summary>
         void StopReadings();
     }
