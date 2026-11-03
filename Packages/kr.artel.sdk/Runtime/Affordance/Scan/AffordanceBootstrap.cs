@@ -158,6 +158,11 @@ namespace Artel.Affordances.Scan
         /// </remarks>
         public static bool WatchLiveState(Live.IPulseSink sink = null)
         {
+            return WatchLiveState(sink, Live.Pulse.Pace.Default);
+        }
+
+        public static bool WatchLiveState(Live.IPulseSink sink, Live.Pulse.Pace pace)
+        {
             if (!Application.isPlaying)
             {
                 Debug.LogWarning("[Artel] Watching needs play mode: nothing holds a value until the game runs.");
@@ -180,7 +185,7 @@ namespace Artel.Affordances.Scan
                 return false;
             }
 
-            if (!Live.Pulse.Begin(destination))
+            if (!Live.Pulse.Begin(destination, pace))
             {
                 (ours as System.IDisposable)?.Dispose();
                 return false;

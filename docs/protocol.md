@@ -29,7 +29,7 @@ sequenceDiagram
 - `ACTION_RESULT` 의 `Frame` 은 배치를 받은 프레임이 아니라 마지막 action 이 끝난 프레임 (ARTEL-620)
 - `RequestId` 로 어느 `ACTION` 에 대한 답인지 알림. `Id` 는 이 메시지 자신의 번호라 그 자리에 못 씀
 
-`ActionExecutor` 가 처리하는 21 개.
+`ActionExecutor` 가 처리하는 23 개.
 
 | method | params | 비고 |
 | --- | --- | --- |
@@ -46,8 +46,10 @@ sequenceDiagram
 | `pause_time` | `[]` | `Time.timeScale = 0`. SDK 자신은 unscaled 로 돈다 |
 | `resume_time` | `[]` | `pause_time` 이 없었으면 실패 |
 | `reset_game` | `[]` 또는 `[{ "clearPlayerPrefs": bool }]` | 시작 씬을 다시 연다 |
-| `start_readings` | `[]` | `pulse` 를 켠다. 여러 번 불러도 같음 |
+| `start_readings` | `[]` 또는 `[{ "interval"?, "delivery"?, "minDelivery"? }]` | `pulse` 를 켠다. 여러 번 불러도 같음. 초 단위 속도 셋은 아래 |
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
+| `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
+| `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
 | `invoke_cheat` | `[{ "name", "args"?, "target"? }]` | 게임이 등록한 cheat. 출시 빌드에서는 거절. 아래 |
@@ -73,6 +75,29 @@ sequenceDiagram
 | 잘라내기 최장변 | `CropMaxEdge` | 512 |
 | 잘라내기 여백 | `DefaultPadding` | 8 px |
 | JPEG 품질 | `JpegQuality` | 70 |
+
+### start_readings 의 속도
+
+| 키 | 기본 | 뜻 |
+| --- | --- | --- |
+| `interval` | 0.1 | 판독 사이의 초 |
+| `minDelivery` | 0.1 | 변화를 본 뒤 보내기까지의 최소 초. 변화는 이것만 지났으면 그 tick 에 나간다 |
+| `delivery` | 1 | 바닥에 걸려 남은 것을 늦어도 이만큼 안에 보내는 상한 |
+
+`interval > 0`, `minDelivery >= 0`, `delivery >= interval` 이 아니면 거절. 모르는 키는 무시.
+
+### watch · read_member 의 이름과 returnValue
+
+- 이름은 `Type::member` 또는 `Type::member.path.to.value`. `Type` 은 전체 이름이거나, 게임 타입 가운데 하나뿐이면 짧은 이름.
+  `member` 는 필드·자동 프로퍼티·프로퍼티(getter 를 돈다). 경로는 필드가 쥔 것에서 필드·프로퍼티로 걸어간다 — `Items.Count`
+- 어디서 읽히는지는 `kind` 로 답한다: `static`, `component`(씬 걷기가 매 판독 만남), `object`(ScriptableObject 는 Unity 에
+  묻고, 그 밖의 객체는 static 필드와 씬 위 컴포넌트에서 참조를 따라가 찾음. 깊이 4, 컬렉션 앞 64 개, 50 ms)
+- `watch` 의 `returnValue`: `{ resolved: [{ name, kind, holders, declaring, member }], unresolvable: [{ name, reason }], walk: { visited, ms, exhausted } }`.
+  `reason` 은 `bad name` · `no such type` · `ambiguous type` · `no such member` · `no such path` · `not reachable` ·
+  `not reachable within budget`
+- `read_member` 는 거기에 `values: [{ path?, value | count | unread }]` 를 더한다
+- 청한 멤버는 `pulse` 의 `statics` 에 `declaring`·`member` 로 실린다. 쥔 인스턴스가 둘 이상이면 `instance` 번호가 붙고, 지금
+  하나도 없으면 `unread: "no-holder"`. 청한 멤버를 쥔 씬 객체는 holders 상한(256) 밖이다
 
 ### scan_evidence 의 returnValue
 
@@ -146,7 +171,7 @@ behavior 가 끝나는 이유.
 | `GAME_FUNCTION_CATALOG` | `DEVICE_CONTEXT` 바로 뒤에 한 번, 그 뒤 목록이 바뀌면 1 초에 한 번까지. `{type, revision, cheats, behaviors}`. 출시 빌드는 보내지 않는다 |
 | `BEHAVIOR_ENDED` | behavior 하나가 끝날 때 한 번. `{type, behaviorId, name, target, reason, detail, seconds, frame}`. 연결이 없을 때 끝난 것은 버린다 |
 | `PERFORMANCE` | 1 초마다 (`PerformanceReportIntervalSeconds`) |
-| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions`·`behaviors`·`errors`·`audio` 는 아래 |
+| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. 변화를 본 tick 에 나간다(전달 사이 최소 `minDelivery`, 기본 0.1 초). `functions`·`behaviors`·`errors`·`audio` 는 아래 |
 | `STREAM_STATE` | 스트림 상태가 바뀔 때. 값은 `CONNECTING`·`LIVE`·`FAILED`·`STOPPED` |
 | `WEBRTC_OFFER` | 스트림 세션이 offer 를 만들었을 때 |
 | `WEBRTC_ICE` | ICE candidate 가 모였을 때 |
