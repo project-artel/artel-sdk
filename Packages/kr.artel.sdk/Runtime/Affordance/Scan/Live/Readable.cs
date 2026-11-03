@@ -86,6 +86,12 @@ namespace Artel.Affordances.Live
             return answer;
         }
 
+        /// <summary>타입마다 기억한 답을 버린다. 청한 멤버가 늘었을 때.</summary>
+        internal static void Forget()
+        {
+            Answered.Clear();
+        }
+
         private static List<Watched> Ask(Type type, List<Watched> named)
         {
             var members = new List<Watched>();

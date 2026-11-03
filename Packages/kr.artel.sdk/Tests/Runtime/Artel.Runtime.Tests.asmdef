@@ -7,7 +7,8 @@
     "Artel.Tracking.Fixtures",
     "UnityEngine.UI",
     "Unity.TextMeshPro",
-    "Artel.Affordances.Scan"
+    "Artel.Affordances.Scan",
+    "Artel.Affordances.Runtime"
   ],
   "includePlatforms": [
     "Editor"

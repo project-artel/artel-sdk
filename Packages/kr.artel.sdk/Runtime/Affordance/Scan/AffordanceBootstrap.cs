@@ -158,6 +158,11 @@ namespace Artel.Affordances.Scan
         /// </remarks>
         public static bool WatchLiveState(Live.IPulseSink sink = null)
         {
+            return WatchLiveState(sink, Live.Pulse.Pace.Default);
+        }
+
+        public static bool WatchLiveState(Live.IPulseSink sink, Live.Pulse.Pace pace)
+        {
             if (!Application.isPlaying)
             {
                 Debug.LogWarning("[Artel] Watching needs play mode: nothing holds a value until the game runs.");
@@ -180,7 +185,7 @@ namespace Artel.Affordances.Scan
                 return false;
             }
 
-            if (!Live.Pulse.Begin(destination))
+            if (!Live.Pulse.Begin(destination, pace))
             {
                 (ours as System.IDisposable)?.Dispose();
                 return false;
@@ -213,6 +218,18 @@ namespace Artel.Affordances.Scan
         private static Live.PulseFile _ours;
 
         /// <summary>살아 있는 값 보내기를 멈춘다.</summary>
+        /// <summary>지금 한 번 읽어 바로 보낸다. 감시 중이 아니면 false.</summary>
+        public static bool FlushReadings()
+        {
+            return Live.Pulse.Flush();
+        }
+
+        /// <summary>다음 판독을 whole 로 만든다. 감시 중이 아니면 false.</summary>
+        public static bool ResyncReadings()
+        {
+            return Live.Pulse.Resync();
+        }
+
         public static void StopWatching()
         {
             Live.Pulse.Stop();

@@ -3,7 +3,8 @@
   "rootNamespace": "Artel.CodeGen.Tests",
   "references": [
     "Unity.Artel.CodeGen",
-    "Artel.Runtime"
+    "Artel.Runtime",
+    "Artel.Affordances.Runtime"
   ],
   "includePlatforms": [
     "Editor"

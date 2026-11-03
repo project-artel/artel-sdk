@@ -12,7 +12,16 @@ namespace Artel
         /// <summary>판독을 시작하거나, 왜 안 되는지 말한다. 그 뒤에 돌고 있으면 참.</summary>
         bool StartReadings();
 
+        /// <summary>속도를 정해 시작한다. <c>start_readings</c> 의 params 가 여기로 온다.</summary>
+        bool StartReadings(Affordances.Live.Pulse.Pace pace);
+
         /// <summary>그것들을 끝낸다. 한 번도 시작하지 않았을 때도 안전하다.</summary>
         void StopReadings();
+
+        /// <summary>지금 한 번 읽어 바로 보낸다. 돌고 있지 않으면 false.</summary>
+        bool FlushReadings();
+
+        /// <summary>다음 판독을 whole 로 보낸다. 받는 쪽이 누락을 알아챘을 때 청한다(ARTEL-1299). 돌고 있지 않으면 false.</summary>
+        bool ResyncReadings();
     }
 }

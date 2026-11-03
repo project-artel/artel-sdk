@@ -71,8 +71,11 @@ namespace Artel.CodeGen
             interfaceGetter = module.ImportReference(actionSource.Properties
                 .First(property => property.Name == "ArtelActionBuffer").GetMethod);
             getOrCreate = module.ImportReference(recorder.Methods.First(method => method.Name == "GetOrCreate"));
-            recordSuccess = module.ImportReference(recorder.Methods.First(method => method.Name == "RecordSuccess"));
-            recordFailure = module.ImportReference(recorder.Methods.First(method => method.Name == "RecordFailure"));
+            // 인자를 받는 overload(ARTEL-1283). 넷짜리는 옛 위빙이 부르는 모양으로 남아 있다.
+            recordSuccess = module.ImportReference(recorder.Methods.First(
+                method => method.Name == "RecordSuccess" && method.Parameters.Count == 5));
+            recordFailure = module.ImportReference(recorder.Methods.First(
+                method => method.Name == "RecordFailure" && method.Parameters.Count == 5));
             nonSerializedConstructor = module.ImportReference(nonSerialized.Methods
                 .First(method => method.IsConstructor && !method.HasParameters));
             exceptionType = module.ImportReference(coreModule.GetType("System.Exception"));
@@ -191,10 +194,19 @@ namespace Artel.CodeGen
             method.Body.Variables.Add(exception);
             method.Body.InitLocals = true;
 
+            // 인자를 진입에서 박싱해 둔다. try 바깥이다 — 인자를 읽는 일은 메서드의 일이 아니고, 거기서 던지면 기록도 없다.
+            // Cecil 로 만든다. 돌고 있는 런타임의 `typeof(object[])` 를 import 하면 System.Private.CoreLib 참조가 어셈블리에 남아
+            // 에디터가 그 어셈블리를 올리지 못한다.
+            var arguments = new VariableDefinition(new ArrayType(module.TypeSystem.Object));
+            method.Body.Variables.Add(arguments);
+            var first = method.Body.Instructions[0];
+            CaptureArguments(processor, method, arguments, first);
+
             var successStart = processor.Create(OpCodes.Ldarg_0);
             processor.Append(successStart);
             processor.Append(processor.Create(OpCodes.Ldstr, tag));
             processor.Append(processor.Create(OpCodes.Ldstr, method.Name));
+            processor.Append(processor.Create(OpCodes.Ldloc, arguments));
             if (returnsValue)
             {
                 processor.Append(processor.Create(OpCodes.Ldloc, returnValue));
@@ -219,6 +231,7 @@ namespace Artel.CodeGen
             processor.Append(processor.Create(OpCodes.Ldarg_0));
             processor.Append(processor.Create(OpCodes.Ldstr, tag));
             processor.Append(processor.Create(OpCodes.Ldstr, method.Name));
+            processor.Append(processor.Create(OpCodes.Ldloc, arguments));
             processor.Append(processor.Create(OpCodes.Ldloc, exception));
             processor.Append(processor.Create(OpCodes.Call, recordFailure));
             processor.Append(processor.Create(OpCodes.Rethrow));
@@ -238,11 +251,45 @@ namespace Artel.CodeGen
             method.Body.ExceptionHandlers.Add(new ExceptionHandler(ExceptionHandlerType.Catch)
             {
                 CatchType = exceptionType,
-                TryStart = method.Body.Instructions[0],
+                TryStart = first,
                 TryEnd = successStart,
                 HandlerStart = failureStart,
                 HandlerEnd = handlerEnd
             });
+        }
+
+        /// <summary>
+        /// <c>object[]</c> 하나에 인자를 전부 담는다. 값 타입과 generic 인자는 박싱, <c>ref</c>·<c>out</c>·포인터 자리는 null.
+        /// </summary>
+        private void CaptureArguments(
+            ILProcessor processor, MethodDefinition method, VariableDefinition into, Instruction before)
+        {
+            processor.InsertBefore(before, processor.Create(OpCodes.Ldc_I4, method.Parameters.Count));
+            processor.InsertBefore(before, processor.Create(OpCodes.Newarr, module.TypeSystem.Object));
+            processor.InsertBefore(before, processor.Create(OpCodes.Stloc, into));
+
+            for (var at = 0; at < method.Parameters.Count; at++)
+            {
+                var parameter = method.Parameters[at];
+                var type = parameter.ParameterType;
+
+                if (type.IsByReference || type.IsPointer)
+                {
+                    continue;
+                }
+
+                processor.InsertBefore(before, processor.Create(OpCodes.Ldloc, into));
+                processor.InsertBefore(before, processor.Create(OpCodes.Ldc_I4, at));
+                // 인스턴스 메서드만 위빙하므로 0 번은 this 다.
+                processor.InsertBefore(before, processor.Create(OpCodes.Ldarg, parameter));
+
+                if (type.IsValueType || type.IsGenericParameter)
+                {
+                    processor.InsertBefore(before, processor.Create(OpCodes.Box, module.ImportReference(type)));
+                }
+
+                processor.InsertBefore(before, processor.Create(OpCodes.Stelem_Ref));
+            }
         }
 
         private static bool HasActionAttribute(MethodDefinition method) =>

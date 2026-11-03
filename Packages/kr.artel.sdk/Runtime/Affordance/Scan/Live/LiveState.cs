@@ -60,7 +60,9 @@ namespace Artel.Affordances.Live
 
             foreach (var member in watched)
             {
-                if (member.Static)
+                // 찾아 둔 인스턴스가 쥔 멤버도 static 과 같은 자리에 쓴다. 씬 걷기는 그것을 만나지 못하고, 독자에게 그것은
+                // 어느 객체의 것이 아니라 `Declaring::member` 로 이름 댄 값이다.
+                if (member.Static || member.Holders != null)
                 {
                     statics.Add(member);
                     continue;
@@ -88,6 +90,24 @@ namespace Artel.Affordances.Live
 
             text.Append(",\"scene\":");
             Json.String(text, active.IsValid() ? active.name : null);
+
+            // 로드된 씬마다 이름과 Unity 의 handle(ARTEL-1299). handle 은 씬을 다시 로드하면 바뀐다 — 같은 이름의 재로드를 받는 쪽이
+            // 가를 수 있는 유일한 값이다. 이름만으로는 다시 들어온 씬의 객체가 떠난 씬의 객체를 물려받는다.
+            text.Append(",\"scenes\":[");
+            for (var index = 0; index < SceneManager.sceneCount; index++)
+            {
+                var loaded = SceneManager.GetSceneAt(index);
+                if (index > 0)
+                {
+                    text.Append(',');
+                }
+
+                text.Append("{\"name\":");
+                Json.String(text, loaded.name);
+                text.Append(",\"handle\":").Append(loaded.handle).Append('}');
+            }
+
+            text.Append(']');
 
             // 첫 판독은 차이를 잴 대상이 없고, 화면이 바뀌면 어차피 그 위의 모든 것이 갈아치워진다 — 그래서 전량 상태를 보내는 값이
             // 거기서는 거의 들지 않으면서 독자에게 확신할 수 있는 지점을 준다. 그 밖의 모든 판독은 움직인 것만 나른다.
@@ -387,31 +407,122 @@ namespace Artel.Affordances.Live
 
             foreach (var member in statics)
             {
-                var said = new StringBuilder(96);
-
-                said.Append('{');
-                Json.Property(said, "declaring", member.Declaring);
-                said.Append(',');
-                Json.Property(said, "member", Named(member));
-                said.Append(',');
-                Json.Property(said, "type", member.Type);
-                said.Append(',');
-
-                if (!Value(said, member, null, ledger, member.Key))
+                if (member.Holders == null)
                 {
+                    written += Static(text, member, null, -1, ledger, member.Key, written);
                     continue;
                 }
 
-                said.Append('}');
+                var holders = Lookup.HoldersOf(member);
 
-                if (written > 0)
+                if (holders.Count == 0)
                 {
-                    text.Append(',');
+                    // 안 보내는 것과 안 아는 것은 다르다. 청한 멤버를 쥔 것이 지금 없으면 그렇다고 적는다.
+                    written += Static(text, member, null, -1, ledger, member.Key, written);
+                    continue;
                 }
 
-                text.Append(said);
-                written++;
+                for (var at = 0; at < holders.Count; at++)
+                {
+                    written += Static(
+                        text, member, holders[at], holders.Count > 1 ? at : -1, ledger,
+                        member.Key + "#" + at.ToString(Invariant), written);
+                }
             }
+        }
+
+        private static int Static(
+            StringBuilder text, Watched member, object on, int instance, Ledger ledger, string key,
+            int written)
+        {
+            var said = new StringBuilder(96);
+
+            said.Append('{');
+            Json.Property(said, "declaring", member.Declaring);
+            said.Append(',');
+            Json.Property(said, "member", Named(member));
+            said.Append(',');
+            Json.Property(said, "type", member.Type);
+
+            if (instance >= 0)
+            {
+                said.Append(",\"instance\":").Append(instance.ToString(Invariant));
+            }
+
+            said.Append(',');
+
+            if (!Value(said, member, on, ledger, key))
+            {
+                return 0;
+            }
+
+            said.Append('}');
+
+            if (written > 0)
+            {
+                text.Append(',');
+            }
+
+            text.Append(said);
+            return 1;
+        }
+
+        /// <summary>한 멤버를 지금 한 번 읽는다. <c>read_member</c> 의 답. 장부에는 아무것도 남기지 않는다.</summary>
+        /// <returns><c>"values":[{...}]</c> 모양의 JSON 조각. 항목마다 <c>value</c>·<c>count</c>·<c>unread</c> 가운데 하나.</returns>
+        internal static string Peek(Watched member, IReadOnlyList<object> holders)
+        {
+            var ledger = new Ledger
+            {
+                Restless = new Restless(), Pixels = new Restless(1f),
+                Since = new Dictionary<string, string>(StringComparer.Ordinal),
+                Now = new Dictionary<string, string>(StringComparer.Ordinal),
+                Moved = new List<string>(), Everything = true
+            };
+
+            var text = new StringBuilder(128);
+            text.Append("\"values\":[");
+
+            if (member.Static || holders == null || holders.Count == 0)
+            {
+                text.Append('{');
+                Value(text, member, null, ledger, member.Key, true);
+                text.Append('}');
+            }
+            else
+            {
+                for (var at = 0; at < holders.Count; at++)
+                {
+                    if (at > 0)
+                    {
+                        text.Append(',');
+                    }
+
+                    text.Append('{');
+
+                    if (holders[at] is Component component && component != null)
+                    {
+                        Json.Property(text, "path", ScenePath.Of(component.transform));
+                        text.Append(',');
+                        // path 는 같은 이름의 holder 들이 나눠 가진다(만들어진 적 둘이 `RangedCat(Clone)` 하나). pulse 기록과 같은
+                        // id·selector 를 달아 독자가 이 값이 어느 객체의 것인지 가릴 수 있게 한다. 꺼진 holder 도 그대로 보내고
+                        // 꺼졌다는 것을 말한다 — 꺼진 객체의 값도 읽을 수 있어야 한다.
+                        text.Append("\"id\":").Append(ObjectIds.Of(component.gameObject));
+                        text.Append(',');
+                        var roots = component.gameObject.scene.GetRootGameObjects();
+                        var rootIndex = Array.IndexOf(roots, component.transform.root.gameObject);
+                        Json.Property(text, "selector", ScenePath.SelectorOf(component.transform, Math.Max(rootIndex, 0)));
+                        text.Append(',');
+                        text.Append("\"active\":").Append(component.gameObject.activeInHierarchy ? "true" : "false");
+                        text.Append(',');
+                    }
+
+                    Value(text, member, holders[at], ledger, member.Key + "#" + at.ToString(Invariant), true);
+                    text.Append('}');
+                }
+            }
+
+            text.Append(']');
+            return text.ToString();
         }
 
         /// <summary>
@@ -502,14 +613,21 @@ namespace Artel.Affordances.Live
                         continue;
                     }
 
-                    var kind = transform.gameObject.GetType();
-                    seen.TryGetValue(kind, out var already);
-                    seen[kind] = already + 1;
-
-                    if (already >= MaxHolders * MaxHolders)
+                    // 꺼진 객체는 상한을 먹지 않는다. 지금처럼 `deactive` 로 보내되 세지 않는다 — 꺼진 설정 창의 자식 일흔여섯이
+                    // 예산을 먹어 켜진 조합 버튼이 잘렸다(QA 런 182). 그래서 `holder-limit` 은 켜진 객체가 잘렸다는 뜻만 갖는다.
+                    if (transform.gameObject.activeInHierarchy)
                     {
-                        dropped++;
-                        continue;
+                        var kind = transform.gameObject.GetType();
+                        seen.TryGetValue(kind, out var already);
+                        seen[kind] = already + 1;
+
+                        // 청한 멤버를 쥔 객체는 상한 밖이다. 누군가 이름을 대고 청한 값이 "객체가 많아서" 빠지면 그 조건은 영영
+                        // 확인되지 않는다. 상한을 넘긴 뒤에만 묻는다 — 컴포넌트를 세는 비용이 그때만 든다.
+                        if (already >= MaxHolders * MaxHolders && !WatchList.Holds(transform.gameObject))
+                        {
+                            dropped++;
+                            continue;
+                        }
                     }
 
                     var said = new StringBuilder(256);
@@ -600,6 +718,13 @@ namespace Artel.Affordances.Live
             moved |= Tagged(text, transform, ledger, identity);
 
             moved |= Said(text, transform, ledger, identity);
+
+            // uGUI 와 엔진 컴포넌트의 상태. 어느 멤버에도 없는 값이라 adapter 가 읽고, 객체 항목에 한 조각으로 싣는다.
+            moved |= Fragment(text, UiState.Of(transform.gameObject), ledger, identity + "|ui");
+
+            moved |= Fragment(text, EngineState.Of(transform.gameObject), ledger, identity + "|engine");
+
+            moved |= Fragment(text, UiDocumentState.Of(transform.gameObject), ledger, identity + "|uitk");
 
             moved |= Where(text, transform, ledger, identity);
 
@@ -736,7 +861,7 @@ namespace Artel.Affordances.Live
         /// </remarks>
         /// <returns>값이 이번 판독에 들어갈 때 참 — 움직였거나, 전부가 나가는 중이거나.</returns>
         private static bool Value(
-            StringBuilder text, Watched member, Component on, Ledger ledger, string key,
+            StringBuilder text, Watched member, object on, Ledger ledger, string key,
             bool always = false)
         {
             // 장부가 실제로 나간 것을 정확히 쥘 수 있도록 먼저 옆에 써 둔다. 값이 아니라 조각을 비교한다는 것은 그 둘이 결코 어긋날 수
@@ -789,6 +914,38 @@ namespace Artel.Affordances.Live
         /// 거기 없는 걸음은 없는 값이 아니라 이름으로 보고한다. 난독화는 멤버의 이름을 바꾸고, null 로 답하는 판독은 게임의 입에
         /// 말을 넣는 일이 된다 — 읽을 수 없는 필드가 0 대신 <c>unread</c> 라고 말하는 것과 같은 이유다.
         /// </remarks>
+        /// <summary>
+        /// 멤버의 지금 값을 객체로. JSON 이 아니라 비교할 값이 필요한 쪽(<c>wait_until</c>)이 쓴다. 읽지 못하면 false 와 이유.
+        /// </summary>
+        internal static bool TryValue(Watched member, object on, out object value, out string unread)
+        {
+            value = null;
+            unread = null;
+
+            if (!member.Static && on == null)
+            {
+                unread = "no-holder";
+                return false;
+            }
+
+            try
+            {
+                value = member.Getter != null ? member.Getter.GetValue(on, null) : member.Field.GetValue(on);
+
+                if (member.Via != null && value != null)
+                {
+                    value = Along(value, member.Via);
+                }
+            }
+            catch (Exception exception)
+            {
+                unread = exception.GetType().Name;
+                return false;
+            }
+
+            return true;
+        }
+
         private static object Along(object from, string path)
         {
             const BindingFlags Flags =
@@ -825,13 +982,21 @@ namespace Artel.Affordances.Live
         }
 
         private static void Read(
-            StringBuilder text, Watched member, Component on, Ledger ledger, string key)
+            StringBuilder text, Watched member, object on, Ledger ledger, string key)
         {
             object held;
 
+            // 인스턴스 멤버인데 읽을 인스턴스가 없다. 찾아 둔 것이 비었거나, 씬에 그 컴포넌트가 하나도 없는데 `read_member`
+            // 가 물었거나. `GetValue(null)` 이 던지는 `TargetException` 은 그 사실을 말하지 않는다 — WordVenture 에서 그렇게 나왔다.
+            if (!member.Static && on == null)
+            {
+                Json.Property(text, "unread", "no-holder");
+                return;
+            }
+
             try
             {
-                held = member.Field.GetValue(on);
+                held = member.Getter != null ? member.Getter.GetValue(on, null) : member.Field.GetValue(on);
 
                 // 근거는 그 필드를 청한 것이 아니라 거기서 닿는 무언가를 청했다 — 목록의 개수이거나, 필드만 걷는 메서드였다면 돌려줬을
                 // 것. 메서드를 부르는 대신 여기서 경로를 따라가는데, 그것이 게임을 감시하는 것과 게임을 하는 것의 차이 전부다.
@@ -1090,6 +1255,18 @@ namespace Artel.Affordances.Live
         /// 제 데드밴드를 거치고, 그것은 픽셀로 잰다. 월드 쪽은 어느 패키지도 축척을 알 수 없는 단위에 대한 추측이지만, 픽셀은
         /// 어디서나 픽셀이고 그 하나 아래로는 아무것도 다르게 그려지지 않는다.
         /// </remarks>
+        /// <summary>adapter 가 만든 조각 하나를 장부에 대고 비교해 바뀌었을 때만 싣는다.</summary>
+        private static bool Fragment(StringBuilder text, string rendered, Ledger ledger, string key)
+        {
+            if (rendered == null || !ledger.Keep(key, rendered))
+            {
+                return false;
+            }
+
+            text.Append(rendered);
+            return true;
+        }
+
         private static bool Where(
             StringBuilder text, Transform transform, Ledger ledger, string identity)
         {

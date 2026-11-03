@@ -595,9 +595,52 @@ must leave the game exactly as it found it.
 
 **Reading state needs no change to the game.** There is no attribute to add and
 no member to mark. The SDK samples what the game holds ten times a second and
-sends a batch once a second as a `PULSE` message on the same WebSocket. The two
-actions `start_readings` and `stop_readings` turn it on and off, so a QA run
-reads only the part of the session it is actually driving.
+sends a `PULSE` message on the same WebSocket on the tick a value moved, no
+sooner than 0.1 s after the previous one. The two actions `start_readings` and
+`stop_readings` turn it on and off, so a QA run reads only the part of the
+session it is actually driving; `start_readings` takes the three rates as
+options when a run wants to measure with different ones.
+
+A member the evidence did not name can still be asked for by name while the game
+runs: `watch [["Game.Player::hp", "Progress::stage"]]` resolves each name against
+the loaded assemblies and adds it to the watch list, and `read_member` reads one
+once. A field or auto-property is enough; a property whose getter runs code is
+refused unless the game marks it `[ArtelObserve]` — name the field instead. A
+member on a scene component is read where the walk meets it; a static is
+read directly; anything else — a ScriptableObject, a plain object behind a static
+or a container — is found by following references from static fields and scene
+components, four levels deep and within a time budget, and the action's result
+says which names resolved, where each is read from, and which did not and why.
+
+A game can also say so in its own code: `[ArtelObserve]` on a field or property
+puts that member on the watch list at startup, with no build step involved. A
+property's getter then runs on every reading, which is the one place the pulse
+runs game code, and only because the game asked for it.
+
+Two kinds of state no member holds ride each object entry as well: `ui` carries
+what uGUI accepts (`interactable`, `isOn`, slider and dropdown `value`, `fill`,
+`CanvasGroup` alpha and flags) and `engine` carries what the engine is doing
+(the current `Animator` state, whether an `AudioSource` or `ParticleSystem` is
+playing, whether a `SpriteRenderer` is enabled and how opaque). `flush` reads and sends one
+reading right now, for a check that cannot wait for the next tick. A UI Toolkit
+screen has no object per element, so the object carrying the `UIDocument` lists
+its named and textual elements under `uitk`.
+
+`wait_until` waits inside the game: `["Game.Player::hp <= 0", 5]` yields every
+frame until the condition holds or the seconds run out, and answers with
+`{held, waitedFrames, timedOut}`. Conditions are `exists(selector)`,
+`active(selector)`, `Type::member op literal`, `and`, `or` and parentheses; no
+expressions. A timeout is a value, not a failure — only an unreadable condition
+fails the action.
+
+What happened, as opposed to what is, rides `events` on the same reading: the
+engine calls the game made since the previous reading — a sound played, an
+animator trigger set, a prefab instantiated or destroyed, a scene load, a
+`PlayerPrefs` write. These are caught at the call site: the same IL
+post-processor that redirects `Input` redirects those calls to `ArtelEngine`,
+which makes the original call and records it. Repeats within one reading fold
+into a `count`, so an `Update` that sets an animator float every frame is one
+line, not sixty.
 
 What a pulse carries is decided by the evidence document baked at build time —
 the members the analysed conditions and effects name — plus the objects that
@@ -645,7 +688,8 @@ Current limits:
 
 - `[ArtelAction]` supports synchronous instance methods on `Component` classes.
 - Async methods, iterators, and coroutines are rejected during compilation.
-- Method parameters are not captured.
+- Method parameters are captured as `args`: boxed at entry, Unity objects by name,
+  anything Newtonsoft cannot serialize by type name; `ref`/`out` slots are null.
 - Return values must be serializable by Newtonsoft.Json.
 - Each component keeps at most 256 pending actions; overflow drops the oldest.
 

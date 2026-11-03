@@ -29,13 +29,13 @@ sequenceDiagram
 - `ACTION_RESULT` 의 `Frame` 은 배치를 받은 프레임이 아니라 마지막 action 이 끝난 프레임 (ARTEL-620)
 - `RequestId` 로 어느 `ACTION` 에 대한 답인지 알림. `Id` 는 이 메시지 자신의 번호라 그 자리에 못 씀
 
-`ActionExecutor` 가 처리하는 21 개.
+`ActionExecutor` 가 처리하는 25 개.
 
 | method | params | 비고 |
 | --- | --- | --- |
 | `button_click` | `[targetId]` | **deprecated.** `onClick` 을 `EventSystem` 없이 직접 부른다. 이 저장소 밖에서 아직 보내므로 남아 있다 |
 | `enter_text` | `[targetId, value]` | `InputField` 와 `TMP_InputField` |
-| `move_mouse` | `[x, y]` · `[instanceId]` · `[selector]` | 좌표는 스캔이 보고한 좌상단 원점 픽셀 |
+| `move_mouse` | `[x, y]` · `[instanceId]` · `[selector]` | 좌표는 스캔이 보고한 좌상단 원점 픽셀. selector 는 활성 씬 → `DontDestroyOnLoad` → 로드된 다른 씬 순으로 푼다(ARTEL-1287) |
 | `mouse_down` | `[]` 또는 `[button]` (0·1·2) | 한 프레임 뒤 `returnValue` 에 `reached` 와 `pointerHeldByPerson` |
 | `mouse_up` | `[]` 또는 `[button]` | |
 | `key_click` | `[keyCode, positiveDurationSeconds]` | |
@@ -46,8 +46,13 @@ sequenceDiagram
 | `pause_time` | `[]` | `Time.timeScale = 0`. SDK 자신은 unscaled 로 돈다 |
 | `resume_time` | `[]` | `pause_time` 이 없었으면 실패 |
 | `reset_game` | `[]` 또는 `[{ "clearPlayerPrefs": bool }]` | 시작 씬을 다시 연다 |
-| `start_readings` | `[]` | `pulse` 를 켠다. 여러 번 불러도 같음 |
+| `start_readings` | `[]` 또는 `[{ "interval"?, "delivery"?, "minDelivery"? }]` | `pulse` 를 켠다. 여러 번 불러도 같음. 초 단위 속도 셋은 아래 |
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
+| `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
+| `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
+| `wait_until` | `[condition]` · `[condition, timeoutSeconds]` | 조건이 참이 될 때까지 매 프레임 기다린다. 아래. 기본 5초, 최대 60초 |
+| `flush` | `[]` | 지금 한 번 읽어 움직인 것이 있으면 바로 `PULSE` 로 보낸다. 아무것도 안 움직였으면 `PULSE` 는 없고 `ACTION_RESULT.frame` 이 "이 frame 까지 변화 없음" 의 증거다. 돌고 있지 않으면 실패 |
+| `resync_readings` | `[]` | 다음 `PULSE` 를 `whole` 로 보낸다(ARTEL-1299). 받는 쪽이 `seq` 의 빈자리로 누락을 알아챘을 때 청한다. 돌고 있지 않으면 실패 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
 | `invoke_cheat` | `[{ "name", "args"?, "target"? }]` | 게임이 등록한 cheat. 출시 빌드에서는 거절. 아래 |
@@ -73,6 +78,58 @@ sequenceDiagram
 | 잘라내기 최장변 | `CropMaxEdge` | 512 |
 | 잘라내기 여백 | `DefaultPadding` | 8 px |
 | JPEG 품질 | `JpegQuality` | 70 |
+
+### start_readings 의 속도
+
+| 키 | 기본 | 뜻 |
+| --- | --- | --- |
+| `interval` | 0.1 | 판독 사이의 초 |
+| `minDelivery` | 0.1 | 변화를 본 뒤 보내기까지의 최소 초. 변화는 이것만 지났으면 그 tick 에 나간다 |
+| `delivery` | 1 | 바닥에 걸려 남은 것을 늦어도 이만큼 안에 보내는 상한 |
+
+`interval > 0`, `minDelivery >= 0`, `delivery >= interval` 이 아니면 거절. 모르는 키는 무시.
+
+### watch · read_member 의 이름과 returnValue
+
+- 이름은 `Type::member` 또는 `Type::member.path.to.value`. `Type` 은 전체 이름이거나, 게임 타입 가운데 하나뿐이면 짧은 이름.
+  `member` 는 필드·자동 프로퍼티. 그 밖의 프로퍼티는 getter 가 코드를 돈다. 빌드 때 SDK 가 그 getter 의 IL 을 읽어 부작용이 없다고
+  증명한 것(필드 읽기·산술·분기와 허용 목록의 엔진 읽기만 하는 것, `[ArtelPureGetter]` 가 붙는다)과 게임이 `[ArtelObserve]` 를 붙인
+  것만 받고, 아니면 `property runs code: mark it [ArtelObserve] or name the field` 로 거절한다(`read_member`·`wait_until` 도 같은 해석).
+  경로는 필드가 쥔 것에서 필드·프로퍼티로 걸어간다 — `Items.Count`
+- 어디서 읽히는지는 `kind` 로 답한다: `static`, `component`(씬 걷기가 매 판독 만남), `object`(ScriptableObject 는 Unity 에
+  묻고, 그 밖의 객체는 static 필드와 씬 위 컴포넌트에서 참조를 따라가 찾음. 깊이 4, 컬렉션 앞 64 개, 50 ms)
+- `watch` 의 `returnValue`: `{ resolved: [{ name, kind, holders, declaring, member }], unresolvable: [{ name, reason }], walk: { visited, ms, exhausted } }`.
+  `reason` 은 `bad name` · `no such type` · `ambiguous type` · `no such member` · `no such path` · `not reachable` ·
+  `not reachable within budget`
+- `read_member` 는 거기에 `values: [{ path?, value | count | unread }]` 를 더한다
+- 청한 멤버는 `pulse` 의 `statics` 에 `declaring`·`member` 로 실린다. 쥔 인스턴스가 둘 이상이면 `instance` 번호가 붙고, 지금
+  하나도 없으면 `unread: "no-holder"`. 청한 멤버를 쥔 씬 객체는 holders 상한(256) 밖이다
+
+### wait_until 의 조건과 returnValue
+
+반응을 게임 안으로 들인다. agent 의 macro `wait_until` 은 새 `pulse` 마다 조건을 다시 읽어 전달 지연(0.1~0.2 초)과 왕복에 묶이는데, 배치 안의
+`[wait_until(X), click(Y)]` 는 네트워크 없이 프레임 단위로 잇는다. 리듬·QTE 처럼 100 ms 안에 눌러야 하는 창이 쓸 자리다.
+
+- 조건은 선언형 소수만. 식은 받지 않는다.
+  - `exists(selector)` · `active(selector)` — selector 는 `pulse`·`GAME_STATE` 가 보고한 그것(`Canvas/Start[0]`). 없으면 거짓
+  - `Type::member op literal` — 이름은 `watch` 와 같은 해석(`Lookup`). `op` 는 `==` `!=` `<` `<=` `>` `>=`. literal 은 수·`true`/`false`·`"글자"`·`null`·따옴표 없는 글자(enum 이름)
+  - `and` · `or` · 괄호. `and` 가 먼저 묶인다
+- `returnValue`: `{ held, waitedFrames, timedOut, frame }`. **시간 초과는 실패가 아니라 값이다** — agent 가 읽는다.
+- 실패는 조건을 못 읽는 것만: 문법, 이름이 안 풀림(`no such type` 등), getter 가 던짐. 쥔 인스턴스가 아직 없는 멤버는 거짓이다 — 아직 안 생긴 객체를 기다리는 조건일 수 있다.
+
+### pulse 의 객체 항목에 실리는 `ui` · `engine` · `uitk`
+
+멤버가 아닌 상태를 adapter 가 읽어 객체 항목에 조각 하나로 싣는다. 장부가 통째로 비교하므로 안 바뀐 객체에는 없다.
+
+| key | 읽는 것 | 안의 키 |
+| --- | --- | --- |
+| `ui` | uGUI(이름으로 맞춤, 참조 없음) | `interactable`(Selectable) · `isOn`(Toggle) · `value`(Slider·Scrollbar·Dropdown·TMP_Dropdown) · `fill`·`sprite`(Image) · `alpha`·`groupInteractable`·`blocksRaycasts`(CanvasGroup) |
+| `uitk` | `UIDocument`(UI Toolkit, 이름으로 맞춤) | root 아래 이름이나 글자가 있는 element 들: `[{name, type, text?, enabled, visible}]`. 깊이 8, 120 개까지 |
+| `engine` | 엔진 컴포넌트 | `anim`{`stateHash`, `state`?}(Animator, layer 0) · `audio`{`playing`, `clip`}(AudioSource) · `particles`{`playing`}(ParticleSystem) · `sprite`{`alpha`, `enabled`}(SpriteRenderer. 스프라이트 이름은 싣지 않는다 — 프레임 애니메이션이 매 tick 바꾼다) · `renderer`{`enabled`} |
+
+연속값은 셋째 자리에서 끊고(`value`·`fill`·`alpha`), `normalizedTime` 처럼 매 프레임 바뀌는 것은 싣지 않는다. `Selectable`·`Animator`·`AudioSource`·`ParticleSystem`·`UIDocument` 를 가진 객체는 holders 상한 안에서 순회에 든다. `Renderer` 만으로는 들지 않는다.
+
+watch list 의 셋째 출처: 게임 코드가 필드·프로퍼티에 `[ArtelObserve]` 를 붙이면 `WatchList.All()` 이 게임 어셈블리를 한 번 훑어 `asked` 로 더한다. 프로퍼티는 getter 가 판독마다 돈다. 컴포넌트가 아닌 타입의 인스턴스는 `watch` 와 같은 걷기로 찾는다.
 
 ### scan_evidence 의 returnValue
 
@@ -146,12 +203,16 @@ behavior 가 끝나는 이유.
 | `GAME_FUNCTION_CATALOG` | `DEVICE_CONTEXT` 바로 뒤에 한 번, 그 뒤 목록이 바뀌면 1 초에 한 번까지. `{type, revision, cheats, behaviors}`. 출시 빌드는 보내지 않는다 |
 | `BEHAVIOR_ENDED` | behavior 하나가 끝날 때 한 번. `{type, behaviorId, name, target, reason, detail, seconds, frame}`. 연결이 없을 때 끝난 것은 버린다 |
 | `PERFORMANCE` | 1 초마다 (`PerformanceReportIntervalSeconds`) |
-| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. `functions`·`behaviors`·`errors`·`audio` 는 아래 |
+| `PULSE` | live readings 가 켜져 있고 감시 대상 값이 움직였을 때. 변화를 본 tick 에 나간다(전달 사이 최소 `minDelivery`, 기본 0.1 초). `functions`·`behaviors`·`errors`·`audio` 는 아래 |
 | `STREAM_STATE` | 스트림 상태가 바뀔 때. 값은 `CONNECTING`·`LIVE`·`FAILED`·`STOPPED` |
 | `WEBRTC_OFFER` | 스트림 세션이 offer 를 만들었을 때 |
 | `WEBRTC_ICE` | ICE candidate 가 모였을 때 |
 | `ERROR` | 알 수 없는 메시지에 대한 답 |
 
+- `PULSE.runtime`·`PULSE.stream`·`PULSE.seq`(ARTEL-1299): `runtime` 은 게임 프로세스의 세대, `stream` 은 `start_readings` 한 번의
+  세대이고, `seq` 는 그 stream 에서 보내려고 쥔 `pulse` 의 번호(1부터)다. 바뀌지 않아 쥐지 않은 판독은 세지 않으므로 빈자리는 곧
+  누락이다. 받는 쪽은 `runtime` 이 바뀌면 상태를 버리고, `stream` 이 바뀌거나 `seq` 가 비면 `whole` 을 기다린다(`resync_readings`).
+- `PULSE.scenes`: 로드된 씬마다 `{name, handle}`. `handle` 은 Unity `Scene.handle` 이라 같은 이름의 씬도 다시 로드하면 바뀐다.
 - `PULSE.functions`: 함수가 지금 쓸 수 있는지. `whole` 인 `pulse` 에는 전량, 그 밖에는 1 초에 한 번 평가해 바뀐
   항목과 사라진 키(`removed: true`)만 싣는다. 키는 `(kind, name, target)` 이고, instance 가 없는 instance 함수는
   `target: null` 항목 하나로 선다
@@ -159,6 +220,7 @@ behavior 가 끝나는 이유.
   가만히 있어도 behavior 가 도는 동안은 1 초에 한 번 `pulse` 를 보낸다
 - `PULSE.audio`: 재생 중인 `AudioSource` 수와 직전 `pulse` 이후 재생을 시작한 것. 아래 「소리」
 - `PULSE.errors`: 직전 `pulse` 이후 새로 생기거나 `count` 가 늘어난 예외·Error 로그 묶음. 아래 「예외와 Error 로그」
+- `PULSE.events`: 직전 `pulse` 이후 게임이 엔진에 건 호출들. 아래 「엔진 호출」. `schema` 3 부터
 - `PERFORMANCE` 가 나르는 지표군 이름은 서버가 정한 계약
 - 지금 `MetricGroupNames.Collected()` 가 선언하는 것은 `frameTiming` 과 `editorRender` 둘
 
@@ -190,6 +252,31 @@ behavior 가 끝나는 이유.
 - 전량 `pulse` 에도 이미 보낸 묶음을 다시 싣지 않는다. 예외는 상태가 아니라 일어난 일이라서다. 그래서 전달에 실패한
   `pulse` 에 실렸던 묶음은 다시 찍히기 전까지 다시 오지 않는다
 - live readings 가 꺼져 있는 동안 찍힌 묶음은 쌓여 있다가 켜진 뒤 첫 `pulse` 부터 나간다
+
+### 엔진 호출
+
+소리 재생, 애니메이션 트리거, 스폰·파괴, 씬 로드, 저장은 상태가 아니라 호출이라 `pulse` 가 보지 못했다. 빌드 때 `EngineCallWeaver` 가 게임
+어셈블리의 호출부를 `Artel.ArtelEngine` 프록시로 바꾸고(입력 위빙과 같은 pass), 프록시가 원래 호출을 그대로 한 뒤 적는다. 실을 것이 있으면
+감시 대상 값이 가만히 있어도 `pulse` 가 나간다. 에디터와 DEVELOPMENT_BUILD 에서만 실린다(다른 attachment 와 같다).
+
+항목 하나: `{ kind, target, detail, value, frame, count }`
+
+| key | 뜻 |
+| --- | --- |
+| `kind` | `audio.play` · `audio.stop` · `anim.trigger` · `anim.bool` · `anim.int` · `anim.float` · `anim.play` · `spawn` · `destroy` · `scene.load` · `prefs.set` · `prefs.delete` · `prefs.save` · `prefs.delete_all` |
+| `target` | 호출을 받은 컴포넌트가 사는 객체의 path. static 호출(`scene.load`·`prefs.*`·`PlayClipAtPoint`)은 null. `spawn` 은 만들어진 객체 |
+| `detail` | clip·trigger·parameter 이름, state 이름, prefab 이름, 씬 이름(`#index` 는 build index), prefs key |
+| `value` | 인자가 있으면 그것. `anim.bool`·`anim.int`·`anim.float`·`prefs.set` 의 값, `scene.load` 의 `LoadSceneMode`, `destroy` 의 지연 초 |
+| `frame` | 그 사건이 한 판독 안에서 처음 일어난 frame |
+| `count` | 한 판독 안에서 `kind`·`target`·`detail`·`value` 가 같은 사건의 수. `Update` 의 `SetFloat` 반복은 하나로 접힌다 |
+
+판독 하나에 50 개. 넘친 수는 `eventsDropped` 로 적는다. 잡는 호출: `AudioSource.Play/PlayDelayed/PlayOneShot/Stop`, `AudioSource.PlayClipAtPoint`,
+`Animator.SetTrigger/SetBool/SetInteger/SetFloat/Play/CrossFade`, `Object.Instantiate`(generic 포함)·`Destroy`, `SceneManager.LoadScene/LoadSceneAsync`,
+`PlayerPrefs.SetInt/SetFloat/SetString/DeleteKey/Save/DeleteAll`. 프록시에 없는 overload 는 바뀌지 않는다. `ParticleSystem` 은 모듈 참조를
+더하지 않기 위해 뺐다 — 상태는 `engine.particles` 로 읽힌다.
+
+`[ArtelAction]` 메서드의 기록(`GAME_STATE` 의 `actions[]`)에는 `args` 가 붙는다. 진입에서 박싱한 인자들이고, Unity 객체는 이름, 직렬화 못 하는
+것은 타입 이름이다. `ref`·`out` 자리는 null.
 
 ### 소리
 

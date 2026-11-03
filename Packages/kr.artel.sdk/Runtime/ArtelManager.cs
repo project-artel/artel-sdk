@@ -298,7 +298,8 @@ namespace Artel
             Affordances.Live.LiveState.Attachment = new PulseAttachmentSet(
                 new GameFunctionPulse(gameFunctions),
                 new ErrorPulse(loggedErrors),
-                new AudioPulse());
+                new AudioPulse(),
+                new EngineEventPulse());
 #endif
             actionExecutor = new ActionExecutor(
                 scanner,
@@ -633,6 +634,11 @@ namespace Artel
         /// </remarks>
         public bool StartReadings()
         {
+            return StartReadings(Affordances.Live.Pulse.Pace.Default);
+        }
+
+        public bool StartReadings(Affordances.Live.Pulse.Pace pace)
+        {
             if (Affordances.Scan.AffordanceBootstrap.Watching)
             {
                 return true;
@@ -645,13 +651,23 @@ namespace Artel
                 ? null
                 : new WebSocketPulseSink(() => webSocketTransport, () => nextMessageId++);
 
-            return Affordances.Scan.AffordanceBootstrap.WatchLiveState(sink);
+            return Affordances.Scan.AffordanceBootstrap.WatchLiveState(sink, pace);
         }
 
         /// <summary>라이브 판독을 끝낸다. 한 번도 시작하지 않았을 때 불러도 안전하다.</summary>
         public void StopReadings()
         {
             Affordances.Scan.AffordanceBootstrap.StopWatching();
+        }
+
+        public bool FlushReadings()
+        {
+            return Affordances.Scan.AffordanceBootstrap.FlushReadings();
+        }
+
+        public bool ResyncReadings()
+        {
+            return Affordances.Scan.AffordanceBootstrap.ResyncReadings();
         }
 
         /// <summary>라이브 판독이 돌고 있는지.</summary>
