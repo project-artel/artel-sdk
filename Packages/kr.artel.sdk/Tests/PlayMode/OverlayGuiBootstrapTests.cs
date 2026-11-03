@@ -88,7 +88,7 @@ namespace Artel.Tests
             Assert.That(manager.SdkId, Is.Not.Empty);
             Assert.That(manager.InstanceName, Is.Not.Empty);
 
-            // Artel 토글, 고급, 연결, 로그아웃, 로그인, 다시 시도, 게이트 로그아웃, 나중에.
+            // 새로고침과 닫기를 포함한 기본 버튼 수를 확인한다.
             Assert.That(buttons, Has.Length.EqualTo(14));
             Assert.That(Array.Find(buttons, button => button.name == "취소 Button").gameObject.activeInHierarchy, Is.False);
 

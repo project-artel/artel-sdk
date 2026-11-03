@@ -25,6 +25,7 @@ SDK 프로젝트 선택 화면에서 새로고침으로 서버의 프로젝트 �
 - **Result:** Unity 2022.3.34f1에서 `-batchmode -runTests -testPlatform PlayMode -testFilter Artel.Tests.OverlayGuiBootstrapTests`를 실행해 13개 통과. 변경 파일의 `git diff --check`도 통과했다.
 - **Screenshots:** `.plan/assets/2026-11-03-sdk-project-list-refresh/`의 이미지는 실제 Unity Canvas를 fixture 목록으로 렌더링한 화면이다. 라이트·다크 테마, 서버 설정 표시, 선택창 닫기를 확인했다. 실행 중인 로컬 서버가 없어 실제 서버의 프로젝트 생성·재조회 검증은 실행하지 않았다.
 - **Review:** pair-review에서 발견한 단일 프로젝트 응답의 자동 선택 문제와 버튼 수 검증을 수정했으며 재검토 PASS를 받았다.
+- **CI 수정:** 최초 실행의 PlayMode 4개 조합은 통과했지만 EditMode 4개 조합에서 `OverlayGui_HidesCoverWhenGateDismissed`가 이전 버튼 이름 `나중에 Button`을 찾아 실패했다. 테스트를 `닫기 Button`으로 수정하고 null 검증을 추가했다. 로컬 EditMode 전체 실행에서 613개 통과, 1개 skip, 실패 0개를 확인했다.
 
 ## Risks & Rollback
 - **Risks:** 새로고침과 로그아웃의 배치가 기존 목록과 겹칠 수 있다.
