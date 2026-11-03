@@ -280,7 +280,7 @@ namespace Artel.Tests.Transport
 
             Assert.That(
                 endpoint.AbsoluteUri,
-                Is.EqualTo("wss://socket.artel.example/ws/sdk?token=sdk%20token&instanceId=7"));
+                Does.StartWith("wss://socket.artel.example/ws/sdk?token=sdk%20token&instanceId=7&actionDelivery=1&processId="));
         }
 
         // 이 어셈블리의 기본값은 Ssl3 | TLS 1.0이라, 덮어쓰지 않으면 TLS 1.2 이상만 받는

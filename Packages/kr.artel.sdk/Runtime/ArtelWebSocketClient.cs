@@ -7,11 +7,12 @@ using WebSocketSharp;
 
 namespace Artel
 {
-    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelMediaWebSocketTransport, IArtelConnectionEpochSource
+    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelMediaWebSocketTransport, IArtelConnectionEpochSource, IArtelActionDeliverySource
     {
         private const string SdkWebSocketPath = "/ws/sdk";
         private long connectionEpoch;
         public long ConnectionEpoch => Interlocked.Read(ref connectionEpoch);
+        public ActionDeliveryJournal ActionDelivery { get; private set; }
 
         // 서버가 자격증명이나 인스턴스 접근을 거절할 때 붙이는 코드. 토큰과 instanceId 가 그대로면
         // 다시 걸어도 같은 대답이 오므로 이 코드만은 재시도하지 않는다.
@@ -393,7 +394,8 @@ namespace Artel
 
         // ponytail: 토큰이 쿼리에 실린다. WebSocketSharp의 커스텀 헤더로 옮기려면 서버
         // 핸드셰이크도 같이 바꿔야 하므로, 그때 양쪽을 함께 옮긴다.
-        internal static Uri BuildEndpoint(Server server, string token, string instanceId)
+        internal static Uri BuildEndpoint(Server server, string token, string instanceId,
+            ActionDeliveryJournal delivery = null)
         {
             if (server == null)
             {
@@ -411,10 +413,12 @@ namespace Artel
             }
 
             var endpoint = new Uri(server.WebSocketBaseUri, SdkWebSocketPath);
+            delivery = delivery ?? ActionDeliveryJournal.ForTarget(server.WebSocketBaseUri, instanceId);
             return new UriBuilder(endpoint)
             {
                 Query = "token=" + Uri.EscapeDataString(token) +
-                        "&instanceId=" + Uri.EscapeDataString(instanceId)
+                        "&instanceId=" + Uri.EscapeDataString(instanceId) +
+                        "&actionDelivery=1&processId=" + Uri.EscapeDataString(delivery.ProcessId)
             }.Uri;
         }
 
@@ -460,7 +464,9 @@ namespace Artel
             Uri endpoint;
             try
             {
-                endpoint = BuildEndpoint(server, tokenSource(), instanceIdSource());
+                var instanceId = instanceIdSource();
+                ActionDelivery = ActionDeliveryJournal.ForTarget(server.WebSocketBaseUri, instanceId);
+                endpoint = BuildEndpoint(server, tokenSource(), instanceId, ActionDelivery);
             }
             catch (Exception exception)
             {

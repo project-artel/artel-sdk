@@ -23,5 +23,8 @@ namespace Artel.Protocol.Dto
 
         [JsonProperty("actions")]
         public List<ActionRequestDto> Actions { get; set; } = new List<ActionRequestDto>();
+
+        [JsonProperty("delivery", NullValueHandling = NullValueHandling.Ignore)]
+        public ActionDeliveryDto Delivery { get; set; }
     }
 }
