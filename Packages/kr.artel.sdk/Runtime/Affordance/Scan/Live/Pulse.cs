@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using System.Text;
+using Artel.Affordances.Scan;
 using UnityEngine;
 
 namespace Artel.Affordances.Live
@@ -131,6 +133,21 @@ namespace Artel.Affordances.Live
         /// </remarks>
         private long _reading;
 
+        /// <summary>
+        /// 이 프로세스의 세대(ARTEL-1299). 게임이 다시 시작하면 바뀐다. 받는 쪽은 이것이 바뀌면 쥔 상태를 버린다 — SDK 의 객체
+        /// id 는 프로세스를 넘지 못하므로, 같은 id 가 같은 객체라고 말할 수 없다.
+        /// </summary>
+        internal static readonly string RuntimeId = Guid.NewGuid().ToString("N").Substring(0, 12);
+
+        /// <summary>이 감시(<c>start_readings</c>)의 세대. 감시가 다시 시작하면 바뀌고, 첫 판독은 whole 이다.</summary>
+        private string _stream;
+
+        /// <summary>
+        /// 이 감시에서 보내려고 쥔 판독의 번호. 1부터다. <c>reading</c> 과 달리 바뀌지 않아 쥐지 않은 판독은 세지 않는다 — 그래서
+        /// 받는 쪽은 빈자리를 곧 누락으로 읽을 수 있다. 전달에 실패해 버린 판독도 번호를 쓴 뒤라 빈자리로 남는다.
+        /// </summary>
+        private long _seq;
+
         /// <summary>아직 아무 데도 가지 않은 좌표들과, 그것들이 마지막으로 한 말.</summary>
         private readonly Restless _restless = new Restless();
 
@@ -176,6 +193,7 @@ namespace Artel.Affordances.Live
             DontDestroyOnLoad(carrier);
 
             _beating = carrier.AddComponent<Pulse>();
+            _beating._stream = Guid.NewGuid().ToString("N").Substring(0, 12);
             _beating._sink = sink;
             _beating._interval = pace.Interval;
             _beating._delivery = pace.Delivery;
@@ -201,6 +219,23 @@ namespace Artel.Affordances.Live
 
             _beating.Take();
             _beating.Deliver();
+            return true;
+        }
+
+        /// <summary>다음 판독을 whole 로 만든다(ARTEL-1299). 돌고 있지 않으면 false.</summary>
+        /// <remarks>
+        /// 전달 실패 뒤와 같은 길을 쓴다. 받는 쪽이 <c>seq</c> 의 빈자리로 누락을 알아채면 청하고, 다음 박자의 판독이 기준을 다시
+        /// 맞춘다. 바로 읽어 보내지 않는 것은 박자와 경합하지 않으려서다.
+        /// </remarks>
+        internal static bool Resync()
+        {
+            if (_beating == null)
+            {
+                return false;
+            }
+
+            _beating._lost = true;
+            _beating._read = false;
             return true;
         }
 
@@ -318,7 +353,28 @@ namespace Artel.Affordances.Live
             _read = true;
 
             // 여기서 보내지 않고 전달 박자까지 쥐고 있는다. 찍는 것과 건네는 것은 두 속도이고, 이것은 게임을 따라가야 하는 쪽이다.
-            _pending.Add(document);
+            _pending.Add(Stamp(document, RuntimeId, _stream, ++_seq));
+        }
+
+        /// <summary>
+        /// 문서 맨 앞에 세대와 번호를 단다(ARTEL-1299). 쥐기로 한 뒤에 다는 것은 <c>seq</c> 가 쥔 판독만 세야 해서다 — 판독을
+        /// 찍는 쪽은 그것이 바뀌지 않았는지 찍은 뒤에야 안다.
+        /// </summary>
+        internal static string Stamp(string document, string runtime, string stream, long seq)
+        {
+            if (string.IsNullOrEmpty(document) || document[0] != '{')
+            {
+                return document;
+            }
+
+            var head = new StringBuilder(64);
+            head.Append("{\"runtime\":");
+            Json.String(head, runtime);
+            head.Append(",\"stream\":");
+            Json.String(head, stream);
+            head.Append(",\"seq\":").Append(seq);
+            head.Append(document.Length > 2 ? "," : "");
+            return head.Append(document, 1, document.Length - 1).ToString();
         }
 
         private void OnDestroy()

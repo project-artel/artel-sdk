@@ -666,6 +666,11 @@ namespace Artel
             return Affordances.Scan.AffordanceBootstrap.FlushReadings();
         }
 
+        public bool ResyncReadings()
+        {
+            return Affordances.Scan.AffordanceBootstrap.ResyncReadings();
+        }
+
         /// <summary>라이브 판독이 돌고 있는지.</summary>
         internal bool Reading => Affordances.Scan.AffordanceBootstrap.Watching;
 
