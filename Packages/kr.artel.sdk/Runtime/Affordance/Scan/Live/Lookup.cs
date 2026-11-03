@@ -321,8 +321,8 @@ namespace Artel.Affordances.Live
                 }
 
                 // 필드도 backing field 도 없는 프로퍼티는 getter 가 코드를 돈다. 판독은 게임을 하지 않는다는 규칙의 예외라,
-                // 이름을 댄 것만으로는 부족하고 그 코드를 쓴 쪽이 `[ArtelObserve]` 로 허락해야 한다 — `Declared` 와 같은 규칙.
-                // 단순 반환 getter 를 IL 로 가려 받는 것은 별도 작업이다.
+                // 이름을 댄 것만으로는 부족하다. 그 코드를 쓴 쪽이 `[ArtelObserve]` 로 허락했거나, 빌드 때 SDK 가 IL 을 읽어
+                // 부작용이 없다고 증명해 `[ArtelPureGetter]` 를 남긴 것만 돌린다(ARTEL-1294).
                 if (!Marked(getter))
                 {
                     answer.Reason = "property runs code: mark it [ArtelObserve] or name the field";
@@ -358,7 +358,8 @@ namespace Artel.Affordances.Live
         {
             try
             {
-                return getter.IsDefined(typeof(ArtelObserveAttribute), true);
+                return getter.IsDefined(typeof(ArtelObserveAttribute), true) ||
+                       getter.IsDefined(typeof(ArtelPureGetterAttribute), false);
             }
             catch (Exception)
             {
