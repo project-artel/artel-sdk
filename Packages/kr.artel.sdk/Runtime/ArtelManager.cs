@@ -1540,7 +1540,7 @@ namespace Artel
             }
             else
             {
-                Debug.LogWarning("[Artel] Game identity catalog 수집 실패로 전송을 건너뜁니다: " + error);
+                Debug.LogWarning("[Artel] 변수 메타데이터 수집 실패로 전송을 건너뜁니다: " + error);
             }
 #endif
         }

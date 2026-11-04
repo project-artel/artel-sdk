@@ -50,6 +50,27 @@ npx skills add project-artel/artel-skills
 - `artel-unity-sdk` — 이 패키지 설치, 로그인, 개발 빌드, 등록
 - `artel-cheats` — `[ArtelCheat]` 치트 추가
 - `artel-behaviors` — `[ArtelBehavior]` behavior 추가
+- `artel-game-identities` — `[ArtelMetadata]` 변수 메타데이터 작성·등록
+
+## 변수 메타데이터 attribute 추가
+
+field 또는 property에 `[ArtelMetadata]`를 붙여 값의 의미를 선언한다.
+
+```csharp
+using Artel;
+
+public class StageData
+{
+    [ArtelMetadata(Kind = "ordinal", Base = 0, Identifies = "stage", Role = "current",
+        Meaning = "현재 진입한 stage", ChangesWhen = "stage 진입 시")]
+    public int stagePosition;
+}
+```
+
+SDK는 getter를 실행하지 않고 메타데이터를 수집해 연결·재연결 때 build에 등록한다.
+기존 `[ArtelGameIdentity]`도 같은 방식으로 동작하며, 컴파일 경고로 새 이름을 안내한다.
+이름을 바꿔도 같은 `Type.member`의 서버 기록과 QA snapshot은 이어진다.
+이 기능은 현재 PR #191의 preview이며, 설치하려면 해당 branch 또는 commit을 지정한다.
 
 ## 실행 인자
 

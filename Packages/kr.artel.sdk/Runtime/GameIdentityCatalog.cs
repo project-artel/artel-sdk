@@ -20,7 +20,7 @@ namespace Artel
 
         private static IEnumerable<Type> LoadedTypes()
         {
-            var runtime = typeof(ArtelGameIdentityAttribute).Assembly;
+            var runtime = typeof(ArtelMetadataAttribute).Assembly;
             var runtimeName = runtime.GetName().Name;
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
@@ -46,11 +46,11 @@ namespace Artel
                         if (!(member is FieldInfo) && !(member is PropertyInfo)) continue;
                         foreach (var attribute in CustomAttributeData.GetCustomAttributes(member))
                         {
-                            if (attribute.AttributeType != typeof(ArtelGameIdentityAttribute)) continue;
+                            if (!typeof(ArtelMetadataAttribute).IsAssignableFrom(attribute.AttributeType)) continue;
                             var entry = Read(member, attribute);
                             Validate(entry);
                             if (!names.Add(entry.Name))
-                                throw new InvalidOperationException("Duplicate game identity name: " + entry.Name);
+                                throw new InvalidOperationException("Duplicate variable metadata name: " + entry.Name);
                             entries.Add(entry);
                         }
                     }
@@ -75,12 +75,12 @@ namespace Artel
                 var value = argument.TypedValue.Value;
                 switch (argument.MemberName)
                 {
-                    case nameof(ArtelGameIdentityAttribute.Kind): entry.Kind = (string)value; break;
-                    case nameof(ArtelGameIdentityAttribute.Base): entry.Base = (int)value; break;
-                    case nameof(ArtelGameIdentityAttribute.Meaning): entry.Meaning = (string)value; break;
-                    case nameof(ArtelGameIdentityAttribute.ChangesWhen): entry.ChangesWhen = (string)value; break;
-                    case nameof(ArtelGameIdentityAttribute.Identifies): entry.Identifies = (string)value; break;
-                    case nameof(ArtelGameIdentityAttribute.Role): entry.Role = (string)value; break;
+                    case nameof(ArtelMetadataAttribute.Kind): entry.Kind = (string)value; break;
+                    case nameof(ArtelMetadataAttribute.Base): entry.Base = (int)value; break;
+                    case nameof(ArtelMetadataAttribute.Meaning): entry.Meaning = (string)value; break;
+                    case nameof(ArtelMetadataAttribute.ChangesWhen): entry.ChangesWhen = (string)value; break;
+                    case nameof(ArtelMetadataAttribute.Identifies): entry.Identifies = (string)value; break;
+                    case nameof(ArtelMetadataAttribute.Role): entry.Role = (string)value; break;
                 }
             }
             return entry;
@@ -101,7 +101,7 @@ namespace Artel
 
         private static void Require(bool valid, string name, string field)
         {
-            if (!valid) throw new InvalidOperationException("Invalid game identity " + name + ": " + field);
+            if (!valid) throw new InvalidOperationException("Invalid variable metadata " + name + ": " + field);
         }
     }
 }

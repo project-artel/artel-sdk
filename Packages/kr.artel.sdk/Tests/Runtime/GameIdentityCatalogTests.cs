@@ -12,16 +12,48 @@ namespace Artel.Tests
     {
         private class IdentityParent
         {
-            [ArtelGameIdentity(Kind = "ordinal", Base = 0, Identifies = "stage", Role = "current",
+            [ArtelMetadata(Kind = "ordinal", Base = 0, Identifies = "stage", Role = "current",
                 Meaning = "현재 stage", ChangesWhen = "stage 진입 시")]
             public int Stage;
 
-            [ArtelGameIdentity(Kind = "id", Identifies = "enemy wave", Role = "other",
+            [ArtelMetadata(Kind = "id", Identifies = "enemy wave", Role = "other",
                 Meaning = "선택한 wave", ChangesWhen = "wave 선택 시")]
             private string Wave => throw new InvalidOperationException("getter must not run");
         }
 
         private sealed class IdentityChild : IdentityParent { }
+
+        private sealed class MetadataNames
+        {
+            [ArtelMetadata(Kind = "ordinal", Base = 0, Identifies = "stage", Role = "current",
+                Meaning = "현재 stage", ChangesWhen = "stage 진입 시")]
+            public int Current;
+
+#pragma warning disable CS0618
+            [ArtelGameIdentity(Kind = "ordinal", Base = 0, Identifies = "stage", Role = "current",
+                Meaning = "현재 stage", ChangesWhen = "stage 진입 시")]
+            private int Legacy => throw new InvalidOperationException("getter must not run");
+#pragma warning restore CS0618
+        }
+
+        [Test]
+        public void ArtelMetadata와_기존_attribute가_같은_필드를_전송한다()
+        {
+            Assert.That(GameIdentityCatalog.TryCollect(new[] { typeof(MetadataNames) },
+                out var catalog, out var error), Is.True, error);
+            var wire = JObject.Parse(new NewtonsoftJsonCodec().Serialize(catalog));
+            Assert.That((string)wire["type"], Is.EqualTo("GAME_IDENTITY_CATALOG"));
+            var entries = (JArray)wire["identities"];
+            Assert.That(entries.Count, Is.EqualTo(2));
+            Assert.That((string)entries[0]["name"], Is.EqualTo("MetadataNames.Current"));
+            Assert.That((string)entries[1]["name"], Is.EqualTo("MetadataNames.Legacy"));
+            var current = (JObject)entries[0];
+            var legacy = (JObject)entries[1];
+            current.Remove("name");
+            legacy.Remove("name");
+            Assert.That(JToken.DeepEquals(current, legacy), Is.True);
+            Assert.That((int)legacy["base"], Is.Zero);
+        }
 
         [Test]
         public void Field와_property의_선언을_값을_읽지_않고_수집한다()
@@ -41,7 +73,7 @@ namespace Artel.Tests
             Assert.That(GameIdentityCatalog.TryCollect(new[] { typeof(IdentityParent), typeof(IdentityParent) },
                 out var catalog, out var error), Is.False);
             Assert.That(catalog, Is.Null);
-            Assert.That(error, Does.Contain("Duplicate game identity name"));
+            Assert.That(error, Does.Contain("Duplicate variable metadata name"));
         }
 
         [Test]
