@@ -49,6 +49,11 @@ namespace Artel.CodeGen
                     // WillProcess가 통과시켰다고 해서 위빙할 게 있다는 뜻은 아니다. 거기서 보는
                     // 컴파일러 참조 목록에는 autoReferenced 때문에 Artel.Runtime이 항상 들어 있고,
                     // 실제로 SDK 타입을 쓰는지는 IL 메타데이터를 열어 봐야 안다.
+                    // 순수 getter 판정(ARTEL-1294)은 다른 위버보다 먼저 돈다. 엔진 호출 위버가 호출을 프록시로 바꾸고 나면 getter 가
+                    // 원래 무엇을 불렀는지 보이지 않는다.
+                    var pureGetterWeaver = PureGetterWeaver.TryCreate(assembly.MainModule, compiledAssembly.References);
+                    var markedPure = pureGetterWeaver != null && pureGetterWeaver.Process();
+
                     var actionWeaver = ActionMethodWeaver.TryCreate(assembly.MainModule, diagnostics);
                     var inputAttempt = InputMethodWeaver.TryCreate(
                         assembly.MainModule, compiledAssembly.References);
@@ -66,19 +71,35 @@ namespace Artel.CodeGen
 
                     var inputWeaver = inputAttempt.Weaver;
 
+                    // 엔진 호출 훅(ARTEL-1283). 입력과 같은 pass 다 — 세 번째 ILPP 를 만들면 순서가 문제가 된다.
+                    var engineAttempt = EngineCallWeaver.TryCreate(assembly.MainModule, compiledAssembly.References);
+
+                    if (engineAttempt.Refusal != null)
+                    {
+                        diagnostics.Add(new DiagnosticMessage
+                        {
+                            DiagnosticType = DiagnosticType.Warning,
+                            MessageData = "[Artel] " + compiledAssembly.Name + ": " + engineAttempt.Refusal
+                        });
+                    }
+
+                    var engineWeaver = engineAttempt.Weaver;
+
                     // cheat 와 behavior 등록은 에디터와 DEVELOPMENT_BUILD 에서만 만든다. 출시 빌드에서는 attribute 가 아무 일도
                     // 하지 않고, 런타임의 네 action 이 "not available in this build" 로 거절한다.
                     var gameFunctionWeaver = IsDiscoveryBuild(compiledAssembly)
                         ? GameFunctionWeaver.TryCreate(assembly.MainModule)
                         : null;
 
-                    if (actionWeaver == null && inputWeaver == null && gameFunctionWeaver == null)
+                    if (!markedPure && actionWeaver == null && inputWeaver == null && gameFunctionWeaver == null && engineWeaver == null)
                     {
                         return new ILPostProcessResult(null, diagnostics);
                     }
 
-                    var changed = actionWeaver != null && actionWeaver.Process();
+                    var changed = markedPure;
+                    changed |= actionWeaver != null && actionWeaver.Process();
                     changed |= inputWeaver != null && inputWeaver.Process();
+                    changed |= engineWeaver != null && engineWeaver.Process();
                     changed |= gameFunctionWeaver != null && gameFunctionWeaver.Process();
 
                     if (gameFunctionWeaver != null)

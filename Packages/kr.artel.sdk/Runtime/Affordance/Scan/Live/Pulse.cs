@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using System.Text;
+using Artel.Affordances.Scan;
 using UnityEngine;
 
 namespace Artel.Affordances.Live
@@ -52,7 +54,11 @@ namespace Artel.Affordances.Live
         /// 말하는 플래그를 더는 나르지 않는다 — 같은 사실이 두 자리가 아니라 한 자리에 있다. 한 모양에 대고 쓰인 독자는 다른
         /// 모양을 읽을 수 없으므로, 그것을 발견하도록 두는 대신 번호가 움직인다.
         /// </remarks>
-        internal const int SchemaVersion = 2;
+        /// <remarks>
+        /// 셋. 문서가 <c>events</c> 를 나르기 때문이다 — 직전 판독 이후 게임이 엔진에 건 호출들. 모양이 바뀐 것이 아니라 더해진
+        /// 것이고 옛 독자는 모르는 키를 지나가지만, 사건을 읽는 독자가 "없는 것" 과 "안 보내는 SDK" 를 가르려면 번호가 필요하다.
+        /// </remarks>
+        internal const int SchemaVersion = 3;
 
         /// <summary>판독 사이의 초.</summary>
         /// <remarks>
@@ -61,7 +67,7 @@ namespace Artel.Affordances.Live
         /// </remarks>
         private const float DefaultInterval = 0.1f;
 
-        /// <summary>전달 사이의 초.</summary>
+        /// <summary>변화가 없어도 전달하는 간격의 상한.</summary>
         /// <remarks>
         /// 읽기와 전달이 두 속도인 것은 일부러다. 변화는 일어나는 그 순간에 잡지 않으면 틀린 값으로 잡힌다 — 1초 안에 올라갔다
         /// 내려온 카운터는 초당 한 번 재는 독자에게 애초에 없던 것이다. 그 속도로 전달하는 것은 다른 물음이고, 답은 게임당 초당
@@ -72,11 +78,43 @@ namespace Artel.Affordances.Live
         /// </remarks>
         private const float DefaultDelivery = 1f;
 
+        /// <summary>변화를 본 뒤 전달까지 기다리는 최소 초.</summary>
+        /// <remarks>
+        /// 1초 배치가 지연의 전부였다. 판독은 0.1초마다 찍히는데 떠나는 것은 1초에 한 번이라, 변화가 독자에게
+        /// 닿는 데 평균 0.5초가 들었고 그 뒤에 결정이 붙는다. 이제 변화를 본 tick 에 바로 보내고, 이 값은
+        /// 매 tick 바뀌는 값 — 타이머·카운터 — 이 소켓을 초당 열 번 두드리는 것을 막는 바닥이다. 양은 같다.
+        /// 보내는 것은 바뀐 값뿐이고 주기를 줄이면 쪼개질 뿐이다.
+        /// </remarks>
+        private const float DefaultMinDelivery = 0.1f;
+
+        /// <summary>판독의 세 속도. <c>start_readings</c> 가 실측을 위해 바꿀 수 있다.</summary>
+        public struct Pace
+        {
+            /// <summary>판독 사이의 초.</summary>
+            public float Interval;
+
+            /// <summary>변화가 없어도 쥔 것을 보내는 간격의 상한.</summary>
+            public float Delivery;
+
+            /// <summary>변화를 본 뒤 보내기까지의 최소 간격.</summary>
+            public float MinDelivery;
+
+            public static Pace Default => new Pace
+            {
+                Interval = DefaultInterval, Delivery = DefaultDelivery, MinDelivery = DefaultMinDelivery
+            };
+
+            internal bool Valid =>
+                Interval > 0f && MinDelivery >= 0f && Delivery >= Interval &&
+                !float.IsNaN(Interval) && !float.IsNaN(Delivery) && !float.IsNaN(MinDelivery);
+        }
+
         private static Pulse _beating;
 
         private IPulseSink _sink;
         private float _interval = DefaultInterval;
         private float _delivery = DefaultDelivery;
+        private float _minDelivery = DefaultMinDelivery;
 
         /// <summary>찍었으나 아직 건네지 않은 판독들.</summary>
         private readonly System.Collections.Generic.List<string> _pending =
@@ -94,6 +132,21 @@ namespace Artel.Affordances.Live
         /// 말인데, 그것이 없으면 독자는 타임스탬프 둘과 간격에 대한 추측으로 그것을 유추해야 한다.
         /// </remarks>
         private long _reading;
+
+        /// <summary>
+        /// 이 프로세스의 세대(ARTEL-1299). 게임이 다시 시작하면 바뀐다. 받는 쪽은 이것이 바뀌면 쥔 상태를 버린다 — SDK 의 객체
+        /// id 는 프로세스를 넘지 못하므로, 같은 id 가 같은 객체라고 말할 수 없다.
+        /// </summary>
+        internal static readonly string RuntimeId = Guid.NewGuid().ToString("N").Substring(0, 12);
+
+        /// <summary>이 감시(<c>start_readings</c>)의 세대. 감시가 다시 시작하면 바뀌고, 첫 판독은 whole 이다.</summary>
+        private string _stream;
+
+        /// <summary>
+        /// 이 감시에서 보내려고 쥔 판독의 번호. 1부터다. <c>reading</c> 과 달리 바뀌지 않아 쥐지 않은 판독은 세지 않는다 — 그래서
+        /// 받는 쪽은 빈자리를 곧 누락으로 읽을 수 있다. 전달에 실패해 버린 판독도 번호를 쓴 뒤라 빈자리로 남는다.
+        /// </summary>
+        private long _seq;
 
         /// <summary>아직 아무 데도 가지 않은 좌표들과, 그것들이 마지막으로 한 말.</summary>
         private readonly Restless _restless = new Restless();
@@ -124,9 +177,14 @@ namespace Artel.Affordances.Live
         internal static int Held { get; private set; }
 
         /// <summary>읽기를 시작하거나, 이미 돌고 있어서 false 로 답한다.</summary>
-        internal static bool Begin(IPulseSink sink, float interval = DefaultInterval)
+        internal static bool Begin(IPulseSink sink)
         {
-            if (_beating != null || sink == null || interval <= 0f)
+            return Begin(sink, Pace.Default);
+        }
+
+        internal static bool Begin(IPulseSink sink, Pace pace)
+        {
+            if (_beating != null || sink == null || !pace.Valid)
             {
                 return false;
             }
@@ -135,12 +193,49 @@ namespace Artel.Affordances.Live
             DontDestroyOnLoad(carrier);
 
             _beating = carrier.AddComponent<Pulse>();
+            _beating._stream = Guid.NewGuid().ToString("N").Substring(0, 12);
             _beating._sink = sink;
-            _beating._interval = interval;
+            _beating._interval = pace.Interval;
+            _beating._delivery = pace.Delivery;
+            _beating._minDelivery = pace.MinDelivery;
             Sent = 0;
             Held = 0;
 
             _beating.StartCoroutine(_beating.Beat());
+            return true;
+        }
+
+        /// <summary>지금 한 번 읽고 쥔 것을 바로 건넨다. 돌고 있지 않으면 false.</summary>
+        /// <remarks>
+        /// 판정 직전의 신선도용이다. 바닥을 지키지 않는다 — 부른 쪽이 그 값을 지금 원한다고 말한 것이고, action 하나가
+        /// 판독 하나를 더 보내는 것은 홍수가 아니다.
+        /// </remarks>
+        internal static bool Flush()
+        {
+            if (_beating == null)
+            {
+                return false;
+            }
+
+            _beating.Take();
+            _beating.Deliver();
+            return true;
+        }
+
+        /// <summary>다음 판독을 whole 로 만든다(ARTEL-1299). 돌고 있지 않으면 false.</summary>
+        /// <remarks>
+        /// 전달 실패 뒤와 같은 길을 쓴다. 받는 쪽이 <c>seq</c> 의 빈자리로 누락을 알아채면 청하고, 다음 박자의 판독이 기준을 다시
+        /// 맞춘다. 바로 읽어 보내지 않는 것은 박자와 경합하지 않으려서다.
+        /// </remarks>
+        internal static bool Resync()
+        {
+            if (_beating == null)
+            {
+                return false;
+            }
+
+            _beating._lost = true;
+            _beating._read = false;
             return true;
         }
 
@@ -165,23 +260,32 @@ namespace Artel.Affordances.Live
 
         private IEnumerator Beat()
         {
-            var untilDelivery = _delivery;
+            // 마지막 전달로부터 지난 초. 첫 판독이 기다리지 않도록 바닥에서 시작한다 — 아직 아무 말도 하지 않았으므로
+            // "바뀌지 않음" 은 이것이 그것에 대해 할 수 있는 주장이 아니다.
+            var sinceDelivery = _minDelivery;
 
-            // 첫 판독은 언제나 나간다. 아직 아무 말도 하지 않았으므로 "바뀌지 않음" 은 이것이 그것에 대해 할 수 있는 주장이 아니다.
             while (_beating == this)
             {
                 Take();
 
+                // 변화를 본 tick 에 보낸다. 쥔 것이 없으면 변화가 없었다는 말이고, 바닥 안이면 다음 tick 이 합쳐 나른다.
+                if (_pending.Count > 0 && sinceDelivery >= _minDelivery)
+                {
+                    Deliver();
+                    sinceDelivery = 0f;
+                }
+
                 yield return new WaitForSecondsRealtime(_interval);
 
-                untilDelivery -= _interval;
+                sinceDelivery += _interval;
 
-                if (untilDelivery > 0f)
+                if (sinceDelivery < _delivery)
                 {
                     continue;
                 }
 
-                untilDelivery = _delivery;
+                // 바닥에 걸려 남은 것이 있으면 여기서 나간다. 상한은 그것이 1초 넘게 쥐어지지 않게 하는 자리다.
+                sinceDelivery = 0f;
                 Deliver();
             }
         }
@@ -249,7 +353,28 @@ namespace Artel.Affordances.Live
             _read = true;
 
             // 여기서 보내지 않고 전달 박자까지 쥐고 있는다. 찍는 것과 건네는 것은 두 속도이고, 이것은 게임을 따라가야 하는 쪽이다.
-            _pending.Add(document);
+            _pending.Add(Stamp(document, RuntimeId, _stream, ++_seq));
+        }
+
+        /// <summary>
+        /// 문서 맨 앞에 세대와 번호를 단다(ARTEL-1299). 쥐기로 한 뒤에 다는 것은 <c>seq</c> 가 쥔 판독만 세야 해서다 — 판독을
+        /// 찍는 쪽은 그것이 바뀌지 않았는지 찍은 뒤에야 안다.
+        /// </summary>
+        internal static string Stamp(string document, string runtime, string stream, long seq)
+        {
+            if (string.IsNullOrEmpty(document) || document[0] != '{')
+            {
+                return document;
+            }
+
+            var head = new StringBuilder(64);
+            head.Append("{\"runtime\":");
+            Json.String(head, runtime);
+            head.Append(",\"stream\":");
+            Json.String(head, stream);
+            head.Append(",\"seq\":").Append(seq);
+            head.Append(document.Length > 2 ? "," : "");
+            return head.Append(document, 1, document.Length - 1).ToString();
         }
 
         private void OnDestroy()
