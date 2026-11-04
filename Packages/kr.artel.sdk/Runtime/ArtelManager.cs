@@ -1430,6 +1430,7 @@ namespace Artel
                 }));
                 reportedDeviceContext = true;
                 SendGameFunctionCatalog();
+                SendGameIdentityCatalog();
             }
 
             var now = Time.unscaledTime;
@@ -1528,6 +1529,20 @@ namespace Artel
                     webSocketTransport.Send(jsonCodec.Serialize(ended));
                 }
             }
+        }
+
+        private void SendGameIdentityCatalog()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (GameIdentityCatalog.TryCollect(out var catalog, out var error))
+            {
+                webSocketTransport.Send(jsonCodec.Serialize(catalog));
+            }
+            else
+            {
+                Debug.LogWarning("[Artel] 변수 메타데이터 수집 실패로 전송을 건너뜁니다: " + error);
+            }
+#endif
         }
 
         /// <summary>출시 빌드에는 등록할 수 있는 함수가 없으므로 catalog 를 보내지 않는다.</summary>

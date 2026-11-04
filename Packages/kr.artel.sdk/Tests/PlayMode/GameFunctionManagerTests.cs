@@ -66,6 +66,26 @@ namespace Artel.Tests
         }
 
         [UnityTest]
+        public IEnumerator Identity_catalog를_DEVICE_CONTEXT_뒤에_연결마다_보낸다()
+        {
+            yield return StartManager();
+            var types = transport.Sent.Select(Type).ToList();
+            Assert.That(types.IndexOf("GAME_IDENTITY_CATALOG"), Is.GreaterThan(types.IndexOf("DEVICE_CONTEXT")));
+            Assert.That(transport.Sent.Count(message => Type(message) == "GAME_IDENTITY_CATALOG"), Is.EqualTo(1));
+            var catalog = JObject.Parse(transport.Sent.Single(message => Type(message) == "GAME_IDENTITY_CATALOG"));
+            Assert.That(catalog["identities"], Is.InstanceOf<JArray>());
+            Assert.That(catalog.Property("gameBuildId"), Is.Null);
+
+            transport.Connected = false;
+            yield return null;
+            yield return null;
+            transport.Connected = true;
+            yield return null;
+            yield return null;
+            Assert.That(transport.Sent.Count(message => Type(message) == "GAME_IDENTITY_CATALOG"), Is.EqualTo(2));
+        }
+
+        [UnityTest]
         public IEnumerator ACatalogChange_IsSentAgain()
         {
             yield return StartManager();
