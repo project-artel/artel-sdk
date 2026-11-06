@@ -1,5 +1,8 @@
 using System;
+using System.Text;
 using Artel.Affordances.Live;
+using Artel.Protocol.Dto;
+using Newtonsoft.Json;
 
 namespace Artel
 {
@@ -17,6 +20,9 @@ namespace Artel
     /// </remarks>
     internal sealed class WebSocketPulseSink : IPulseSink
     {
+        internal const int MaxPulseBytes = 240 * 1024;
+        private const int ChunkBytes = 175 * 1024;
+
         private readonly Func<IArtelWebSocketTransport> currentTransport;
         private readonly Func<long> nextMessageId;
 
@@ -53,7 +59,30 @@ namespace Artel
                     "The Artel connection is not open, so this reading cannot be sent.");
             }
 
-            transport.Send(Framed(document));
+            var id = nextMessageId();
+            var message = Framed(document, id);
+            int byteCount = Encoding.UTF8.GetByteCount(message);
+            if (byteCount <= MaxPulseBytes)
+            {
+                transport.Send(message);
+                return;
+            }
+
+            // UTF-8 바이트를 그대로 나누므로 멀티바이트 문자와 원본 JSON을 복원할 수 있다.
+            var bytes = Encoding.UTF8.GetBytes(message);
+            var count = 1 + (bytes.Length - 1) / ChunkBytes;
+            for (var index = 0; index < count; index++)
+            {
+                var offset = index * ChunkBytes;
+                var chunk = new PulseChunkMessageDto
+                {
+                    Id = id,
+                    Index = index,
+                    Count = count,
+                    Data = Convert.ToBase64String(bytes, offset, Math.Min(ChunkBytes, bytes.Length - offset))
+                };
+                transport.Send(JsonConvert.SerializeObject(chunk, Formatting.None));
+            }
         }
 
         /// <summary>
@@ -68,9 +97,9 @@ namespace Artel
         /// <c>type</c> 은 orchestration 의 핸들러 등록제가 읽는 값이고, <c>id</c> 는 같은
         /// 판독의 재전송이 로그에서 한 번만 적재되게 하는 값이다.
         /// </remarks>
-        private string Framed(string document)
+        private static string Framed(string document, long id)
         {
-            return "{\"type\":\"PULSE\",\"id\":" + nextMessageId() + "," + document.Substring(1);
+            return "{\"type\":\"PULSE\",\"id\":" + id.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," + document.Substring(1);
         }
     }
 }

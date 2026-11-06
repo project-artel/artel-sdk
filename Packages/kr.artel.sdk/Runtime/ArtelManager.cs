@@ -98,6 +98,8 @@ namespace Artel
         private Func<bool> activeActionIsCurrent;
         private IArtelWebSocketTransport observedTransport;
         private long observedConnectionEpoch;
+        private bool resumeReadingsOnConnect;
+        private Affordances.Live.Pulse.Pace readingPace;
         private bool observedConnected;
         private float nextRuntimeRecoveryTime;
         private float nextRuntimeTickTime;
@@ -652,12 +654,17 @@ namespace Artel
                 ? null
                 : new WebSocketPulseSink(() => webSocketTransport, () => nextMessageId++);
 
-            return Affordances.Scan.AffordanceBootstrap.WatchLiveState(sink, pace);
+            if (!Affordances.Scan.AffordanceBootstrap.WatchLiveState(sink, pace))
+                return false;
+
+            readingPace = pace;
+            return true;
         }
 
         /// <summary>라이브 판독을 끝낸다. 한 번도 시작하지 않았을 때 불러도 안전하다.</summary>
         public void StopReadings()
         {
+            resumeReadingsOnConnect = false;
             Affordances.Scan.AffordanceBootstrap.StopWatching();
         }
 
@@ -742,10 +749,23 @@ namespace Artel
                 observedConnectionEpoch == epoch) return;
 
             // 1프레임 사이에 끊겼다가 다시 붙어도 epoch가 바뀌면 이전 실행은 폐기한다.
-            if (observedTransport != null) ResetConnectionRuntime(false);
+            if (observedTransport != null)
+            {
+                var resume = ReferenceEquals(observedTransport, webSocketTransport)
+                    && (resumeReadingsOnConnect || Affordances.Scan.AffordanceBootstrap.Watching);
+                ResetConnectionRuntime(false);
+                resumeReadingsOnConnect = resume;
+            }
             observedTransport = webSocketTransport;
             observedConnected = connected;
             observedConnectionEpoch = epoch;
+
+            // 새 관찰은 이전 델타 기준을 버리고 현재 씬의 전체 상태부터 보낸다.
+            if (connected && resumeReadingsOnConnect)
+            {
+                resumeReadingsOnConnect = false;
+                StartReadings(readingPace);
+            }
         }
 
         private bool TryEnsureRuntime()
