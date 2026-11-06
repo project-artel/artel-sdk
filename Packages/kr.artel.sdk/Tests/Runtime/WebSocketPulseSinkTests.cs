@@ -93,7 +93,7 @@ namespace Artel.Tests
             reading["functions"] = new JObject { ["cheats"] = new JArray("set_magazine_ammo") };
             reading["active"] = new JArray(
                 new JObject { ["selector"] = "Ammo[0]" },
-                new JObject { ["value"] = new string('가', WebSocketPulseSink.MaxPulseBytes / 2) });
+                new JObject { ["value"] = new string('가', 400 * 1024) });
 
             sink.Send(reading.ToString());
 

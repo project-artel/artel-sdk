@@ -1,6 +1,8 @@
 using System;
 using System.Text;
 using Artel.Affordances.Live;
+using Artel.Protocol.Dto;
+using Newtonsoft.Json;
 
 namespace Artel
 {
@@ -20,7 +22,6 @@ namespace Artel
     {
         internal const int MaxPulseBytes = 240 * 1024;
         private const int ChunkBytes = 175 * 1024;
-        private const int MaxReadingBytes = 1024 * 1024;
 
         private readonly Func<IArtelWebSocketTransport> currentTransport;
         private readonly Func<long> nextMessageId;
@@ -67,18 +68,20 @@ namespace Artel
                 return;
             }
 
-            if (byteCount > MaxReadingBytes)
-                throw new InvalidOperationException("The Artel reading exceeds the reassembly limit.");
-
             // UTF-8 바이트를 그대로 나누므로 멀티바이트 문자와 원본 JSON을 복원할 수 있다.
             var bytes = Encoding.UTF8.GetBytes(message);
-            var count = (bytes.Length + ChunkBytes - 1) / ChunkBytes;
+            var count = 1 + (bytes.Length - 1) / ChunkBytes;
             for (var index = 0; index < count; index++)
             {
                 var offset = index * ChunkBytes;
-                var data = Convert.ToBase64String(bytes, offset, Math.Min(ChunkBytes, bytes.Length - offset));
-                transport.Send(FormattableString.Invariant(
-                    $"{{\"type\":\"PULSE_CHUNK\",\"id\":{id},\"index\":{index},\"count\":{count},\"data\":\"{data}\"}}"));
+                var chunk = new PulseChunkMessageDto
+                {
+                    Id = id,
+                    Index = index,
+                    Count = count,
+                    Data = Convert.ToBase64String(bytes, offset, Math.Min(ChunkBytes, bytes.Length - offset))
+                };
+                transport.Send(JsonConvert.SerializeObject(chunk, Formatting.None));
             }
         }
 

@@ -34,9 +34,22 @@ namespace Artel.Affordances.Scan
 
         internal static bool IsOutsideViewport(Transform subject)
         {
-            if (subject is RectTransform)
+            if (subject is RectTransform rectTransform)
             {
-                var rect = Of(subject);
+                var canvas = rectTransform.GetComponentInParent<Canvas>();
+                if (canvas == null)
+                    return false;
+
+                if (canvas.renderMode == RenderMode.WorldSpace && _camera != null)
+                {
+                    rectTransform.GetWorldCorners(Corners);
+                    var bounds = new Bounds(Corners[0], Vector3.zero);
+                    for (var index = 1; index < Corners.Length; index++)
+                        bounds.Encapsulate(Corners[index]);
+                    return !GeometryUtility.TestPlanesAABB(Frustum, bounds);
+                }
+
+                var rect = FromCorners(rectTransform, canvas);
                 return rect.width > 0 && rect.height > 0
                     && !rect.Overlaps(new Rect(0, 0, Screen.width, Screen.height));
             }
@@ -61,7 +74,7 @@ namespace Artel.Affordances.Scan
 
             if (subject is RectTransform rect)
             {
-                return FromCorners(rect);
+                return FromCorners(rect, rect.GetComponentInParent<Canvas>());
             }
 
             // 스프라이트는 RectTransform 이 아니고, 맨 transform 은 넓이가 없는 점이다. renderer 자신의 bounds 를 읽는 것이
@@ -72,17 +85,17 @@ namespace Artel.Affordances.Scan
             return renderer == null ? AtPoint(subject.position) : FromBounds(renderer.bounds);
         }
 
-        private static Rect FromCorners(RectTransform subject)
+        private static Rect FromCorners(RectTransform subject, Canvas canvas)
         {
             subject.GetWorldCorners(Corners);
-
-            var canvas = subject.GetComponentInParent<Canvas>();
 
             // 스크린 공간에 그려지는 캔버스는 그것과 화면 사이에 카메라가 없다. 그런 캔버스에 코너를 투영하라고 청하면 플레이어가
             // 결코 보지 못하는 데로 옮겨 놓게 된다.
             var through = canvas != null && canvas.renderMode == RenderMode.ScreenSpaceOverlay
                 ? null
-                : _camera;
+                : canvas != null && canvas.renderMode == RenderMode.ScreenSpaceCamera
+                    ? canvas.worldCamera
+                    : _camera;
 
             var first = Project(Corners[0], through);
             var min = first;
