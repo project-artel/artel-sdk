@@ -60,8 +60,9 @@ namespace Artel.Tests
         {
             var source = host.AddComponent<AudioSource>();
             source.clip = clip;
+            source.loop = true;
             source.Play();
-            yield return null;
+            yield return WaitForPlayback(source);
 
             var first = Parse(new AudioPulse(() => new[] { source }).Compose(true, out _));
 
@@ -77,7 +78,8 @@ namespace Artel.Tests
             var pulse = new AudioPulse(() => new[] { source });
             pulse.Compose(true, out _);
             source.Play();
-            yield return new WaitForSecondsRealtime(0.3f);
+            yield return WaitForPlayback(source);
+            source.time = 1f;
             pulse.Compose(false, out _);
 
             source.Stop();
@@ -110,6 +112,13 @@ namespace Artel.Tests
             var started = Parse(pulse.Compose(false, out _));
             Assert.That(((JArray)started["started"]).Count, Is.EqualTo(1));
             Assert.That(started["started"][0]["clip"].Type, Is.EqualTo(JTokenType.Null));
+        }
+
+        private static IEnumerator WaitForPlayback(AudioSource source)
+        {
+            var deadline = Time.realtimeSinceStartup + 2f;
+            yield return new WaitUntil(() => source.isPlaying || Time.realtimeSinceStartup >= deadline);
+            Assert.That(source.isPlaying, Is.True, "AudioSource 재생이 시작되어야 합니다.");
         }
 
         private static JObject Parse(string fragment)
