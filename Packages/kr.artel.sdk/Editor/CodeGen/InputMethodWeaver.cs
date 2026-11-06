@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Mono.Cecil;
+using Mono.Cecil.Cil;
 
 namespace Artel.CodeGen
 {
@@ -29,6 +30,15 @@ namespace Artel.CodeGen
             "GetButtonUp"
         };
 
+        // 인스턴스 메서드도 바꾼다. 게임은 UI 위를 눌렀는지를 입력 모듈의 포인터로 묻는데, 그 포인터는 실제 마우스로
+        // 만든 것이다 — 에이전트가 UI 를 눌러도 "UI 밖" 으로 답해 차트를 닫는 게임이 있었다. `callvirt es.M(a)` 는
+        // `call ArtelInput.M(es, a)` 가 된다. 스택 위의 모양은 그대로다(EngineCallWeaver 와 같은 방식).
+        private const string EventSystemTypeName = "UnityEngine.EventSystems.EventSystem";
+        private static readonly HashSet<string> EventSystemMethodNames = new HashSet<string>
+        {
+            "IsPointerOverGameObject"
+        };
+
         private readonly ModuleDefinition module;
         private readonly Dictionary<string, MethodReference> proxyMethods;
 
@@ -51,7 +61,7 @@ namespace Artel.CodeGen
         /// </remarks>
         public static Attempt TryCreate(ModuleDefinition module, string[] references)
         {
-            if (!module.GetTypeReferences().Any(IsUnityInput))
+            if (!module.GetTypeReferences().Any(type => IsUnityInput(type) || IsEventSystem(type)))
             {
                 return Attempt.NothingToDo;
             }
@@ -83,6 +93,11 @@ namespace Artel.CodeGen
         private static bool IsUnityInput(TypeReference type)
         {
             return string.Equals(type.FullName, UnityInputTypeName, StringComparison.Ordinal);
+        }
+
+        private static bool IsEventSystem(TypeReference type)
+        {
+            return string.Equals(type.FullName, EventSystemTypeName, StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -141,7 +156,8 @@ namespace Artel.CodeGen
                 }
 
                 return proxyType.Methods
-                    .Where(method => SupportedMethodNames.Contains(method.Name))
+                    .Where(method => SupportedMethodNames.Contains(method.Name) ||
+                                     EventSystemMethodNames.Contains(method.Name))
                     .ToDictionary(GetSignature, method => module.ImportReference(method));
             }
         }
@@ -214,15 +230,27 @@ namespace Artel.CodeGen
             {
                 foreach (var instruction in method.Body.Instructions)
                 {
-                    if (!(instruction.Operand is MethodReference calledMethod) ||
-                        calledMethod.DeclaringType.FullName != UnityInputTypeName ||
-                        !proxyMethods.TryGetValue(GetSignature(calledMethod), out var proxyMethod))
+                    if (!(instruction.Operand is MethodReference calledMethod))
                     {
                         continue;
                     }
 
-                    instruction.Operand = proxyMethod;
-                    changed = true;
+                    if (calledMethod.DeclaringType.FullName == UnityInputTypeName &&
+                        proxyMethods.TryGetValue(GetSignature(calledMethod), out var proxyMethod))
+                    {
+                        instruction.Operand = proxyMethod;
+                        changed = true;
+                        continue;
+                    }
+
+                    if (calledMethod.HasThis && IsEventSystem(calledMethod.DeclaringType) &&
+                        EventSystemMethodNames.Contains(calledMethod.Name) &&
+                        proxyMethods.TryGetValue(GetInstanceSignature(calledMethod), out var instanceProxy))
+                    {
+                        instruction.OpCode = OpCodes.Call;
+                        instruction.Operand = instanceProxy;
+                        changed = true;
+                    }
                 }
             }
 
@@ -233,6 +261,15 @@ namespace Artel.CodeGen
         {
             return method.Name + "(" +
                    string.Join(",", method.Parameters.Select(parameter => parameter.ParameterType.FullName)) +
+                   ")";
+        }
+
+        /// <summary>인스턴스 호출을 프록시의 모양으로 읽는다. 인스턴스가 첫 인자다.</summary>
+        private static string GetInstanceSignature(MethodReference method)
+        {
+            return method.Name + "(" +
+                   string.Join(",", new[] { method.DeclaringType.FullName }
+                       .Concat(method.Parameters.Select(parameter => parameter.ParameterType.FullName))) +
                    ")";
         }
 

@@ -136,12 +136,72 @@ namespace Artel.CodeGen.Tests
         /// 컴파일러가 넘기는 참조 목록을 흉내 낸다. 위버가 런타임 어셈블리를 경로로 찾는 것이
         /// 요점이므로, 실제로 로드돼 있는 파일의 경로를 그대로 준다.
         /// </summary>
+        /// <summary>
+        /// 게임이 UI 위를 눌렀는지 묻는 <c>EventSystem.IsPointerOverGameObject</c> 도 프록시로 간다. 원래 호출은 실제 마우스의
+        /// 포인터를 보아, 에이전트가 UI 를 눌러도 "UI 밖" 이라 답한다. 인스턴스 호출이라 <c>callvirt</c> 가 <c>call</c> 이 된다.
+        /// </summary>
+        [Test]
+        public void RedirectsIsPointerOverGameObject_ToTheProxyWithTheInstanceFirst()
+        {
+            using (var module = BuildUiGameAssembly())
+            {
+                var attempt = InputMethodWeaver.TryCreate(module, RealReferences());
+
+                Assert.That(attempt.Weaver, Is.Not.Null, "EventSystem 만 부르는 어셈블리도 위버를 만든다.");
+                Assert.That(attempt.Weaver.Process(), Is.True);
+
+                var calls = module.Types.SelectMany(type => type.Methods).Where(method => method.HasBody)
+                    .SelectMany(method => method.Body.Instructions)
+                    .Where(instruction => instruction.Operand is MethodReference called &&
+                                          called.Name == "IsPointerOverGameObject")
+                    .ToArray();
+                Assert.That(calls, Has.Length.EqualTo(2));
+                Assert.That(calls.Select(call => ((MethodReference)call.Operand).DeclaringType.FullName),
+                    Is.All.EqualTo(ProxyTypeName));
+                Assert.That(calls.Select(call => call.OpCode), Is.All.EqualTo(OpCodes.Call));
+            }
+        }
+
+        private static ModuleDefinition BuildUiGameAssembly()
+        {
+            var module = ModuleDefinition.CreateModule(
+                "Assembly-CSharp", new ModuleParameters { Kind = ModuleKind.Dll });
+            var type = new TypeDefinition("Game", "KeyInput", TypeAttributes.Public | TypeAttributes.Class,
+                module.TypeSystem.Object);
+            module.Types.Add(type);
+            var method = new MethodDefinition("Update", MethodAttributes.Public, module.TypeSystem.Void);
+            type.Methods.Add(method);
+
+            var eventSystem = typeof(UnityEngine.EventSystems.EventSystem);
+            var current = module.ImportReference(eventSystem.GetProperty("current").GetGetMethod());
+            var plain = module.ImportReference(eventSystem.GetMethod("IsPointerOverGameObject", System.Type.EmptyTypes));
+            var withId = module.ImportReference(eventSystem.GetMethod("IsPointerOverGameObject", new[] { typeof(int) }));
+            var il = method.Body.GetILProcessor();
+            il.Emit(OpCodes.Call, current);
+            il.Emit(OpCodes.Callvirt, plain);
+            il.Emit(OpCodes.Pop);
+            il.Emit(OpCodes.Call, current);
+            il.Emit(OpCodes.Ldc_I4_M1);
+            il.Emit(OpCodes.Callvirt, withId);
+            il.Emit(OpCodes.Pop);
+            il.Emit(OpCodes.Ret);
+
+            using (var stream = new MemoryStream())
+            {
+                module.Write(stream);
+                module.Dispose();
+                return ModuleDefinition.ReadModule(
+                    new MemoryStream(stream.ToArray()), new ReaderParameters(ReadingMode.Immediate));
+            }
+        }
+
         private static string[] RealReferences()
         {
             return new[]
             {
                 typeof(ArtelInput).Assembly.Location,
                 typeof(Input).Assembly.Location,
+                typeof(UnityEngine.EventSystems.EventSystem).Assembly.Location,
                 typeof(object).Assembly.Location
             };
         }

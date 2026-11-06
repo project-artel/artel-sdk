@@ -4,7 +4,8 @@
   "references": [
     "Unity.Artel.CodeGen",
     "Artel.Runtime",
-    "Artel.Affordances.Runtime"
+    "Artel.Affordances.Runtime",
+    "UnityEngine.UI"
   ],
   "includePlatforms": [
     "Editor"
