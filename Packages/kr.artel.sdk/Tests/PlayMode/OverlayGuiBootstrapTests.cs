@@ -65,6 +65,11 @@ namespace Artel.Tests
         [UnityTest]
         public IEnumerator SDK_오버레이_영역에서만_게임_버튼보다_먼저_레이캐스트된다()
         {
+            if (SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+            {
+                Assert.Ignore("Screen Space Overlay 레이캐스트는 그래픽 디스플레이가 필요합니다.");
+            }
+
             host = new GameObject("Artel overlay test");
             host.AddComponent<ArtelManager>();
             yield return null;
@@ -91,6 +96,7 @@ namespace Artel.Tests
                     button => button.name == "닫기 Button");
                 Assert.That(close, Is.Not.Null);
                 close.onClick.Invoke();
+                yield return null;
                 Canvas.ForceUpdateCanvases();
 
                 var toggle = canvas.transform.Find("Artel Button");
