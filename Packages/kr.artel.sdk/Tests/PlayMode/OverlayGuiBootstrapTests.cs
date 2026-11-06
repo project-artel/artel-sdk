@@ -6,6 +6,7 @@ using Artel.Auth;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Artel.Tests
@@ -59,6 +60,58 @@ namespace Artel.Tests
             PlayerPrefs.Save();
             ArtelSecretStore.Current = null;
             ArtelWindowLabel.Value = null;
+        }
+
+        [UnityTest]
+        public IEnumerator SDK_오버레이_영역에서만_게임_버튼보다_먼저_레이캐스트된다()
+        {
+            host = new GameObject("Artel overlay test");
+            host.AddComponent<ArtelManager>();
+            yield return null;
+
+            var displacedRaycaster = displacedInstance == null
+                ? null
+                : displacedInstance.GetComponentInChildren<ArtelOverlayRaycaster>();
+            var displacedRaycasterEnabled = displacedRaycaster != null && displacedRaycaster.enabled;
+            if (displacedRaycasterEnabled) displacedRaycaster.enabled = false;
+            var gameCanvas = new GameObject("Game Canvas", typeof(Canvas), typeof(GraphicRaycaster));
+            try
+            {
+                gameCanvas.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
+                var gameButton = new GameObject("Game Button", typeof(Image), typeof(Button));
+                gameButton.transform.SetParent(gameCanvas.transform, false);
+                var gameRect = gameButton.GetComponent<RectTransform>();
+                gameRect.anchorMin = Vector2.zero;
+                gameRect.anchorMax = Vector2.one;
+                gameRect.offsetMin = Vector2.zero;
+                gameRect.offsetMax = Vector2.zero;
+
+                var canvas = host.transform.Find("Artel Overlay Canvas").GetComponent<Canvas>();
+                var close = Array.Find(canvas.GetComponentsInChildren<Button>(true),
+                    button => button.name == "닫기 Button");
+                Assert.That(close, Is.Not.Null);
+                close.onClick.Invoke();
+                Canvas.ForceUpdateCanvases();
+
+                var toggle = canvas.transform.Find("Artel Button");
+                var toggleRect = (RectTransform)toggle;
+                var center = RectTransformUtility.WorldToScreenPoint(canvas.worldCamera,
+                    toggleRect.TransformPoint(toggleRect.rect.center));
+                var hits = new System.Collections.Generic.List<RaycastResult>();
+                var pointer = new PointerEventData(EventSystem.current) { position = center };
+                EventSystem.current.RaycastAll(pointer, hits);
+                Assert.That(hits[0].gameObject.GetComponentInParent<Button>().transform, Is.EqualTo(toggle));
+
+                pointer.position = RectTransformUtility.WorldToScreenPoint(null, gameRect.TransformPoint(gameRect.rect.min + gameRect.rect.size * 0.25f));
+                EventSystem.current.RaycastAll(pointer, hits);
+                Assert.That(hits, Is.Not.Empty);
+                Assert.That(hits[0].gameObject, Is.EqualTo(gameButton));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(gameCanvas);
+                if (displacedRaycasterEnabled) displacedRaycaster.enabled = true;
+            }
         }
 
         [UnityTest]
