@@ -1,0 +1,287 @@
+using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Linq;
+using Artel.Protocol.Dto;
+using Newtonsoft.Json.Linq;
+using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.TestTools;
+
+namespace Artel.Tests
+{
+    /// <summary>
+    /// 배치 큐가 액션 사이사이의 스캔을 어떻게 끼워 넣는지 본다. 살아 있는 매니저가 필요해
+    /// 플레이 모드에서만 돌 수 있다: <c>Awake</c>가 <c>DontDestroyOnLoad</c>를 부르는데
+    /// 그건 에디터 스크립트에서 부를 수 없다.
+    /// </summary>
+    public sealed class ActionBatchTests
+    {
+        private GameObject host;
+        private GameObject buttonObject;
+        private GameObject labelObject;
+        private ArtelManager displacedInstance;
+
+        [SetUp]
+        public void SetUp()
+        {
+            displacedInstance = ArtelManagerSlot.Clear();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Object.DestroyImmediate(buttonObject);
+            Object.DestroyImmediate(labelObject);
+            Object.DestroyImmediate(host);
+
+            // 이 픽스처가 만든 매니저는 방금 사라졌다. 훅이 띄운 매니저를 슬롯에 되돌려
+            // 다음 픽스처가 플레이 모드 진입 직후와 같은 상태에서 시작하게 한다.
+            ArtelManagerSlot.Restore(displacedInstance);
+        }
+
+        [Test]
+        public void BatchScan_ObservesActionsThatRanBeforeIt()
+        {
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            var request = new ArtelRequestDto
+            {
+                Type = "ACTION",
+                Actions = new List<ActionRequestDto>
+                {
+                    new ActionRequestDto { Id = 1, Method = "scan_scene" },
+                    new ActionRequestDto
+                    {
+                        Id = 2,
+                        Method = "button_click",
+                        Parameters = new List<object> { ObjectIds.Of(buttonObject) }
+                    },
+                    new ActionRequestDto { Id = 3, Method = "scan_scene" }
+                }
+            };
+
+            Drain(ExecuteActionRequest(manager, request));
+
+            Assert.That(transport.Sent, Has.Count.EqualTo(3));
+            Assert.That((string)JObject.Parse(transport.Sent[0])["type"], Is.EqualTo("GAME_STATE"));
+            Assert.That((string)JObject.Parse(transport.Sent[1])["type"], Is.EqualTo("GAME_STATE"));
+            Assert.That((string)JObject.Parse(transport.Sent[2])["type"], Is.EqualTo("ACTION_RESULT"));
+
+            // The scan queued behind button_click sees the click; the one queued ahead of it does not.
+            Assert.That(transport.Sent[0], Does.Not.Contain("\"content\":\"clicked\""));
+            Assert.That(transport.Sent[1], Does.Contain("\"content\":\"clicked\""));
+
+            // `states` 는 `[ArtelState]` 와 함께 사라졌다 (ARTEL-400). 키 자체가 실리지 않는다.
+            Assert.That(transport.Sent[1], Does.Not.Contain("\"states\""));
+        }
+
+        [Test]
+        public void ActionResult_CarriesTheFrameTheBatchFinishedOn()
+        {
+            // 판독은 자기가 언제 잡혔는지를 말한다. 이 답이 안 말하면 받는 쪽은 어떤 판독이 이
+            // 액션 이후의 것인지 가릴 수 없고, 시간으로 어림잡게 된다 — 그 어림이 틀려서
+            // 에이전트가 같은 액션을 두 번 보냈다(ARTEL-620).
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            var before = Time.frameCount;
+            var request = new ArtelRequestDto
+            {
+                Type = "ACTION",
+                Actions = new List<ActionRequestDto>
+                {
+                    new ActionRequestDto
+                    {
+                        Id = 1,
+                        Method = "button_click",
+                        Parameters = new List<object> { ObjectIds.Of(buttonObject) }
+                    }
+                }
+            };
+
+            Drain(ExecuteActionRequest(manager, request));
+
+            var answer = JObject.Parse(transport.Sent[transport.Sent.Count - 1]);
+            Assert.That((string)answer["type"], Is.EqualTo("ACTION_RESULT"));
+            // 판독이 쓰는 그 시계라야 견주는 일이 뜻을 가진다.
+            Assert.That((int)answer["frame"], Is.GreaterThanOrEqualTo(before));
+        }
+
+        [Test]
+        public void ActionResult_FrameIsWhenTheBatchEndedNotWhenItArrived()
+        {
+            // 커서 활강처럼 여러 프레임에 걸치는 액션이 있다. 큐에 넣은 프레임을 찍으면 그런
+            // 액션에서 답이 화면보다 앞서고, 기다리는 쪽은 액션 이전 화면을 결과로 읽는다.
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            var request = new ArtelRequestDto
+            {
+                Type = "ACTION",
+                Actions = new List<ActionRequestDto>
+                {
+                    new ActionRequestDto
+                    {
+                        Id = 1,
+                        Method = "move_mouse",
+                        Parameters = new List<object> { 100f, 100f }
+                    }
+                }
+            };
+
+            var arrived = Time.frameCount;
+            Drain(ExecuteActionRequest(manager, request));
+            var finished = Time.frameCount;
+
+            var frame = (int)JObject.Parse(transport.Sent[transport.Sent.Count - 1])["frame"];
+            Assert.That(frame, Is.GreaterThanOrEqualTo(arrived));
+            Assert.That(frame, Is.LessThanOrEqualTo(finished));
+        }
+
+        [Test]
+        public void BatchScan_ReportsSuccessWithoutReachingActionExecutor()
+        {
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            var request = new ArtelRequestDto
+            {
+                Type = "ACTION",
+                Actions = new List<ActionRequestDto>
+                {
+                    new ActionRequestDto { Id = 9, Method = "scan_scene" }
+                }
+            };
+
+            Drain(ExecuteActionRequest(manager, request));
+
+            var results = JObject.Parse(transport.Sent[1])["results"];
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That((int)results[0]["id"], Is.EqualTo(9));
+            Assert.That((bool)results[0]["success"], Is.True);
+            Assert.That((string)results[0]["error"], Is.Empty);
+        }
+
+        [Test]
+        public void TopLevelScan_StillRepliesOnTheRequestingConnection()
+        {
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            string reply = null;
+            var message = new ArtelWebSocketMessage(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"scan_scene\",\"params\":[]}",
+                text => reply = text);
+
+            typeof(ArtelManager)
+                .GetMethod("HandleMessage", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(manager, new object[] { message });
+
+            Assert.That((string)JObject.Parse(reply)["type"], Is.EqualTo("GAME_STATE"));
+            Assert.That(transport.Sent, Is.Empty);
+        }
+
+        [UnityTest]
+        public IEnumerator UnsupportedControl_DoesNotClaimInputOrBlockNextQaAction()
+        {
+            var transport = new RecordingTransport();
+            var manager = CreateManager(transport);
+            string reply = null;
+            var handle = typeof(ArtelManager)
+                .GetMethod("HandleMessage", BindingFlags.Instance | BindingFlags.NonPublic);
+            handle.Invoke(manager, new object[]
+            {
+                new ArtelWebSocketMessage(
+                    "{\"type\":\"DEMONSTRATION_CONTROL\",\"sessionId\":\"old-session\",\"generation\":1,\"operation\":\"ACQUIRE\",\"leaseMilliseconds\":8000}",
+                    text => reply = text)
+            });
+
+            Assert.That((string)JObject.Parse(reply)["type"], Is.EqualTo("ERROR"));
+            Assert.That(manager.Reading, Is.False);
+            Assert.That(ArtelInput.PointerHeldForRun, Is.False);
+            Assert.That(manager.HasWebSocketTransport, Is.True);
+            handle.Invoke(manager, new object[]
+            {
+                new ArtelWebSocketMessage(
+                    "{\"type\":\"ACTION\",\"id\":73,\"actions\":[{\"id\":1,\"method\":\"scan_scene\"}]}",
+                    transport.Send)
+            });
+            yield return null;
+            yield return null;
+
+            var result = transport.Sent.Select(JObject.Parse).Last(message => (string)message["type"] == "ACTION_RESULT");
+            Assert.That((string)result["type"], Is.EqualTo("ACTION_RESULT"));
+            Assert.That((long)result["requestId"], Is.EqualTo(73));
+            Assert.That((bool)result["results"][0]["success"], Is.True);
+        }
+
+        private ArtelManager CreateManager(RecordingTransport transport)
+        {
+            host = new GameObject("Artel action batch test");
+
+            // 플레이 모드에서는 AddComponent가 Awake를 바로 부른다.
+            var manager = host.AddComponent<ArtelManager>();
+            manager.SetWebSocketTransport(transport, false);
+
+            labelObject = new GameObject("status label", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            var label = labelObject.GetComponent<Text>();
+            buttonObject = new GameObject(
+                "click target",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(Image),
+                typeof(Button));
+            buttonObject.GetComponent<Button>().onClick.AddListener(() => label.text = "clicked");
+
+            return manager;
+        }
+
+        private static IEnumerator ExecuteActionRequest(ArtelManager manager, ArtelRequestDto request)
+        {
+            return (IEnumerator)typeof(ArtelManager)
+                .GetMethod("ExecuteActionRequest", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(manager, new object[] { request });
+        }
+
+        private static void Drain(IEnumerator routine)
+        {
+            while (routine.MoveNext())
+            {
+                if (routine.Current is IEnumerator nested)
+                {
+                    Drain(nested);
+                }
+            }
+        }
+
+        private sealed class RecordingTransport : IArtelWebSocketTransport
+        {
+            public List<string> Sent { get; } = new List<string>();
+
+            public bool IsConnected { get { return true; } }
+
+            public ArtelTransportPhase Phase { get { return ArtelTransportPhase.Connected; } }
+
+            public void Start()
+            {
+            }
+
+            public void Stop()
+            {
+            }
+
+            public bool TryDequeueMessage(out ArtelWebSocketMessage message)
+            {
+                message = null;
+                return false;
+            }
+
+            public void Send(string text)
+            {
+                Sent.Add(text);
+            }
+
+            public void Dispose()
+            {
+            }
+        }
+    }
+}

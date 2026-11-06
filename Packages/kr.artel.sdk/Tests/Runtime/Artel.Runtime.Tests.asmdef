@@ -1,0 +1,30 @@
+{
+  "name": "Artel.Runtime.Tests",
+  "rootNamespace": "Artel.Tests.Protocol",
+  "references": [
+    "Artel.Runtime",
+    "Artel.GameFunctions.Fixtures",
+    "Artel.Tracking.Fixtures",
+    "UnityEngine.UI",
+    "Unity.TextMeshPro",
+    "Artel.Affordances.Scan",
+    "Artel.Affordances.Runtime"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "Newtonsoft.Json.dll",
+    "websocket-sharp.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

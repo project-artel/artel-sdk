@@ -1,0 +1,34 @@
+{
+  "name": "Artel.InputSystem.PlayModeTests",
+  "rootNamespace": "Artel.Tests.PlayMode",
+  "references": [
+    "Artel.Runtime",
+    "Artel.Runtime.PlayModeTests",
+    "Unity.InputSystem",
+    "UnityEngine.UI"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "Newtonsoft.Json.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "ARTEL_INPUT_SYSTEM_AVAILABLE",
+    "ENABLE_INPUT_SYSTEM",
+    "UNITY_EDITOR || !UNITY_WEBGL"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.inputsystem",
+      "expression": "1.7.0",
+      "define": "ARTEL_INPUT_SYSTEM_AVAILABLE"
+    }
+  ],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

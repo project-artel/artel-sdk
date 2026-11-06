@@ -1,0 +1,16 @@
+{
+  "name": "Artel.Tracking.Fixtures",
+  "rootNamespace": "Artel.Tests.Tracking",
+  "references": [
+    "Artel.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": ["UNITY_EDITOR || !UNITY_WEBGL"],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

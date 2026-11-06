@@ -1,64 +1,1466 @@
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
+using Artel.Affordances.Scan;
+using Artel.Capture;
+using Artel.Evidence;
+using Artel.Pointer;
+using Artel.Protocol.Dto;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Artel
 {
     internal sealed class ActionExecutor
     {
         private readonly SceneScanner scanner;
+        private readonly CursorController cursorController;
+        private readonly PointerEventDispatcher pointerEvents;
+        private readonly IScreenCapturer capturer;
 
-        public ActionExecutor(SceneScanner scanner)
+        /// <summary>
+        /// 세션이 그렇게 말할 때 라이브 판독을 켜고 끄는 것.
+        /// </summary>
+        /// <remarks>
+        /// 매니저가 아니라 이음매로 쥔다. 이 클래스가 하는 다른 모든 일은 게임에 대고 하는 것이고 이것은 SDK 에 대고 하는 유일한
+        /// 것이기 때문이다. 이것 없이 executor 를 만드는 테스트에서는 null 이고, 아래의 모든 사용이 먼저 묻는 이유가 그것이다.
+        /// </remarks>
+        private readonly IReadingChannel readings;
+
+        /// <summary>
+        /// Where a capture goes once it is encoded. Swappable, unlike the rest of these.
+        /// </summary>
+        /// <remarks>
+        /// The orchestration uploader asks that server for a ticket, and that endpoint refuses an
+        /// instance with no QA run in flight — which is every capture taken from the local test
+        /// page. So the test page hands its own uploader in and takes it back when it is switched
+        /// off, the same way it does with the transport.
+        /// </remarks>
+        private ICaptureUploader uploader;
+
+        /// <summary>The one built at construction, kept so a borrowed uploader can be given back.</summary>
+        private readonly ICaptureUploader defaultUploader;
+
+        /// <summary>원격 스캔 명령이 부르는 두 이음매. 이것들 없이 만들어진 실행기에서는 null 이고, 그러면 그 액션은 거절된다.</summary>
+        private readonly IEvidenceScan evidenceScan;
+        private readonly IEvidenceUploader evidenceUploader;
+        private readonly IEvidenceScanProgress scanProgress;
+
+        /// <summary>
+        /// 게임이 등록한 cheat 와 behavior 를 부르는 네 action. 출시 빌드에서는 그 네 action 을 거절하는 껍데기다.
+        /// </summary>
+        private readonly GameFunctionActions gameFunctions;
+
+        private readonly Action<Vector2> cursorMoved;
+        private readonly Action<Vector2> pointerMoved;
+
+        /// <summary>서버와 맞춘 액션 이름. 결과에도 이 이름을 그대로 실어 서버가 짝을 맞춘다.</summary>
+        private const string ScanEvidence = "scan_evidence";
+
+        // The time scale as it was when pause_time froze the game, so resume_time gives back the
+        // speed the game was actually running at rather than assuming 1. Null means not paused.
+        private float? scaleBeforePause;
+
+        // The scene the run began in, read while it is still the one on screen. reset_game reloads
+        // it, so "initial" means where this session started rather than a build index guessed later.
+        private readonly int startupSceneBuildIndex;
+        private readonly string startupScenePath;
+
+        public ActionExecutor(
+            SceneScanner scanner,
+            CursorController cursorController,
+            PointerEventDispatcher pointerEvents,
+            IScreenCapturer capturer = null,
+            ICaptureUploader uploader = null,
+            IReadingChannel readings = null,
+            IEvidenceScan evidenceScan = null,
+            IEvidenceUploader evidenceUploader = null,
+            GameFunctionActions gameFunctions = null,
+            IEvidenceScanProgress scanProgress = null)
         {
+            this.gameFunctions = gameFunctions ?? new GameFunctionActions();
+            this.readings = readings;
             this.scanner = scanner;
+            this.cursorController = cursorController;
+            this.pointerEvents = pointerEvents;
+            this.capturer = capturer;
+            this.uploader = uploader;
+            defaultUploader = uploader;
+            this.evidenceScan = evidenceScan;
+            this.evidenceUploader = evidenceUploader;
+            this.scanProgress = scanProgress;
+
+            var startupScene = SceneManager.GetActiveScene();
+            startupSceneBuildIndex = startupScene.buildIndex;
+            startupScenePath = startupScene.path;
+
+            // Moving onto a target keeps the reported pointer under the drawn cursor, but stays a
+            // silent move: firing hover events out of button_click would change what an existing
+            // caller does to the game. Only move_mouse claims the pointer outright.
+            cursorMoved = ArtelInput.MoveMouse;
+            pointerMoved = position =>
+            {
+                ArtelInput.MoveMouse(position);
+                if (!NewInputMouse.UsesNativeUi) pointerEvents.MoveTo(position);
+            };
         }
 
-        public ActionResultDto Execute(int actionId, string method, List<object> parameters)
+        /// <summary>Sends captures somewhere other than orchestration until <see cref="RestoreCaptureUploader"/>.</summary>
+        internal void SetCaptureUploader(ICaptureUploader replacement)
         {
-            if (method == "button_click")
-            {
-                return ExecuteButtonClick(actionId, parameters);
-            }
-
-            if (method == "enter_text")
-            {
-                return ExecuteEnterText(actionId, parameters);
-            }
-
-            return ActionResultDto.Failure(actionId, "Unsupported method: " + method);
+            uploader = replacement ?? throw new ArgumentNullException(nameof(replacement));
         }
 
-        private ActionResultDto ExecuteButtonClick(int actionId, List<object> parameters)
+        /// <summary>Puts the orchestration uploader back, including when there never was one.</summary>
+        internal void RestoreCaptureUploader()
+        {
+            uploader = defaultUploader;
+        }
+
+        public IEnumerator Execute(
+            int actionId,
+            string method,
+            List<object> parameters,
+            Action<ActionResultDto> completed,
+            bool glideMouse = true)
+        {
+            var mouseAction = method == "move_mouse" || method == "mouse_down" || method == "mouse_up" ||
+                ((method == "key_down" || method == "key_up" || method == "key_click") &&
+                 parameters != null && parameters.Count > 0 && TryReadKeyCode(parameters[0], out var key) &&
+                 MouseButtonKeyCode.TryGetButton(key, out _));
+            var error = mouseAction ? NewInputMouse.ValidationError : null;
+            if (error != null)
+            {
+                // Input update가 멈춰도 기존 hold는 해제한다. 동작을 처리했다는 성공 응답은 보내지 않는다.
+                if (method == "mouse_up" || (mouseAction && method == "key_up"))
+                    ArtelInput.ReleaseAllVirtualInput();
+                completed(ActionResultDto.Failure(actionId, error));
+                yield break;
+            }
+
+            ActionResultDto result = null;
+            yield return ExecuteCore(actionId, method, parameters, value => result = value, glideMouse);
+            if (mouseAction && result != null && result.IsSuccess && NewInputMouse.IsActive)
+            {
+                var targetFrame = Time.frameCount + 1;
+                var deadline = Time.realtimeSinceStartup + 2f;
+                while (!NewInputMouse.HasProcessed(targetFrame))
+                {
+                    if (Time.realtimeSinceStartup >= deadline || !NewInputMouse.IsActive)
+                    {
+                        ArtelInput.ReleaseAllVirtualInput();
+                        completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse action."));
+                        yield break;
+                    }
+                    yield return null;
+                }
+                // 클릭 결과와 일반 QA는 EventSystem.Update까지 기다린다.
+                if (method != "move_mouse" || glideMouse) yield return null;
+                if (method == "mouse_down") result.ReturnValue = PressOutcome(pointerEvents.LastPressReceiver);
+            }
+            completed(result);
+        }
+
+        private IEnumerator ExecuteCore(
+            int actionId,
+            string method,
+            List<object> parameters,
+            Action<ActionResultDto> completed,
+            bool glideMouse)
+        {
+            switch (method)
+            {
+                case "button_click":
+                    yield return ExecuteButtonClick(actionId, parameters, completed);
+                    yield break;
+
+                case "enter_text":
+                    yield return ExecuteEnterText(actionId, parameters, completed);
+                    yield break;
+
+                case "move_mouse":
+                    yield return ExecuteMoveMouse(actionId, parameters, completed, glideMouse);
+                    yield break;
+
+                case "mouse_down":
+                    yield return ExecuteMousePress(actionId, method, parameters, completed);
+                    yield break;
+
+                case "mouse_up":
+                    completed(ExecuteMouseButton(actionId, method, parameters, false));
+                    yield break;
+
+                case "key_click":
+                    yield return ExecuteKeyClick(actionId, parameters, completed);
+                    yield break;
+
+                case "key_down":
+                    completed(ExecuteKeyHold(actionId, method, parameters, true));
+                    yield break;
+
+                case "key_up":
+                    completed(ExecuteKeyHold(actionId, method, parameters, false));
+                    yield break;
+
+                case "set_axis":
+                    completed(ExecuteSetAxis(actionId, parameters));
+                    yield break;
+
+                case "set_button":
+                    completed(ExecuteSetButton(actionId, parameters));
+                    yield break;
+
+                case "pause_time":
+                    completed(ExecutePauseTime(actionId));
+                    yield break;
+
+                case "resume_time":
+                    completed(ExecuteResumeTime(actionId));
+                    yield break;
+
+                case "reset_game":
+                    yield return ExecuteResetGame(actionId, parameters, completed);
+                    yield break;
+
+                case "start_readings":
+                    completed(ExecuteStartReadings(actionId, parameters));
+                    yield break;
+
+                case "stop_readings":
+                    completed(ExecuteStopReadings(actionId));
+                    yield break;
+
+                case "flush":
+                    completed(ExecuteFlush(actionId));
+                    yield break;
+
+                case "resync_readings":
+                    completed(ExecuteResync(actionId));
+                    yield break;
+
+                case "wait_until":
+                    yield return ExecuteWaitUntil(actionId, parameters, completed);
+                    yield break;
+
+                case "watch":
+                    completed(ExecuteWatch(actionId, parameters));
+                    yield break;
+
+                case "read_member":
+                    completed(ExecuteReadMember(actionId, parameters));
+                    yield break;
+
+                case "capture_screen":
+                    yield return ExecuteCaptureScreen(actionId, parameters, completed);
+                    yield break;
+
+                case "scan_evidence":
+                    yield return ExecuteScanEvidence(actionId, completed);
+                    yield break;
+
+                case GameFunctionActions.InvokeCheatMethod:
+                    yield return gameFunctions.InvokeCheat(actionId, parameters, completed);
+                    yield break;
+
+                case GameFunctionActions.StartBehaviorMethod:
+                    completed(gameFunctions.StartBehavior(actionId, parameters));
+                    yield break;
+
+                case GameFunctionActions.StopBehaviorMethod:
+                    completed(gameFunctions.StopBehavior(actionId, parameters));
+                    yield break;
+
+                case GameFunctionActions.ExtendBehaviorMethod:
+                    completed(gameFunctions.ExtendBehavior(actionId, parameters));
+                    yield break;
+            }
+
+            completed(ActionResultDto.Failure(actionId, "Unsupported method: " + method));
+        }
+
+        /// <summary>
+        /// Deprecated. Button 의 <c>onClick</c> 을 EventSystem 을 거치지 않고 직접 부른다.
+        /// </summary>
+        /// <remarks>
+        /// 대신 쓸 것은 겨눈 자리로 보낸 <c>move_mouse</c> 뒤에 <c>mouse_down</c>/<c>mouse_up</c> 이다 — 그
+        /// 경로는 <see cref="PointerEventDispatcher"/> 와 EventSystem 을 실제로 거치므로, 게임 자신의 클릭
+        /// 경로를 그대로 밟고 다른 것에 가려진 경우도 그대로 드러낸다. 이 메서드는 그것을 건너뛴다.
+        /// <para>
+        /// 남겨 둔다. 이 레포지토리 바깥의 여러 자리가 지금도 이 액션을 그대로 보내고 있고, params 도 결과
+        /// 모양도 바꾸지 않는다.
+        /// </para>
+        /// </remarks>
+        private IEnumerator ExecuteButtonClick(
+            int actionId,
+            List<object> parameters,
+            Action<ActionResultDto> completed)
         {
             if (!TryReadId(parameters, out var targetId))
             {
-                return ActionResultDto.Failure(actionId, "button_click requires params [targetId].");
+                completed(ActionResultDto.Failure(actionId, "button_click requires params [targetId]."));
+                yield break;
             }
 
             if (!scanner.TryGetTarget(targetId, out var target))
             {
-                return ActionResultDto.Failure(actionId, "Unknown target id: " + targetId);
+                completed(ActionResultDto.Failure(actionId, "Unknown target id: " + targetId));
+                yield break;
             }
 
-            return target.Click()
+            if (!target.CanClick)
+            {
+                completed(ActionResultDto.Failure(actionId, "Target is not a Button: " + targetId));
+                yield break;
+            }
+
+            if (!target.IsClickInteractable)
+            {
+                completed(ActionResultDto.Failure(actionId, NotInteractable(targetId)));
+                yield break;
+            }
+
+            yield return cursorController.MoveTo(target.RectTransform, cursorMoved);
+
+            // The target was a live Button before the cursor moved, so a refusal now means the game
+            // locked or tore it down while the cursor was on its way.
+            completed(target.Click()
                 ? ActionResultDto.Success(actionId)
-                : ActionResultDto.Failure(actionId, "Target is not a Button: " + targetId);
+                : ActionResultDto.Failure(actionId, NotInteractable(targetId)));
         }
 
-        private ActionResultDto ExecuteEnterText(int actionId, List<object> parameters)
+        private IEnumerator ExecuteEnterText(
+            int actionId,
+            List<object> parameters,
+            Action<ActionResultDto> completed)
         {
             if (!TryReadId(parameters, out var targetId) || parameters.Count < 2)
             {
-                return ActionResultDto.Failure(actionId, "enter_text requires params [targetId, value].");
+                completed(ActionResultDto.Failure(actionId, "enter_text requires params [targetId, value]."));
+                yield break;
             }
 
             if (!scanner.TryGetTarget(targetId, out var target))
             {
-                return ActionResultDto.Failure(actionId, "Unknown target id: " + targetId);
+                completed(ActionResultDto.Failure(actionId, "Unknown target id: " + targetId));
+                yield break;
             }
 
+            if (!target.CanEnterText)
+            {
+                completed(ActionResultDto.Failure(actionId, "Target is not an EditText: " + targetId));
+                yield break;
+            }
+
+            if (!target.IsTextEntryInteractable)
+            {
+                completed(ActionResultDto.Failure(actionId, NotInteractable(targetId)));
+                yield break;
+            }
+
+            yield return cursorController.MoveTo(target.RectTransform, cursorMoved);
             var value = parameters[1] == null ? string.Empty : parameters[1].ToString();
-            return target.EnterText(value)
+            completed(target.EnterText(value)
                 ? ActionResultDto.Success(actionId)
-                : ActionResultDto.Failure(actionId, "Target is not an EditText: " + targetId);
+                : ActionResultDto.Failure(actionId, NotInteractable(targetId)));
+        }
+
+        /// <summary>
+        /// Walks the pointer to a screen position, reporting every step on the way. A held button
+        /// turns those steps into a drag, which is why this cannot simply jump to the destination.
+        /// </summary>
+        /// <remarks>
+        /// The params name that position in exactly one of three ways, and <see cref="PointerAimParser"/>
+        /// is the only place that tells them apart: the coordinates <c>[x, y]</c>, a Unity instance id
+        /// <c>[id]</c> of the same kind <c>button_click</c> takes, or a selector <c>[selector]</c> as
+        /// <c>Artel.Affordances.Scan.ScenePath.SelectorOf</c> writes it.
+        /// <para>
+        /// Whichever form it was, the position that comes back is the one a scan reports: pixels from
+        /// the top left. Unity's screen space counts up from the bottom instead, and that flip lives
+        /// here — once, out of sight — rather than in every caller that read a block's rect and wants
+        /// to aim at it, or in any implementation of <see cref="IPointerAim"/>.
+        /// </para>
+        /// </remarks>
+        private IEnumerator ExecuteMoveMouse(
+            int actionId,
+            List<object> parameters,
+            Action<ActionResultDto> completed,
+            bool glide)
+        {
+            if (!PointerAimParser.TryParse(parameters, out var aim, out var parseError))
+            {
+                completed(ActionResultDto.Failure(actionId, parseError));
+                yield break;
+            }
+
+            if (!aim.TryResolve(scanner, out var reportedPosition, out var resolveError))
+            {
+                completed(ActionResultDto.Failure(actionId, resolveError));
+                yield break;
+            }
+
+            yield return cursorController.MoveTo(
+                new Vector2(reportedPosition.x, Screen.height - reportedPosition.y),
+                pointerMoved,
+                glide: glide,
+                immediate: !glide);
+            completed(ActionResultDto.Success(actionId));
+        }
+
+        /// <summary>
+        /// 누르고, 한 프레임 뒤에 **무엇이 받았는지** 말한다.
+        /// </summary>
+        /// <remarks>
+        /// 상태를 미는 것과 <c>OnMouseDown</c> 이 나가는 것은 같은 순간이 아니다. 미는 것은
+        /// 여기서, 보내는 것은 그 뒤 <c>Input.AdvanceFrame</c> 에서 메신저가 한다. 그래서 결과를
+        /// 바로 만들면 아직 아무것도 모르는 채로 <c>ok</c> 만 적게 된다.
+        /// <para>
+        /// 그 <c>ok</c> 때문에 세 가지가 구분되지 않았다 — 겨냥이 빗나간 것, 닿았는데 게임이
+        /// 입력을 막고 있던 것, 사람이 포인터를 도로 가져가 메신저가 아예 안 돈 것. 에이전트는
+        /// 셋 다 성공으로 읽고 다음 단계로 갔다(ARTEL-769).
+        /// </para>
+        /// <para>
+        /// 닿은 것이 없어도 실패로 만들지 않는다. 빈 곳을 누르는 것은 정당한 조작이고, 그것이
+        /// 무엇이었는지는 부르는 쪽이 판단할 일이다.
+        /// </para>
+        /// </remarks>
+        private IEnumerator ExecuteMousePress(
+            int actionId, string method, List<object> parameters, Action<ActionResultDto> completed)
+        {
+            if (!TryReadMouseButton(parameters, out var button))
+            {
+                completed(ActionResultDto.Failure(
+                    actionId,
+                    method + " requires params [] or [button], where button is 0, 1, or 2."));
+                yield break;
+            }
+
+            ArtelInput.ForgetLastPress();
+            pointerEvents.ForgetLastPress();
+            SetButton(button, true);
+            var eventReceiver = pointerEvents.LastPressReceiver;
+
+            yield return null;
+
+            completed(ActionResultDto.Success(actionId, PressOutcome(eventReceiver)));
+        }
+
+        /// <summary>
+        /// 누름이 무엇에 닿았나. **문장이 아니라 데이터로 싣는다.**
+        /// </summary>
+        /// <remarks>
+        /// 처음에는 사람이 읽을 한국어 문장을 실었다. 두 가지가 잘못이었다 — 받는 쪽 계약이
+        /// <c>returnValue</c> 를 객체로 타이핑해 두어 문자열이 파싱을 깨뜨렸고(프레임 하나가
+        /// 통째로 버려졌다), 표현은 프로토콜이 아니라 읽는 쪽이 정할 일이다(ARTEL-777).
+        /// <para>
+        /// <c>reached</c> 가 닿은 것의 경로다. 아무것도 없었으면 null 이고, 그때
+        /// <c>pointerHeldByPerson</c> 이 "빈 곳이었다"와 "사람이 포인터를 도로 가져가 메신저가
+        /// 아예 안 돌았다"를 가른다.
+        /// </para>
+        /// <para>
+        /// 누름은 uGUI(<see cref="PointerEventDispatcher"/>)와 collider(<c>OnMouse*</c>) 두 길로
+        /// 함께 나간다. 처음에는 collider 쪽만 적어서 Canvas 버튼을 누르면 늘 null 이었고, 받는
+        /// 쪽은 씬을 바꾼 클릭을 빈 곳으로 읽었다(ARTEL-1175). uGUI 가 받은 것을 먼저 적는다 —
+        /// 화면 위에 그려지는 것이 UI 이고, 사람이 누른다고 보는 것도 그것이다.
+        /// </para>
+        /// </remarks>
+        private static Dictionary<string, object> PressOutcome(string eventReceiver)
+        {
+            // native UI의 후속 raycast는 실제 수신 증거가 아니다.
+            var nativeUi = NewInputMouse.UsesNativeUi;
+            var reached = nativeUi ? null : string.IsNullOrEmpty(eventReceiver)
+                ? ArtelInput.LastPressReceiver : eventReceiver;
+            return new Dictionary<string, object>
+            {
+                { "reached", string.IsNullOrEmpty(reached) ? null : reached },
+                { "pointerHeldByPerson", nativeUi ? !ArtelInput.OwnsVirtualPointer :
+                    string.IsNullOrEmpty(eventReceiver) && !ArtelInput.SawPress }
+            };
+        }
+
+        private ActionResultDto ExecuteMouseButton(
+            int actionId, string method, List<object> parameters, bool press)
+        {
+            if (!TryReadMouseButton(parameters, out var button))
+            {
+                return ActionResultDto.Failure(
+                    actionId,
+                    method + " requires params [] or [button], where button is 0, 1, or 2.");
+            }
+
+            SetButton(button, press);
+            return ActionResultDto.Success(actionId);
+        }
+
+        /// <summary>
+        /// 가상 마우스 상태와 uGUI 이벤트를 한 번에 민다.
+        /// </summary>
+        /// <remarks>
+        /// <c>mouse_down</c> 과 <c>KeyCode.Mouse0</c> 을 실은 <c>key_down</c> 이 같은 버튼을
+        /// 가리킨다. 두 경로가 각자 밀면 언젠가 한쪽만 절반을 밀어 "폴링에는 잡히는데 버튼은
+        /// 안 눌리는" 상태가 되므로, 미는 일은 여기 한 자리에만 둔다.
+        /// </remarks>
+        private void SetButton(int button, bool press)
+        {
+            if (press)
+            {
+                ArtelInput.PressMouseButton(button);
+                if (!NewInputMouse.UsesNativeUi) pointerEvents.Press(button);
+            }
+            else
+            {
+                ArtelInput.ReleaseMouseButton(button);
+                if (!NewInputMouse.UsesNativeUi) pointerEvents.Release(button);
+            }
+        }
+
+        private ActionResultDto ExecuteKeyHold(
+            int actionId, string method, List<object> parameters, bool press)
+        {
+            if (parameters == null || parameters.Count == 0 ||
+                !TryReadKeyCode(parameters[0], out var key))
+            {
+                return ActionResultDto.Failure(actionId, method + " requires params [keyCode].");
+            }
+
+            // KeyCode.Mouse0 은 마우스 왼쪽 버튼 그 자체다. 가상 키보드에만 넣으면 GetKey 로
+            // 폴링하는 게임에만 닿고, 포인터 아래 오브젝트의 OnMouseDown 도 uGUI 핸들러도
+            // 부르지 못한다 — 액션은 성공으로 보고되는데 게임은 아무 일도 없는 그 형태가 된다.
+            if (MouseButtonKeyCode.TryGetButton(key, out var button))
+            {
+                SetButton(button, press);
+                return ActionResultDto.Success(actionId);
+            }
+
+            if (press)
+            {
+                ArtelInput.PressKey(key);
+            }
+            else
+            {
+                ArtelInput.ReleaseKey(key);
+            }
+
+            return ActionResultDto.Success(actionId);
+        }
+
+        /// <summary>
+        /// Freezes game time, leaving the SDK itself running.
+        /// </summary>
+        /// <remarks>
+        /// Everything this SDK waits on is already unscaled — the cursor walk, the scene settle,
+        /// the key hold — so a frozen game can still be scanned, clicked and typed into. That is
+        /// the point: it holds an animation, a countdown or a timed prompt still long enough to be
+        /// read, without the game moving on underneath the reading.
+        /// </remarks>
+        private ActionResultDto ExecutePauseTime(int actionId)
+        {
+            // Only the first pause records anything. A second one would record the frozen 0 and
+            // resume_time would then "resume" to a game that never moves again.
+            if (!scaleBeforePause.HasValue)
+            {
+                scaleBeforePause = Time.timeScale;
+            }
+
+            Time.timeScale = 0f;
+            return ActionResultDto.Success(actionId);
+        }
+
+        private ActionResultDto ExecuteResumeTime(int actionId)
+        {
+            if (!scaleBeforePause.HasValue)
+            {
+                // Restoring a scale nobody saved would silently overwrite whatever the game chose
+                // for itself — a slow-motion sequence, a difficulty modifier — so say so instead.
+                return ActionResultDto.Failure(
+                    actionId, "resume_time: game time was not paused by pause_time.");
+            }
+
+            Time.timeScale = scaleBeforePause.Value;
+            scaleBeforePause = null;
+            return ActionResultDto.Success(actionId);
+        }
+
+        /// <summary>
+        /// Undoes a pause the SDK is about to stop being able to undo.
+        /// </summary>
+        /// <remarks>
+        /// A run that dies while the game is paused would otherwise leave it frozen with the one
+        /// thing that could unfreeze it gone. Called when the manager shuts down.
+        /// </remarks>
+        public void RestoreTimeScale()
+        {
+            if (scaleBeforePause.HasValue)
+            {
+                Time.timeScale = scaleBeforePause.Value;
+                scaleBeforePause = null;
+            }
+        }
+
+        /// <summary>
+        /// 실행이 처음 만난 자리로 게임을 되돌린다. 시작 씬을 다시 열고, 호출이 그렇게 말하면
+        /// 게임의 <c>PlayerPrefs</c> 도 함께 비운다.
+        /// </summary>
+        /// <remarks>
+        /// 로드 한 번이 열려 있는 모든 씬을 허물고, 실행이 처음 썼던 것과 같은 직렬화 데이터로
+        /// 시작 씬을 다시 세운다. 게임의 <c>DontDestroyOnLoad</c> 오브젝트도 함께 사라진다 —
+        /// 점수·인벤토리·진행도를 쥐고 있는 매니저야말로 리셋이 지워야 할 것이고, 다시 열린
+        /// 씬이 예전 것을 살려 두었던 바로 그 싱글턴 가드를 통해 자기 것을 새로 만든다.
+        ///
+        /// 씬 상태는 언제나 사라진다. <c>PlayerPrefs</c> 는 <c>clearPlayerPrefs</c> 가 그렇게
+        /// 말할 때만 사라지고, 그때도 SDK 자신의 <c>Artel.*</c> 항목은 지우기 앞뒤로 꺼냈다가
+        /// 되쓴다 — 그러지 않으면 리셋을 시킨 서버로부터 이 세션이 스스로 로그아웃한다.
+        /// 정적 필드와 디스크의 파일은 어느 쪽으로도 사라지지 않는다.
+        ///
+        /// 약속하는 것은 저장소를 비웠다는 것까지다. 게임이 첫 실행 상태라는 뜻은 아니다 —
+        /// 리로드로 죽는 매니저가 <c>OnDestroy</c> 에서 자기 키를 다시 쓸 수 있고, 이 코루틴
+        /// 안의 어떤 순서도 그것을 막지 못한다.
+        /// </remarks>
+        private IEnumerator ExecuteResetGame(
+            int actionId, List<object> parameters, Action<ActionResultDto> completed)
+        {
+            // params 를 먼저 읽는다. Build Settings 가드보다 뒤에 두면 잘못 만든 호출이
+            // "씬이 Build Settings 에 없다" 로 잘못 진단되어 돌아간다.
+            if (!ResetRequestReader.TryRead(parameters, out var request, out var error))
+            {
+                completed(ActionResultDto.Failure(actionId, error));
+                yield break;
+            }
+
+            if (startupSceneBuildIndex < 0)
+            {
+                // Loading by path fails the same way, so there is nothing to try: the scene has to
+                // be in Build Settings for the player to ever reach it again.
+                completed(ActionResultDto.Failure(
+                    actionId,
+                    "reset_game: the scene the game started in is not in Build Settings: " +
+                    startupScenePath));
+                yield break;
+            }
+
+            // behavior 는 리로드보다 먼저 끝낸다. 그래야 그 finally 가 아직 살아 있는 씬 위에서 돈다.
+            gameFunctions.EndRun("reset_game");
+
+            // A pause and a held button belong to the run, not to the game. Carried across the
+            // reload they would hand the fresh scene a frozen clock and a press it never saw begin.
+            RestoreTimeScale();
+            pointerEvents.ReleaseAll();
+            ArtelInput.ReleaseAllVirtualInput();
+
+            DoomPersistentObjects();
+            if (request.ResetStatics)
+            {
+                // 옛 씬을 먼저 다 내린다. 그 OnDestroy 가 static 을 읽고 쓰므로(리스너 해제 · 저장), 비우기는 그것이 끝난 뒤여야
+                // 하고 새 씬의 Awake 보다는 앞서야 한다.
+                yield return UnloadEveryScene();
+                var outcome = GameStatics.ResetBeforeSceneLoad();
+                Debug.Log($"[Artel] reset_game reset {outcome.Fields} static field(s) in {outcome.Types} game type(s)" +
+                          (outcome.Failed.Count > 0 ? "; left as they were: " + string.Join("; ", outcome.Failed) : ""));
+            }
+
+            // 리로드 바로 앞에서 지운다. 게임이 세이브 데이터를 처음 읽는 자리는 시작 씬의
+            // Awake/Start 이므로, 로드한 뒤에 지우면 구조적으로 한 프레임 늦어 이미 읽힌
+            // 진행도를 남긴 채 Success 를 돌려주게 된다. 옛 씬이 내려가며 저장한 것도 지우도록
+            // 내리기보다 뒤에 둔다. 사이에 yield 를 두지 않는다.
+            if (request.ClearPlayerPrefs)
+            {
+                ArtelOwnedPlayerPrefs.DeleteAllExceptOwn();
+            }
+
+            yield return SceneManager.LoadSceneAsync(startupSceneBuildIndex, LoadSceneMode.Single);
+            if (request.ResetStatics)
+            {
+                GameStatics.RunAfterSceneLoad();
+            }
+
+            yield return new WaitForSecondsRealtime(AllSceneScanner.SettleSeconds);
+
+            // Every target id named an object of the scene that just died, so a button_click later
+            // in this batch would otherwise address a corpse.
+            scanner.Scan();
+            completed(ActionResultDto.Success(actionId));
+        }
+
+        /// <summary>
+        /// 청한 그 실행을 위해 라이브 판독을 켠다.
+        /// </summary>
+        /// <remarks>
+        /// 실행은 그것이 언제 시작하는지를 말하지만 연결은 그러지 않는다. 연결은 모든 씬을 도는 순회도 함께 시작시키는데, 그 순회
+        /// 동안 찍은 판독은 플레이어가 한 번도 걸어가지 않은 화면을 서술한다 — 그래서 둘을 갈랐고, 이쪽이 세션이 다스리는 절반이다.
+        /// </remarks>
+        private ActionResultDto ExecuteStartReadings(int actionId, List<object> parameters)
+        {
+            if (readings == null)
+            {
+                return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
+            }
+
+            if (!PaceReader.TryRead(parameters, out var pace, out var error))
+            {
+                return ActionResultDto.Failure(actionId, error);
+            }
+
+            return readings.StartReadings(pace)
+                ? ActionResultDto.Success(actionId)
+                : ActionResultDto.Failure(
+                    actionId, "Live readings could not start. A release build does not take them.");
+        }
+
+        private const float DefaultWaitSeconds = 5f;
+        private const float MaxWaitSeconds = 60f;
+
+        /// <summary>
+        /// <c>wait_until [condition, timeoutSeconds?]</c>: 조건이 참이 될 때까지 매 프레임 기다린다. 시간 초과는 실패가 아니라 값이다.
+        /// </summary>
+        /// <remarks>
+        /// 반응을 게임 안으로 들인다. agent 의 <c>wait_until</c> 은 새 <c>pulse</c> 마다 조건을 다시 읽어 전달 지연에 묶이는데, 배치
+        /// 안의 <c>[wait_until(X), click(Y)]</c> 는 네트워크 없이 프레임 단위로 잇는다. 조건을 못 읽는 것(이름이 안 풀림, 문법)만
+        /// 실패다 — 기다렸는데 안 된 것은 agent 가 읽어야 할 결과다.
+        /// </remarks>
+        private IEnumerator ExecuteWaitUntil(int actionId, List<object> parameters, Action<ActionResultDto> completed)
+        {
+            if (parameters == null || parameters.Count == 0 || !(parameters[0] is string text))
+            {
+                completed(ActionResultDto.Failure(actionId, "wait_until params are [condition] or [condition, timeoutSeconds]."));
+                yield break;
+            }
+
+            var timeout = DefaultWaitSeconds;
+
+            if (parameters.Count > 1 && parameters[1] != null)
+            {
+                try
+                {
+                    timeout = Mathf.Clamp(Convert.ToSingle(parameters[1], CultureInfo.InvariantCulture), 0f, MaxWaitSeconds);
+                }
+                catch (Exception)
+                {
+                    completed(ActionResultDto.Failure(actionId, "wait_until timeoutSeconds must be a number."));
+                    yield break;
+                }
+            }
+
+            if (!WaitCondition.TryParse(text, out var condition, out var parseError))
+            {
+                completed(ActionResultDto.Failure(actionId, parseError));
+                yield break;
+            }
+
+            var started = Time.realtimeSinceStartup;
+            var waited = 0;
+            var held = condition.Holds(out var error);
+
+            while (!held && error == null && Time.realtimeSinceStartup - started < timeout)
+            {
+                yield return null;
+                waited++;
+                held = condition.Holds(out error);
+            }
+
+            if (error != null)
+            {
+                completed(ActionResultDto.Failure(actionId, "wait_until " + error));
+                yield break;
+            }
+
+            completed(ActionResultDto.Success(actionId, new Dictionary<string, object>
+            {
+                ["held"] = held,
+                ["waitedFrames"] = waited,
+                ["timedOut"] = !held,
+                ["frame"] = Time.frameCount
+            }));
+        }
+
+        /// <summary><c>flush</c>: 지금 한 번 읽어 바로 보낸다. 판정 직전과 <c>read_member</c> 뒤의 신선도용.</summary>
+        private ActionResultDto ExecuteFlush(int actionId)
+        {
+            if (readings == null)
+            {
+                return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
+            }
+
+            return readings.FlushReadings()
+                ? ActionResultDto.Success(actionId)
+                : ActionResultDto.Failure(actionId, "flush: live readings are not running. Send start_readings first.");
+        }
+
+        /// <summary>
+        /// <c>resync_readings</c>: 다음 판독을 whole 로 보낸다(ARTEL-1299). 받는 쪽이 <c>seq</c> 의 빈자리로 누락을 알아챘을 때
+        /// 청한다 — 차이만 나르는 판독은 놓친 하나를 아무도 다시 말해 주지 않는다.
+        /// </summary>
+        private ActionResultDto ExecuteResync(int actionId)
+        {
+            if (readings == null)
+            {
+                return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
+            }
+
+            return readings.ResyncReadings()
+                ? ActionResultDto.Success(actionId)
+                : ActionResultDto.Failure(actionId, "resync_readings: live readings are not running. Send start_readings first.");
+        }
+
+        /// <summary><c>watch [names]</c>: 이름을 풀어 watch list 에 더한다. 풀린 것과 못 푼 것을 둘 다 돌려준다.</summary>
+        private static ActionResultDto ExecuteWatch(int actionId, List<object> parameters)
+        {
+            if (!TryReadNames(parameters, out var names, out var error))
+            {
+                return ActionResultDto.Failure(actionId, "watch " + error);
+            }
+
+            var walk = new Affordances.Live.Lookup.Walk();
+            var answers = Affordances.Live.Lookup.Watch(names, walk);
+
+            return ActionResultDto.Success(actionId, Described(answers, walk, null));
+        }
+
+        /// <summary><c>read_member [name]</c>: 이름을 풀어 지금 값을 한 번 읽는다. 목록에는 더하지 않는다.</summary>
+        private static ActionResultDto ExecuteReadMember(int actionId, List<object> parameters)
+        {
+            if (!TryReadNames(parameters, out var names, out var error) || names.Count != 1)
+            {
+                return ActionResultDto.Failure(actionId, "read_member params are [name].");
+            }
+
+            var walk = new Affordances.Live.Lookup.Walk();
+            var answers = Affordances.Live.Lookup.Resolve(names, walk);
+            var answer = answers[0];
+
+            if (!answer.Resolved)
+            {
+                return ActionResultDto.Failure(actionId, "read_member " + answer.Name + ": " + answer.Reason);
+            }
+
+            List<object> holders = answer.Member.Holders;
+
+            if (answer.Kind == "component")
+            {
+                holders = new List<object>();
+
+                foreach (var one in Resources.FindObjectsOfTypeAll(answer.Member.Owner))
+                {
+                    if (one is Component component && component != null && component.gameObject.scene.IsValid())
+                    {
+                        holders.Add(component);
+                    }
+                }
+            }
+
+            var values = Newtonsoft.Json.Linq.JObject.Parse(
+                "{" + Affordances.Live.LiveState.Peek(answer.Member, holders) + "}")["values"];
+
+            return ActionResultDto.Success(actionId, Described(answers, walk, values));
+        }
+
+        private static Dictionary<string, object> Described(
+            List<Affordances.Live.Lookup.Answer> answers, Affordances.Live.Lookup.Walk walk, object values)
+        {
+            var resolved = new List<object>();
+            var unresolvable = new List<object>();
+
+            foreach (var answer in answers)
+            {
+                if (!answer.Resolved)
+                {
+                    unresolvable.Add(new Dictionary<string, object>
+                    {
+                        ["name"] = answer.Name, ["reason"] = answer.Reason
+                    });
+                    continue;
+                }
+
+                var member = answer.Member;
+
+                resolved.Add(new Dictionary<string, object>
+                {
+                    ["name"] = answer.Name,
+                    ["kind"] = answer.Kind,
+                    ["holders"] = answer.Holders,
+                    // 판독이 이 멤버를 부르는 이름. 짧게 댄 타입도 여기서는 전체 이름이다.
+                    ["declaring"] = member.Declaring,
+                    ["member"] = (member.Property ?? member.Member) + (member.Via == null ? "" : "." + member.Via)
+                });
+            }
+
+            var described = new Dictionary<string, object>
+            {
+                ["resolved"] = resolved,
+                ["unresolvable"] = unresolvable,
+                ["walk"] = new Dictionary<string, object>
+                {
+                    ["visited"] = walk.Visited,
+                    ["ms"] = Math.Round(walk.Milliseconds, 2),
+                    ["exhausted"] = walk.Exhausted
+                }
+            };
+
+            if (values != null)
+            {
+                described["values"] = values;
+            }
+
+            return described;
+        }
+
+        /// <summary><c>[["A::b","C::d"]]</c> 와 <c>["A::b","C::d"]</c> 둘 다 이름 목록으로 받는다.</summary>
+        private static bool TryReadNames(List<object> parameters, out List<string> names, out string error)
+        {
+            names = new List<string>();
+            error = null;
+
+            if (parameters == null || parameters.Count == 0)
+            {
+                error = "params are [names] or [name, ...].";
+                return false;
+            }
+
+            IEnumerable<object> items = parameters;
+
+            if (parameters.Count == 1 && parameters[0] is System.Collections.IEnumerable nested &&
+                !(parameters[0] is string))
+            {
+                var flattened = new List<object>();
+
+                foreach (var item in nested)
+                {
+                    flattened.Add(item);
+                }
+
+                items = flattened;
+            }
+
+            foreach (var item in items)
+            {
+                var name = item is Newtonsoft.Json.Linq.JValue token ? token.Value as string : item as string;
+
+                if (string.IsNullOrEmpty(name))
+                {
+                    error = "names must be strings like Type::member.";
+                    return false;
+                }
+
+                names.Add(name);
+            }
+
+            return true;
+        }
+
+        /// <summary>다시 끈다. 돌고 있었든 아니든 성공한다.</summary>
+        private ActionResultDto ExecuteStopReadings(int actionId)
+        {
+            if (readings == null)
+            {
+                return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
+            }
+
+            readings.StopReadings();
+            return ActionResultDto.Success(actionId);
+        }
+
+        /// <summary>
+        /// Hands the game's <c>DontDestroyOnLoad</c> objects to the scene that is about to be
+        /// unloaded, so the reload destroys them the way it destroys everything else.
+        /// </summary>
+        /// <remarks>
+        /// Moving them beats destroying them outright: <c>Destroy</c> only takes effect at the end
+        /// of the frame, which is after the new scene's <c>Awake</c> has already asked whether a
+        /// manager exists. Moved objects die with the unload, before anything in the new scene runs.
+        /// This SDK is the one root that stays — it is running the coroutine that does this, and it
+        /// owns the socket the result goes out on.
+        /// </remarks>
+        /// <summary>
+        /// 열린 씬을 모두 내린다. 빈 자리 씬 하나를 남겨 두고 내리며, 시작 씬을 <see cref="LoadSceneMode.Single"/> 로 열 때 그것도 내려간다.
+        /// </summary>
+        private static IEnumerator UnloadEveryScene()
+        {
+            var holding = SceneManager.CreateScene("Artel reset " + Time.frameCount);
+            var opened = new List<Scene>();
+            for (var index = 0; index < SceneManager.sceneCount; index++)
+            {
+                var scene = SceneManager.GetSceneAt(index);
+                if (scene != holding)
+                {
+                    opened.Add(scene);
+                }
+            }
+
+            SceneManager.SetActiveScene(holding);
+            foreach (var scene in opened)
+            {
+                var unloading = SceneManager.UnloadSceneAsync(scene);
+                if (unloading != null)
+                {
+                    yield return unloading;
+                }
+            }
+        }
+
+        /// <summary>
+        /// SDK 가 제 일을 하려고 띄운 영구 오브젝트(연결 · 라이브 판독 등)인지. 게임의 것이 아니므로 리셋이 지우지 않는다.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="ArtelManager"/> 만 살리면 라이브 판독을 보내는 <c>Artel Pulse</c> 가 첫 리셋에 함께 지워지고, 그 뒤의 런은 화면이
+        /// 무엇인지 모르는 채로 좌표로만 조작하게 된다.
+        /// </remarks>
+        internal static bool IsSdkOwned(GameObject root)
+        {
+            foreach (var component in root.GetComponentsInChildren<MonoBehaviour>(true))
+            {
+                var space = component == null ? null : component.GetType().Namespace;
+                if (space == "Artel" || (space != null && space.StartsWith("Artel.", StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void DoomPersistentObjects()
+        {
+            var doomed = SceneManager.GetActiveScene();
+            var dropped = new List<string>();
+            foreach (var root in StraySpawnTracker.DontDestroyOnLoadScene().GetRootGameObjects())
+            {
+                if (IsSdkOwned(root))
+                {
+                    continue;
+                }
+
+                SceneManager.MoveGameObjectToScene(root, doomed);
+                dropped.Add(root.name);
+            }
+
+            if (dropped.Count > 0)
+            {
+                // Named, because a game whose bootstrap lives outside the start scene loses these
+                // for good — the one way reset_game can leave it worse off than it found it.
+                Debug.Log("[Artel] reset_game dropped persistent object(s): " +
+                          string.Join(", ", dropped));
+            }
+        }
+
+        /// <summary>
+        /// Captures the screen, or one element's area of it, and uploads it.
+        /// </summary>
+        /// <remarks>
+        /// Runs inside the same batch as the actions before it, so a capture asked for after a
+        /// click sees the screen that click produced — the ordering `scan_scene` already relies on.
+        /// </remarks>
+        private IEnumerator ExecuteCaptureScreen(
+            int actionId,
+            List<object> parameters,
+            Action<ActionResultDto> completed)
+        {
+            if (capturer == null || uploader == null)
+            {
+                completed(ActionResultDto.Failure(
+                    actionId, "This build cannot capture the screen."));
+                yield break;
+            }
+
+            if (!CaptureRequestReader.TryRead(parameters, out var request, out var paramsError))
+            {
+                completed(ActionResultDto.Failure(actionId, paramsError));
+                yield break;
+            }
+
+            Rect? pixelRect = null;
+            var clipped = false;
+            if (!request.IsFullScreen)
+            {
+                var targetId = request.TargetId.Value;
+                if (!scanner.TryGetTarget(targetId, out var target))
+                {
+                    completed(ActionResultDto.Failure(actionId, "Unknown target id: " + targetId));
+                    yield break;
+                }
+
+                var screen = new Rect(0f, 0f, Mathf.Max(2, Screen.width), Mathf.Max(2, Screen.height));
+                if (!CaptureRect.TryResolve(target.RectTransform, request.Padding, screen, out var region))
+                {
+                    completed(ActionResultDto.Failure(
+                        actionId, "Target is entirely off screen: " + targetId));
+                    yield break;
+                }
+
+                pixelRect = region.PixelRect;
+                clipped = region.Clipped;
+            }
+
+            var image = default(CapturedImage);
+            yield return capturer.Capture(request, pixelRect, captured => image = captured);
+            if (!image.IsSuccess)
+            {
+                completed(ActionResultDto.Failure(actionId, image.Error));
+                yield break;
+            }
+
+            var upload = default(CaptureUpload);
+            yield return uploader.Upload(image, request, uploaded => upload = uploaded);
+            if (!upload.IsSuccess)
+            {
+                completed(ActionResultDto.Failure(actionId, upload.Error));
+                yield break;
+            }
+
+            completed(ActionResultDto.Success(actionId, new CaptureResultDto
+            {
+                CaptureId = upload.CaptureId,
+                Url = upload.Url,
+                ExpiresAt = upload.ExpiresAt,
+                MimeType = request.ContentType,
+                Width = image.Width,
+                Height = image.Height,
+                TargetId = request.TargetId,
+                Clipped = clipped
+            }));
+        }
+
+        /// <summary>
+        /// 서버가 보낸 원격 스캔 명령. 근거를 스캔하고, 그 문서를 올리고, 무엇이 되었는지 답한다.
+        /// </summary>
+        /// <remarks>
+        /// 파라미터가 없다. 어느 빌드에 올릴지는 SDK 가 등록 응답에서 받아 쥐고 있는 gameBuildId 가 정하고, 서버는 그것을
+        /// 다시 말해 줄 필요가 없다 — 말해 준다면 그것이 어긋날 수 있는 두 번째 사실이 된다.
+        ///
+        /// 받았다와 끝났다를 나누지 않는다. 이 실행기가 돌려주는 결과는 액션 큐가 다 비었을 때 ACTION_RESULT 한 프레임으로
+        /// 나가고, 서버는 그것을 붙잡고 기다리지 않는다 — 화면은 ingested_at 이 바뀌는 것으로 완료를 안다. 이 답은 무엇이
+        /// 잘못됐는지를 사람이 볼 수 있게 하는 쪽이다.
+        ///
+        /// 실패는 어느 걸음의 것이든 결과에 실린다. 조용히 삼키면 서버는 "보냈다"까지만 알고 화면은 영원히 기다린다.
+        /// </remarks>
+        private IEnumerator ExecuteScanEvidence(int actionId, Action<ActionResultDto> completed)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (evidenceScan == null || evidenceUploader == null)
+            {
+                completed(ActionResultDto.Failure(
+                    actionId, ScanEvidence, "This build cannot scan and upload evidence."));
+                yield break;
+            }
+
+            var scanned = default(ScannedEvidence);
+            // 순회가 씬을 열 때마다 서버에 알린다(ARTEL-1177). 이 스캔 동안만 걸고 어떻게 끝나든 앞 구독자로 돌려놓는다.
+            var previousOpening = SceneWalkHooks.SceneOpening;
+
+            if (scanProgress != null)
+            {
+                SceneWalkHooks.SceneOpening = (done, total, scene) =>
+                    scanProgress.Report(WebSocketEvidenceScanProgress.Scanning, done, total, scene);
+            }
+
+            try
+            {
+                yield return evidenceScan.Run(result => scanned = result);
+            }
+            finally
+            {
+                SceneWalkHooks.SceneOpening = previousOpening;
+            }
+            if (!scanned.IsSuccess)
+            {
+                completed(ActionResultDto.Failure(actionId, ScanEvidence, scanned.Error));
+                yield break;
+            }
+
+            // 순회는 끝났는데 그 사이 멈추라는 말이 왔다. 올리기 전에 그만둔다(ARTEL-1182).
+            if (SceneWalkHooks.CancelRequested)
+            {
+                completed(ActionResultDto.Failure(
+                    actionId, ScanEvidence, "cancelled: the scan was stopped before the upload started."));
+                yield break;
+            }
+
+            var upload = default(EvidenceUpload);
+            yield return evidenceUploader.Upload(
+                scanned.Document,
+                scanned.Thumbnails,
+                uploaded => upload = uploaded,
+                scanProgress == null
+                    ? (Action<int, int>)null
+                    : (done, total) => scanProgress.Report(WebSocketEvidenceScanProgress.Uploading, done, total, null));
+            if (!upload.IsSuccess)
+            {
+                completed(ActionResultDto.Failure(actionId, ScanEvidence, upload.Error));
+                yield break;
+            }
+
+            // 올리는 동안 멈추라는 말이 왔다. 올라간 것은 그대로 두되 성공으로 답하지 않는다 — 성공이라고 하면 서버가
+            // 취소된 스캔을 적재한다. 걸음 사이에서 끊을 수 없어 여기가 가장 이른 자리다.
+            if (SceneWalkHooks.CancelRequested)
+            {
+                completed(ActionResultDto.Failure(
+                    actionId, ScanEvidence, "cancelled: the scan was stopped while the evidence was uploading."));
+                yield break;
+            }
+
+            completed(ActionResultDto.Success(actionId, ScanEvidence, new EvidenceScanResultDto
+            {
+                ObjectKey = upload.ObjectKey,
+                EvidenceDigest = upload.EvidenceDigest,
+                ByteSize = upload.ByteSize,
+                SchemaVersion = upload.SchemaVersion,
+                SceneCount = scanned.SceneCount,
+                SceneCapturesRegistered = upload.SceneCapturesRegistered,
+                AlreadyRegistered = upload.AlreadyRegistered
+            }));
+#else
+            // 출시된 빌드에는 읽을 근거가 애초에 구워지지 않는다. 빈 문서를 올려 서버의 표를 지우는 것보다 거절이 정직하다.
+            // 같은 심볼 쌍을 AffordanceBootstrap.Follow 가 읽고, 그쪽이 씬 로드를 따라갈지를 정한다.
+            completed(ActionResultDto.Failure(
+                actionId, ScanEvidence, "Evidence is not baked into a release build, so there is nothing to scan."));
+            yield break;
+#endif
+        }
+
+        private static string NotInteractable(int targetId)
+        {
+            return "Target is not interactable: " + targetId;
+        }
+
+        /// <summary>
+        /// 키를 그 시간만큼 눌렀다 놓는다. 마우스 버튼이면 놓는 일을 여기서 기다렸다 직접 한다.
+        /// </summary>
+        /// <remarks>
+        /// 가상 키보드는 만료를 스스로 안다. 가상 마우스는 그러지 않고, 만료를 그쪽 상태에 넣어도
+        /// 놓이는 순간을 아무도 몰라 <c>pointerUp</c> 과 <c>OnMouseUp</c> 이 빠진다. 그래서
+        /// 마우스만 코루틴으로 갈라, 누름과 놓음 양쪽 모두가 이벤트를 내게 한다.
+        ///
+        /// 기다림은 scaled time 이 아니다. <c>pause_time</c> 이 걸린 게임에서 scaled 로 재면
+        /// 영영 끝나지 않는다 — 가상 키보드도 같은 이유로 <c>unscaledTime</c> 으로 잰다.
+        ///
+        /// 기다리는 사이에 연결이 끊겨도 따로 정리할 것이 없다.
+        /// <c>ReleaseAllVirtualInput</c> 과 <c>pointerEvents.ReleaseAll</c> 이 이미 버튼을
+        /// 놓았고, 뒤늦은 놓음은 양쪽 모두에서 아무 일도 하지 않는다.
+        /// </remarks>
+        private IEnumerator ExecuteKeyClick(
+            int actionId, List<object> parameters, Action<ActionResultDto> completed)
+        {
+            if (parameters == null || parameters.Count < 2 ||
+                !TryReadKeyCode(parameters[0], out var key) ||
+                !TryReadDuration(parameters[1], out var durationSeconds))
+            {
+                completed(ActionResultDto.Failure(
+                    actionId,
+                    "key_click requires params [keyCode, positiveDurationSeconds]."));
+                yield break;
+            }
+
+            if (!MouseButtonKeyCode.TryGetButton(key, out var button))
+            {
+                ArtelInput.ClickKey(key, durationSeconds);
+                completed(ActionResultDto.Success(actionId));
+                yield break;
+            }
+
+            SetButton(button, true);
+            if (NewInputMouse.IsActive)
+            {
+                // 짧은 click도 FixedUpdate가 press를 처리하고 UI가 읽은 뒤에 놓는다.
+                var targetFrame = Time.frameCount + 1;
+                var deadline = Time.realtimeSinceStartup + 2f;
+                while (!NewInputMouse.HasProcessed(targetFrame))
+                {
+                    if (Time.realtimeSinceStartup >= deadline || !NewInputMouse.IsActive)
+                    {
+                        ArtelInput.ReleaseAllVirtualInput();
+                        completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse press."));
+                        yield break;
+                    }
+                    yield return null;
+                }
+                yield return null;
+            }
+            yield return new WaitForSecondsRealtime(durationSeconds);
+            SetButton(button, false);
+            completed(ActionResultDto.Success(actionId));
+        }
+
+        /// <summary>
+        /// Drives an Input Manager axis by name. The legacy Input Manager exposes no runtime API
+        /// for its axis-to-key bindings, so a virtual key press cannot reach <c>GetAxis</c> — the
+        /// caller names the axis and states the value instead.
+        /// </summary>
+        private static ActionResultDto ExecuteSetAxis(int actionId, List<object> parameters)
+        {
+            if (parameters == null || parameters.Count < 2 ||
+                !TryReadAxisName(parameters[0], out var axisName) ||
+                !TryReadAxisValue(parameters[1], out var value))
+            {
+                return ActionResultDto.Failure(
+                    actionId, "set_axis requires params [axisName, valueBetweenMinusOneAndOne].");
+            }
+
+            if (!TryConfirmAxisExists(axisName, out var error))
+            {
+                return ActionResultDto.Failure(actionId, error);
+            }
+
+            ArtelInput.SetAxis(axisName, value);
+            return ActionResultDto.Success(actionId);
+        }
+
+        /// <summary>
+        /// A button is an axis in Unity, so this writes the same axis the caller would drive with
+        /// <c>set_axis</c>. Releasing hands the axis back to the real input rather than pinning it
+        /// at zero, which is what makes <c>GetButtonUp</c> report the edge.
+        /// </summary>
+        private static ActionResultDto ExecuteSetButton(int actionId, List<object> parameters)
+        {
+            if (parameters == null || parameters.Count < 2 ||
+                !TryReadAxisName(parameters[0], out var axisName) ||
+                !TryReadFlag(parameters[1], out var pressed))
+            {
+                return ActionResultDto.Failure(
+                    actionId, "set_button requires params [axisName, pressed].");
+            }
+
+            if (!TryConfirmAxisExists(axisName, out var error))
+            {
+                return ActionResultDto.Failure(actionId, error);
+            }
+
+            if (pressed)
+            {
+                ArtelInput.SetAxis(axisName, 1f);
+            }
+            else
+            {
+                ArtelInput.ReleaseAxis(axisName);
+            }
+
+            return ActionResultDto.Success(actionId);
+        }
+
+        /// <summary>
+        /// The engine throws for an axis nobody set up, and that exception is the only runtime
+        /// signal that an axis name is real — the bindings themselves are not readable. Without
+        /// this check a misspelled name would report success and move nothing, which is the exact
+        /// failure this action exists to avoid.
+        /// </summary>
+        /// <remarks>
+        /// Reads the real <see cref="UnityEngine.Input"/> rather than the proxy on purpose: the
+        /// proxy answers from a held value once one exists, so it would pass a name it never
+        /// verified.
+        /// </remarks>
+        private static bool TryConfirmAxisExists(string axisName, out string error)
+        {
+            // 신 Input System 만 켠 프로젝트에는 Input Manager 축이 없다. 확인할 수도, 게임에 닿게 할 수도 없다(ARTEL-1233).
+            if (!LegacyInput.IsAvailable)
+            {
+                error = "Input Manager axes are not available: this project uses only the Input System package.";
+                return false;
+            }
+
+            try
+            {
+                LegacyInput.GetAxis(axisName);
+                error = null;
+                return true;
+            }
+            catch (ArgumentException)
+            {
+                error = "No input axis named '" + axisName + "' is set up in the Input Manager.";
+                return false;
+            }
+        }
+
+        private static bool TryReadAxisName(object value, out string axisName)
+        {
+            axisName = value as string ?? Convert.ToString(value, CultureInfo.InvariantCulture);
+            return !string.IsNullOrEmpty(axisName);
+        }
+
+        /// <summary>
+        /// Out-of-range values fail instead of being clamped: a caller asking for 5 has misread the
+        /// axis, and clamping would report success for a request nobody made.
+        /// </summary>
+        private static bool TryReadAxisValue(object value, out float axisValue)
+        {
+            return TryReadNumber(value, out axisValue) && axisValue >= -1f && axisValue <= 1f;
+        }
+
+        private static bool TryReadFlag(object value, out bool flag)
+        {
+            if (value is bool booleanValue)
+            {
+                flag = booleanValue;
+                return true;
+            }
+
+            flag = false;
+            return value != null && bool.TryParse(value.ToString(), out flag);
+        }
+
+        private static bool TryReadKeyCode(object value, out KeyCode key)
+        {
+            key = KeyCode.None;
+            if (value == null)
+            {
+                return false;
+            }
+
+            if (value is long longValue)
+            {
+                if (longValue < int.MinValue || longValue > int.MaxValue)
+                {
+                    return false;
+                }
+
+                return TryReadKeyCode((int)longValue, out key);
+            }
+
+            if (value is int intValue)
+            {
+                if (!Enum.IsDefined(typeof(KeyCode), intValue))
+                {
+                    return false;
+                }
+
+                key = (KeyCode)intValue;
+                return key != KeyCode.None;
+            }
+
+            return Enum.TryParse(value.ToString(), true, out key) &&
+                   key != KeyCode.None &&
+                   Enum.IsDefined(typeof(KeyCode), key);
+        }
+
+        /// <summary>
+        /// An omitted button means the left one, so the common case reads as <c>"params": []</c>.
+        /// </summary>
+        private static bool TryReadMouseButton(List<object> parameters, out int button)
+        {
+            button = 0;
+            if (parameters == null || parameters.Count == 0)
+            {
+                return true;
+            }
+
+            return TryReadId(parameters, out button) && VirtualMouseState.IsButton(button);
+        }
+
+        private static bool TryReadDuration(object value, out float durationSeconds)
+        {
+            return TryReadNumber(value, out durationSeconds) && durationSeconds > 0f;
+        }
+
+        private static bool TryReadNumber(object value, out float number)
+        {
+            number = 0f;
+            if (value == null ||
+                !float.TryParse(
+                    Convert.ToString(value, CultureInfo.InvariantCulture),
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out number))
+            {
+                return false;
+            }
+
+            return !float.IsInfinity(number) && !float.IsNaN(number);
         }
 
         private static bool TryReadId(List<object> parameters, out int id)

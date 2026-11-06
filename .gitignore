@@ -1,0 +1,36 @@
+# Unity
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+
+# Throwaway Unity project assembled by .github/scripts/setup-unity-test-project.sh
+.unity-test-project/
+
+# Visual Studio
+.vs/
+*.sln
+*.csproj.user
+
+# Rider
+.idea/
+
+# git
+.worktree
+
+# .NET
+bin/
+obj/
+
+# Agent tooling
+.agents/settings.local.json
+
+# Local-only Jira credentials for the MCP server
+.jira.env
+.notion.env
+
+# Python
+__pycache__/

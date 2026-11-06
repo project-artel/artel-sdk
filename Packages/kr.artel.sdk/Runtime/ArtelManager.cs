@@ -1,161 +1,1646 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using Artel.Auth;
+using Artel.Capture;
+using Artel.Diagnostics;
+using Artel.Domain;
+using Artel.Evidence;
+using Artel.Protocol.Dto;
+using Artel.Protocol.Mapping;
+using Artel.Serialization;
+using Artel.Streaming;
+using Artel.Tracking;
+
+using Artel.Affordances.Scan;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Artel
 {
-    public sealed class ArtelManager : MonoBehaviour
+    public sealed class ArtelManager : MonoBehaviour, IReadingChannel
     {
-        [SerializeField] private bool startServerOnEnable = true;
-        [SerializeField] private string bindAddress = "127.0.0.1";
-        [SerializeField] private int port = 17311;
+        private const float PerformanceReportIntervalSeconds = 1f;
 
-        private IArtelWebSocketServer server;
+        /// <summary>
+        /// The one manager that survives scene loads. Static rather than looked up
+        /// each time because the check runs in Awake, before anything else can
+        /// register it.
+        /// </summary>
+        private static ArtelManager instance;
+
+        /// <summary>
+        /// 첫 연결이 <c>Start</c> 에서 일어나는 이유는 <see cref="Start"/> 에 적었다. 이름이 그 자리를 말하도록
+        /// 바뀌었고, 씬에 직렬화된 값은 <c>FormerlySerializedAs</c> 가 넘겨받는다.
+        /// </summary>
+        [FormerlySerializedAs("connectOnEnable")]
+        [SerializeField] private bool connectOnStart;
+        [SerializeField] private Server server = new Server();
+
+        private IArtelWebSocketTransport webSocketTransport;
+        private bool ownsTransport = true;
         private SceneScanner scanner;
+        private AllSceneScanner allSceneScanner;
         private ActionExecutor actionExecutor;
-        private long nextMessageId = 1;
 
-        public string Url
+        /// <summary>
+        /// 게임이 등록한 cheat 와 behavior. behavior 는 연결과 무관하게 프레임마다 돌아야 하므로 실행기가 아니라 여기서 민다.
+        /// </summary>
+        private GameFunctionActions gameFunctions;
+
+        /// <summary>게임이 찍은 예외와 Error 로그. <c>PULSE</c> 와 <c>ACTION_RESULT</c> 가 함께 읽는다(ARTEL-1218).</summary>
+        private LoggedErrors loggedErrors;
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        /// <summary>이 연결에 마지막으로 보낸 catalog 의 revision. 0 이면 이 연결에는 아직 보내지 않았다.</summary>
+        private long sentCatalogRevision;
+        private float nextCatalogTime;
+#endif
+        private CursorController cursorController;
+        private PointerEventDispatcher pointerEvents;
+        private IJsonCodec jsonCodec;
+        private FrameTimeRecorder frameTimeRecorder;
+        private FrameTimingSampler frameTimingSampler;
+        private ProcessResourceSampler processResourceSampler;
+        private float nextPerformanceReportTime;
+        private float lastPerformanceSampleTime;
+
+        /// <summary>Frame Timing Stats 경고를 한 번만 내기 위한 표시. 매 보고마다 찍으면 로그가 덮인다.</summary>
+        private bool warnedFrameTimingUnavailable;
+        private bool reportedDeviceContext;
+
+        /// <summary>
+        /// 전송이 dial 에 쓰는 자격증명. 쓰는 곳은 <see cref="RefreshTransportCredentials"/> 하나이고
+        /// 그것은 언제나 Unity 메인 스레드에서 돈다. 읽는 쪽은 재연결 타이머 스레드다.
+        /// </summary>
+        private volatile string transportToken = string.Empty;
+        private volatile string transportInstanceId = string.Empty;
+        private ArtelStreamHost streamHost;
+
+
+        /// <summary>
+        /// What the host game had <c>Application.runInBackground</c> set to before this manager
+        /// opened its own connection. See <see cref="StartTransport"/>. It is written only where
+        /// the manager builds its own transport, so a transport handed in with
+        /// <see cref="SetWebSocketTransport"/> and ownership must never reach the restore in
+        /// <see cref="StopTransport"/> — that would put this default back over a host game that
+        /// had the setting on.
+        /// </summary>
+        private bool hostRunInBackground;
+        private bool changedRunInBackground;
+        private long nextMessageId = 1;
+        private readonly Queue<PendingAction> actionRequests = new Queue<PendingAction>();
+        private PendingAction activeDeliveryAction;
+        private bool processingActions;
+        private Coroutine actionCoroutine;
+        private IEnumerator actionWorker;
+        private readonly Stack<IEnumerator> actionStack = new Stack<IEnumerator>();
+        private Func<bool> activeActionIsCurrent;
+        private IArtelWebSocketTransport observedTransport;
+        private long observedConnectionEpoch;
+        private bool resumeReadingsOnConnect;
+        private Affordances.Live.Pulse.Pace readingPace;
+        private bool observedConnected;
+        private float nextRuntimeRecoveryTime;
+        private float nextRuntimeTickTime;
+
+        /// <summary>False on a duplicate that Awake destroyed before it built anything.</summary>
+        [NonSerialized] private bool ownsRuntime;
+
+        /// <summary>Separates the first connection, which is Start's, from a later re-enable.</summary>
+        private bool hasStarted;
+
+        /// <summary>
+        /// <c>RUN_STATUS</c> 가 도착할 때마다 올린다 (ARTEL-835). <c>HandleMessage</c> 가 이미
+        /// Unity 메인 스레드(Update 의 메시지 드레인)에서 도므로, 구독자는 그대로 UI 를
+        /// 만져도 된다 — 스레드를 넘기는 장치가 따로 필요하지 않다.
+        /// </summary>
+        internal event Action<RunStatusMessageDto> RunStatusReceived;
+
+        public string SdkId { get; private set; }
+        public string GameVersion { get; private set; }
+
+        public bool IsEditor { get; private set; }
+
+        /// <summary>대시보드에서 이 설치를 알아볼 첫 이름. 서버가 등록 때 한 번만 쓴다.</summary>
+        public string InstanceName { get; private set; }
+
+        public Server Server { get { return server; } }
+        public bool SmoothCursorMovement
         {
-            get { return "ws://" + bindAddress + ":" + port + "/ws"; }
+            get { return cursorController != null && cursorController.SmoothMovement; }
+            set
+            {
+                if (cursorController != null)
+                {
+                    cursorController.SmoothMovement = value;
+                }
+            }
         }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        /// <summary>
+        /// 실행 인자를 한 번만 읽어 둔 것 (ARTEL-787). <see cref="InstallLaunchSession"/> 이 먼저
+        /// 만들고 <see cref="SpawnInDevelopmentBuilds"/> 가 같은 것을 읽는다.
+        /// </summary>
+        /// <remarks>
+        /// 정적 필드에 두는 것이 안전한 이유는 두 훅이 한 프로세스에서 한 번씩만, 같은 스레드에서,
+        /// 어떤 <c>Awake</c> 보다도 먼저 돌기 때문이다 — 두 번째로 쓰는 사람도 경쟁하는 사람도 없다.
+        /// 두 번 파싱하지 않는 것이 요점이다. 인자를 다시 읽으면 오류 문구도 다시 나와, 무인 실행의
+        /// 로그에 같은 줄이 두 번 남고 어느 쪽이 무엇을 적용했는지 흐려진다.
+        /// </remarks>
+        private static ArtelLaunchArguments launchArguments;
+
+        private static ArtelLaunchArguments LaunchArguments
+        {
+            get { return launchArguments ?? (launchArguments = ArtelLaunchArguments.ReadFromProcess()); }
+        }
+
+        /// <summary>
+        /// 실행 인자를 읽고 종료 전용 로그아웃을 처리한다.
+        /// 토큰은 매니저의 Awake에서 실제 서버 주소를 정한 다음 저장한다.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void InstallLaunchSession()
+        {
+            LaunchArguments.LogErrors();
+            if (LaunchArguments.ClearsSessionOnly)
+            {
+                var logoutServer = new Server();
+                var savedUrl = PlayerPrefs.GetString(ArtelOwnedPlayerPrefs.ServerUrl, "");
+                if (!string.IsNullOrEmpty(savedUrl)) logoutServer = new Server(savedUrl);
+                LaunchArguments.ConfigureServer(logoutServer);
+                LaunchArguments.InstallSession(logoutServer);
+            }
+
+            // -artel-window-label 은 세션이 아니라 이번 실행 하나만의 값이므로
+            // ArtelSdkSession 을 거치지 않고 ArtelWindowLabel 에 직접 둔다. 오버레이는
+            // 자기 CreateGui 에서 이 값을 읽는다 (ARTEL-826).
+            ArtelWindowLabel.Value = LaunchArguments.WindowLabel;
+
+            // 지우러 온 것뿐인 실행은 여기서 끝난다. 씬을 띄우고 오버레이를 그려 봐야 할 일이
+            // 없고, 부르는 쪽은 프로세스가 끝나는 것으로 다 지워진 것을 안다. 계정을 바꾸러 온
+            // 실행(토큰이나 프로젝트를 함께 준 실행)은 그대로 게임을 이어 간다.
+            if (LaunchArguments.ClearsSessionOnly)
+            {
+                Debug.Log("[Artel] 저장된 세션을 지우고 종료합니다 (-artel-logout).");
+                Application.Quit(0);
+            }
+        }
+
+        /// <summary>
+        /// Editor and development builds get a manager even when no scene carries one:
+        /// a QA run has to be able to attach to a build nobody prepared for it. The
+        /// whole method is compiled out of release builds. Runs after the first scene
+        /// loads so a manager the scene does carry — with its configured server —
+        /// keeps the spot.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void SpawnInDevelopmentBuilds()
+        {
+            if (instance != null)
+            {
+                // 씬의 매니저가 Awake에서 주소와 인증 상태를 설정했다.
+                return;
+            }
+
+
+            // 우리가 만든 오브젝트라 통째로 계기다 (ARTEL-698). 사용자가 자기 씬 오브젝트에
+            // 매니저를 붙이는 경우(README 가 안내하는 쪽)에는 이 표시를 달 수 없다 — 그 오브젝트는
+            // 게임 것이고, 샘플 게임에서는 `StageDataSingleton` 이 거기 산다. 그래서 오버레이는
+            // 각자 자기 캔버스에 표시를 단다.
+            var host = new GameObject("Artel");
+            host.AddComponent<Instrument>();
+            host.AddComponent<ArtelManager>();
+        }
+#endif
 
         private void Awake()
         {
+            // The socket has to outlive the scene it was opened in. A QA run acts
+            // on the game, and acting frequently loads another scene — which used
+            // to destroy this object mid-run, closing the connection and failing
+            // the run at exactly the moment the interesting part began.
+            if (instance != null && instance != this)
+            {
+                // A second manager appears when a scene carrying one is loaded
+                // again. Keeping the first preserves the live connection; the
+                // newcomer would open a second and be rejected as a duplicate.
+                Destroy(gameObject);
+                return;
+            }
+
+            var savedServerUrl = PlayerPrefs.GetString(ArtelOwnedPlayerPrefs.ServerUrl, "");
+            if (!string.IsNullOrEmpty(savedServerUrl)) server = new Server(savedServerUrl);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            LaunchArguments.ConfigureServer(server);
+            LaunchArguments.InstallSession(server);
+#else
+            ArtelSdkSession.UseServer(server);
+#endif
+            instance = this;
+            transform.SetParent(null);
+            DontDestroyOnLoad(gameObject);
+
+            EnsureRuntime();
+        }
+
+        /// <summary>
+        /// Builds everything this manager owns, once.
+        /// </summary>
+        /// <remarks>
+        /// Reachable from <see cref="SetWebSocketTransport"/> as well as <see cref="Awake"/>
+        /// because Unity orders Awake and OnEnable between components arbitrarily.
+        /// <c>ArtelTestPageManager</c> installs its transport from its own <c>OnEnable</c>, which
+        /// can land before this manager's <c>Awake</c>; that used to throw a
+        /// <c>NullReferenceException</c> on the fields this method builds, partway through
+        /// installing the transport. The half-installed state was the damaging part: the transport
+        /// field was already assigned, so this manager then refused to connect to orchestration —
+        /// while the throw had skipped the test page's own server startup, leaving the game
+        /// reachable from nowhere.
+        /// </remarks>
+        private void EnsureRuntime()
+        {
+            if (ownsRuntime && frameTimeRecorder != null && frameTimingSampler != null &&
+                streamHost != null && actionExecutor != null && gameFunctions != null)
+            {
+                return;
+            }
+
+            if (ownsRuntime) ResetConnectionRuntime(false);
+            else CancelActions();
+            ownsRuntime = false;
+
             scanner = new SceneScanner();
-            actionExecutor = new ActionExecutor(scanner);
+            allSceneScanner = new AllSceneScanner(scanner);
+            cursorController = GetComponent<CursorController>();
+            if (cursorController == null)
+            {
+                cursorController = gameObject.AddComponent<CursorController>();
+            }
+
+            var overlayController = GetComponent<ArtelOverlayController>();
+            if (overlayController == null)
+            {
+                overlayController = gameObject.AddComponent<ArtelOverlayController>();
+            }
+
+            var keyboardStatus = GetComponent<KeyboardStatusController>();
+            if (keyboardStatus == null)
+            {
+                keyboardStatus = gameObject.AddComponent<KeyboardStatusController>();
+            }
+
+            pointerEvents = new PointerEventDispatcher();
+            jsonCodec = new NewtonsoftJsonCodec();
+            gameFunctions = new GameFunctionActions();
+            loggedErrors?.Dispose();
+            loggedErrors = new LoggedErrors();
+            loggedErrors.Listen();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Affordances.Live.LiveState.Attachment = new PulseAttachmentSet(
+                new GameFunctionPulse(gameFunctions),
+                new ErrorPulse(loggedErrors),
+                new AudioPulse(),
+                new EngineEventPulse());
+#endif
+            actionExecutor = new ActionExecutor(
+                scanner,
+                cursorController,
+                pointerEvents,
+                // 캡처가 잡는 프레임에서 keyboard status 패널과 Artel Overlay Canvas 를 끄려면 그 둘을
+                // 그리는 컨트롤러가 필요하다 (ARTEL-881, ARTEL-905).
+                new ScreenCapturer(keyboardStatus, overlayController),
+                // The credentials are read at upload time, not now: onboarding may still be
+                // waiting for the player to sign in, and a capture asked for before that should
+                // say so rather than upload with a stale value.
+                new CaptureUploader(
+                    jsonCodec,
+                    () => server,
+                    () => ArtelSdkSession.IsFor(server) ? ArtelSdkSession.LoadToken() : string.Empty,
+                    ArtelSdkSession.LoadInstanceId),
+                this,
+                // 순회가 씬을 하나씩 띄우는 그 자리에서 화면도 한 장씩 뜬다. 같은 capturer 를 쓰는 이유는 back buffer 를
+                // 읽는 경로가 하나뿐이어야 `capture_screen` 이 보는 것과 근거에 실리는 것이 갈라지지 않기 때문이다.
+                new WalkedEvidenceScan(new ScreenCapturer(keyboardStatus, overlayController)),
+                // 캡처와 축이 다르다. 근거 문서는 살아 있는 인스턴스가 아니라 빌드에 붙으므로 gameBuildId 를 읽는다.
+                new EvidenceUploader(
+                    jsonCodec,
+                    () => server,
+                    () => ArtelSdkSession.IsFor(server) ? ArtelSdkSession.LoadToken() : string.Empty,
+                    ArtelSdkSession.LoadGameBuildId),
+                gameFunctions,
+                // 스캔 진행은 액션 큐 밖에서 지금 연결로 바로 나간다(ARTEL-1177).
+                new WebSocketEvidenceScanProgress(jsonCodec, () => webSocketTransport));
+            frameTimeRecorder = new FrameTimeRecorder();
+            frameTimingSampler = new FrameTimingSampler();
+
+            // 읽을 수 없는 플랫폼이면 null이 온다. 그 경우 보고에서 process 항목을 통째로 뺀다.
+            processResourceSampler = ProcessResourceSampler.CreateForCurrentPlatform();
+
+            var streamSignals = new WebSocketStreamSignalSender(jsonCodec, () => webSocketTransport);
+            streamHost = new ArtelStreamHost(
+                jsonCodec,
+                streamSignals,
+                new WebSocketStreamSessionFactory(this, streamSignals));
+
+            SdkId = ArtelSdkIdentity.LoadOrCreate();
+            GameVersion = Application.version;
+            IsEditor = Application.isEditor;
+            InstanceName = SystemInfo.deviceName;
+            ownsRuntime = true;
         }
 
         private void OnEnable()
         {
-            if (startServerOnEnable)
+            // script reload 뒤에는 Awake가 다시 실행되지 않고 일반 C# 객체는 사라진다.
+            // 중복 매니저는 runtime을 만들거나 기존 매니저의 연결을 건드리지 않는다.
+            if (instance != null && instance != this)
             {
-                StartServer();
+                return;
+            }
+
+            instance = this;
+            if (!TryEnsureRuntime()) return;
+
+            // Only a re-enable reaches this. The first connection is Start's, and until Start has
+            // run there is nothing here to repeat.
+            if (hasStarted && connectOnStart)
+            {
+                StartTransport();
+            }
+        }
+
+        /// <summary>
+        /// Opens the first connection.
+        /// </summary>
+        /// <remarks>
+        /// Not <c>OnEnable</c>: another component in the scene may install the transport this
+        /// manager should use — <c>ArtelTestPageManager</c> does, to serve its local page — and it
+        /// does so from its own <c>OnEnable</c>. Unity does not order those against each other, so
+        /// connecting from <c>OnEnable</c> made the winner of that race decide where the game
+        /// connected: win it and this manager opened its own socket to orchestration, after which
+        /// the test page stood down and was never served. The one ordering Unity does guarantee is
+        /// that every <c>OnEnable</c> precedes every <c>Start</c>, so this is the earliest point at
+        /// which an injected transport is certain to have arrived.
+        /// </remarks>
+        private void Start()
+        {
+            hasStarted = true;
+            if (connectOnStart)
+            {
+                StartTransport();
             }
         }
 
         private void OnDisable()
         {
-            StopServer();
+            StopTransport();
+        }
+
+        private void OnDestroy()
+        {
+            // 로그 구독은 이 객체가 만든 것이므로 살아남은 매니저인지와 상관없이 푼다.
+            loggedErrors?.Dispose();
+
+            // Only the surviving manager clears the slot. A duplicate destroying
+            // itself in Awake must not blank the reference to the live one, or the
+            // next scene load would let a third instance through.
+            if (instance == this)
+            {
+                instance = null;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Affordances.Live.LiveState.Attachment = null;
+#endif
+            }
         }
 
         private void Update()
         {
-            if (server == null)
+            if (Time.unscaledTime < nextRuntimeTickTime) return;
+            try { UpdateRuntime(); }
+            catch (Exception exception)
             {
-                return;
-            }
-
-            while (server.TryDequeueMessage(out var message))
-            {
-                HandleMessage(message);
+                ResetConnectionRuntime(false);
+                ownsRuntime = false;
+                nextRuntimeTickTime = Time.unscaledTime + 5f;
+                Debug.LogWarning("[Artel] Runtime update failed; rebuilding in 5s: " + exception.Message);
             }
         }
 
-        public void StartServer()
+        private void UpdateRuntime()
         {
-            if (server != null)
+            if (!ownsRuntime)
             {
-                return;
+                if (instance != this || Time.unscaledTime < nextRuntimeRecoveryTime || !TryEnsureRuntime()) return;
             }
 
-            server = ArtelWebSocketServerFactory.Create(bindAddress, port);
-            server.Start();
-            Debug.Log("[Artel] WebSocket server started at " + Url);
+            using (ArtelProfilerMarkers.ManagerUpdate.Auto())
+            {
+                ObserveConnection();
+                RecordFrameTime();
+
+                // Before AdvanceFrame, so the frame the person asks for the pointer is already
+                // theirs.
+                if (ArtelInput.PointerHeldForRun && IsPointerTakeoverPressed())
+                {
+                    TakePointerBack();
+                }
+
+                ArtelInput.AdvanceFrame();
+
+                // Ahead of the transport check on purpose: the lease is a dead-man timer, so it has to
+                // keep running when the socket is the thing that died.
+                using (ArtelProfilerMarkers.ManagerPumpStreaming.Auto())
+                {
+                    PumpStreaming();
+                }
+
+                // 이것도 전송 검사 앞이다. behavior 의 timeout 과 target_gone 은 소켓이 없어도 지켜져야 한다.
+                PumpGameFunctions();
+
+                if (webSocketTransport == null)
+                {
+                    return;
+                }
+
+                using (ArtelProfilerMarkers.ManagerHandleMessage.Auto())
+                {
+                    while (webSocketTransport.TryDequeueMessage(out var message))
+                    {
+                        HandleMessage(message);
+                    }
+                }
+
+                using (ArtelProfilerMarkers.ManagerPerformanceReport.Auto())
+                {
+                    SendPerformanceReport();
+                }
+            }
         }
 
-        public void StopServer()
+        /// <summary>
+        /// 실시간 서버로 연결을 건다. dial 을 시작했으면 true.
+        /// </summary>
+        /// <remarks>
+        /// 거짓말하지 않는 것이 이 반환값의 일이다. 아래 두 경로는 경고만 남기고 돌아서는데,
+        /// 그것을 부르는 쪽에서 성공과 구분할 수 없으면 오버레이는 아무것도 연결되지 않은 화면에
+        /// 초록색 "연결을 시작했습니다"를 적는다(ARTEL-842).
+        /// </remarks>
+        public bool StartTransport()
         {
-            if (server == null)
+            if (!TryEnsureRuntime()) return false;
+
+            if (webSocketTransport == null)
+            {
+                if (!ArtelSdkSession.IsFor(server) || !ArtelSdkSession.TryLoadToken(out _) ||
+                    !ArtelSdkSession.TryLoadInstanceId(out _))
+                {
+                    Debug.LogWarning(
+                        "[Artel] WebSocket transport needs a signed-in session and a registered instance.");
+                    return false;
+                }
+
+                // 값이 아니라 읽는 방법을 넘긴다. 재연결은 dial 마다 다시 읽으므로, 토큰을 refresh
+                // 하거나 인스턴스를 다시 등록한 뒤의 재연결이 새 값으로 간다. 읽는 것은
+                // ArtelSdkSession 이 아니라 아래 스냅샷이다 — 그 이유는 RefreshTransportCredentials 참고.
+                webSocketTransport = new ArtelWebSocketClient(
+                    server, () => transportToken, () => transportInstanceId);
+                ownsTransport = true;
+
+                // This is the host game's own Player Setting, and the SDK ships inside customer
+                // builds — so it is held for exactly as long as this connection, and put back in
+                // StopTransport. A build that never connects to Artel keeps whatever its Player
+                // Settings say.
+                //
+                // Without it, losing window focus stops Update, and with it the WebRTC encode
+                // pump, the screen capture loop, and the drain of the incoming message queue. The
+                // QA run switching to a browser to watch the stream is precisely what would kill
+                // it — and nothing would come back, because the messages that drive the run are
+                // read in Update too.
+                //
+                // Saved here rather than beside the Start call below because this block is the
+                // only part of StartTransport that a second call cannot re-enter: the overlay's
+                // 연결 button reaches StartTransport while already connected, and reading the
+                // value there would remember the true we ourselves just wrote.
+                //
+                // It does nothing on mobile, where the OS suspends the app outright. What covers
+                // that is StreamLease refusing to charge a suspended stretch against the lease.
+                hostRunInBackground = Application.runInBackground;
+                Application.runInBackground = true;
+                changedRunInBackground = true;
+            }
+
+            if (!ownsTransport)
+            {
+                // A transport was injected by something else in the scene — ArtelTestPageManager
+                // does this to serve its own local page. Saying so beats returning in silence,
+                // which reads exactly like a successful connection from every layer above.
+                Debug.LogWarning(
+                    "[Artel] WebSocket transport is owned by another component, " +
+                    "so this game will not connect to the orchestration server. " +
+                    "Remove ArtelTestPageManager from the scene to connect.");
+
+                // discovery 는 이미 따라가고 있다: 그 전송을 설치한 쪽은 SetWebSocketTransport 를 거쳤고 그것이 시작시킨다. 여기서
+                // 다시 시작하면 같은 연결에 대한 두 번째 주장이 되고, 둘 중 하나가 움직이는 순간 어긋난다.
+                return false;
+            }
+
+            RefreshTransportCredentials();
+            webSocketTransport.Start();
+            BeginDiscovery();
+            Debug.Log("[Artel] WebSocket transport started.");
+            return true;
+        }
+
+        /// <summary>
+        /// 전송이 dial 에 쓸 자격증명을 지금 값으로 새로 뜬다.
+        /// </summary>
+        /// <remarks>
+        /// 스냅샷을 두는 이유는 저장소를 읽는 자리가 Unity 메인 스레드여야 하기 때문이다.
+        /// <see cref="ArtelSdkSession"/> 을 재연결 타이머 안에서 바로 읽게 두면 세 가지가 한꺼번에
+        /// 어긋난다: <c>PlayerPrefs</c> 를 메인 스레드 밖에서 만지고, 만료된 토큰을 만나면 그 자리에서
+        /// <c>Clear</c> 가 세션을 지우며, macOS 의 비밀 저장소는 <c>/usr/bin/security</c> 를 최대
+        /// 15초 기다린다 — 그동안 전송의 자물쇠가 잡혀 있어 <see cref="StopTransport"/> 까지 멈춘다.
+        ///
+        /// 프레임마다 뜨지 않고 여기서만 뜨는 것으로 충분하다. 토큰이나 instanceId 가 달라진 뒤에
+        /// dial 이 일어나는 길은 전부 <see cref="StartTransport"/> 를 지난다 — 등록이 끝나면
+        /// 오버레이가 그것을 부르고, 재연결은 이 스냅샷을 그대로 다시 쓴다.
+        /// </remarks>
+        private void RefreshTransportCredentials()
+        {
+            transportToken = ArtelSdkSession.LoadToken();
+            transportInstanceId = ArtelSdkSession.LoadInstanceId();
+        }
+
+        /// <summary>
+        /// 전송이 지금 어디에 있는지. 오버레이가 프레임마다 읽는다.
+        /// </summary>
+        internal ArtelTransportPhase TransportPhase
+        {
+            get
+            {
+                return webSocketTransport == null
+                    ? ArtelTransportPhase.Idle
+                    : webSocketTransport.Phase;
+            }
+        }
+
+        /// <summary>
+        /// 이제 지켜볼 누군가가 연결됐으므로 게임을 읽기 시작한다.
+        /// </summary>
+        /// <remarks>
+        /// 인스턴스를 연결하는 것이 동의다. 게임은 여러 이유로 이 SDK 를 나르고 그중 하나만이 QA 다 — 화면을 스트리밍하거나 프레임
+        /// 시간을 재는 프로젝트는 씬 로드마다 스캔되기를 청한 적도, 플레이어의 디스크에 리포트가 나타나기를 청한 적도 없다. 그저
+        /// 게임을 시작하는 것만으로 그 둘이 다 일어나곤 했다.
+        ///
+        /// 전송이 존재하게 되는 자리마다 불리고, 그것은 두 곳이다: <see cref="StartTransport"/> 가 제 것을 만들 때와,
+        /// <see cref="SetWebSocketTransport"/> 가 하나를 건네받을 때. 두 번째가 로컬 테스트 페이지가 연결하는 방식이고 그쪽은
+        /// StartTransport 에 아예 닿지 않는다 — 그래서 앞쪽에만 둔 시작은 테스트 페이지 경로 전체를 아무도 연결되지 않은 것으로
+        /// 읽는다.
+        ///
+        /// 완료된 핸드셰이크가 아니라 전송을 가지는 것이 방아쇠다. 소켓은 비동기로 열리고 테스트 페이지의 서버는 어떤 브라우저가
+        /// 붙기 전부터 듣고 있으므로, 반대쪽 끝을 기다리면 첫 스캔이 예측할 수 없는 순간에 도착하거나 아무도 열지 않는 페이지에
+        /// 대해서는 영영 오지 않는다. 연결을 청하는 것이 동의이고, 핸드셰이크는 배관이다.
+        /// </remarks>
+        private void BeginDiscovery()
+        {
+            Affordances.Scan.AffordanceBootstrap.Follow();
+        }
+
+        /// <summary>연결이 사라지면 게임 읽기를 멈춘다.</summary>
+        /// <remarks>
+        /// 여기서 시작시킨 것이 없는데도 판독도 여기서 멈춘다. 연결이 끊겨 끝나는 세션은 <see cref="StopReadings"/> 를 부를
+        /// 기회를 얻지 못하고, 돌게 남겨진 박자는 게임이 떠 있는 내내 아무도 읽지 않을 파일에 쓴다.
+        /// </remarks>
+        private void EndDiscovery()
+        {
+            Affordances.Scan.AffordanceBootstrap.StopFollowing();
+            StopReadings();
+        }
+
+        /// <summary>
+        /// 라이브 판독을 시작하고, 지금 돌고 있는지를 말한다.
+        /// </summary>
+        /// <remarks>
+        /// 연결로 함의되는 것이 아니라 청해지는 것이고, 그 분리가 이 메서드의 전부다. 연결은 도구가 봐도 된다고 말하고, 세션은
+        /// 실행이 시작됐다고 말하며, 그것이 언제인지는 실행을 모는 쪽만 안다.
+        ///
+        /// 그 값이 얼마인지 재기 전까지 둘은 같은 순간이었다. 모든 씬을 도는 순회도 연결에서 시작하고 그것은 아무도 걸어가지 않은
+        /// 화면을 방문한다 — 그래서 그 곁에서 찍은 판독은 플레이어가 본 적 없는 화면에 게임이 있다고 보고한다. 샘플 게임에서
+        /// 실측했다: 순회 동안 찍은 판독은 8초에 125,548 바이트였고 플레이어가 있은 적 없는 씬 셋을 서술했다. 순회 뒤에 시작한
+        /// 같은 채널은 4,369 바이트짜리 판독 하나를 쓰고 14초 동안 아무것도 쓰지 않았다.
+        ///
+        /// 독자가 걸러 낼 수 있는 잡음도 아니다. 판독은 자기가 순회 중이라고 말하지 않으므로 걸러 낼 근거가 그 안에 없다.
+        ///
+        /// 멱등이다: 이미 읽고 있는 동안의 두 번째 호출은 참으로 답하고 아무것도 바꾸지 않는다.
+        /// </remarks>
+        public bool StartReadings()
+        {
+            return StartReadings(Affordances.Live.Pulse.Pace.Default);
+        }
+
+        public bool StartReadings(Affordances.Live.Pulse.Pace pace)
+        {
+            if (Affordances.Scan.AffordanceBootstrap.Watching)
+            {
+                return true;
+            }
+
+            // 연결이 있으면 판독은 그 소켓으로 나간다. 없으면 sink 를 건네지 않아 예전대로
+            // 파일로 떨어진다 — 아무도 듣고 있지 않을 때에도 채널을 지켜볼 수 있어야 한다는
+            // 것이 이 채널을 만들 때의 규율이고, 연결이 없다는 것이 그것을 거둘 이유는 아니다.
+            var sink = webSocketTransport == null
+                ? null
+                : new WebSocketPulseSink(() => webSocketTransport, () => nextMessageId++);
+
+            if (!Affordances.Scan.AffordanceBootstrap.WatchLiveState(sink, pace))
+                return false;
+
+            readingPace = pace;
+            return true;
+        }
+
+        /// <summary>라이브 판독을 끝낸다. 한 번도 시작하지 않았을 때 불러도 안전하다.</summary>
+        public void StopReadings()
+        {
+            resumeReadingsOnConnect = false;
+            Affordances.Scan.AffordanceBootstrap.StopWatching();
+        }
+
+        public bool FlushReadings()
+        {
+            return Affordances.Scan.AffordanceBootstrap.FlushReadings();
+        }
+
+        public bool ResyncReadings()
+        {
+            return Affordances.Scan.AffordanceBootstrap.ResyncReadings();
+        }
+
+        /// <summary>라이브 판독이 돌고 있는지.</summary>
+        internal bool Reading => Affordances.Scan.AffordanceBootstrap.Watching;
+
+        public void StopTransport()
+        {
+            // A manager that lost the duplicate race in Awake returned before building any of this,
+            // and is then destroyed — which calls OnDisable, which lands here. It owns no socket,
+            // no stream and no dispatcher, so there is nothing to stop and every field below is
+            // null.
+            if (!ownsRuntime && actionExecutor == null && streamHost == null && webSocketTransport == null)
             {
                 return;
             }
 
-            server.Dispose();
-            server = null;
-            Debug.Log("[Artel] WebSocket server stopped.");
+            // Before the socket goes, so the closing STREAM_STATE still has somewhere to go and
+            // capture never outlives the connection that asked for it.
+            ResetConnectionRuntime();
+            Cleanup(EndDiscovery, "discovery");
+
+            if (webSocketTransport == null)
+            {
+                return;
+            }
+
+            if (!ownsTransport)
+            {
+                return;
+            }
+
+            var closingTransport = webSocketTransport;
+            webSocketTransport = null;
+            observedTransport = null;
+            Cleanup(closingTransport.Stop, "transport stop");
+            Cleanup(closingTransport.Dispose, "transport dispose");
+
+            // The connection this was taken for is gone, so the host game gets its setting back.
+            if (changedRunInBackground)
+            {
+                Application.runInBackground = hostRunInBackground;
+                changedRunInBackground = false;
+            }
+
+            Debug.Log("[Artel] WebSocket transport stopped.");
         }
 
-        private void HandleMessage(ArtelClientMessage message)
+        /// <summary>
+        /// Lets go of every key and button the agent was holding, and ends any drag in progress on
+        /// the game's own terms so its handler sees the end it was waiting for. The run's hold on
+        /// the pointer goes with them.
+        /// </summary>
+        private void ReleaseAgentInput()
         {
             try
             {
-                var root = MiniJson.ParseObject(message.Text);
-                var type = MiniJson.GetString(root, "type");
-                var method = MiniJson.GetString(root, "method");
-
-                if (type == "ACTION")
-                {
-                    HandleAction(root);
-                    return;
-                }
-
-                if (method == "scan_scene" || type == "SCAN_SCENE" || type == "GET_GAME_STATE")
-                {
-                    SendGameState(message.Connection);
-                    return;
-                }
-
-                SendError(message.Connection, "Unsupported message. Use JSON-RPC method scan_scene or ACTION.");
+                pointerEvents?.ReleaseAll();
             }
-            catch (Exception exception)
+            finally
             {
-                SendError(message.Connection, "Invalid message: " + exception.Message);
+                ArtelInput.ReleaseAllVirtualInput();
+                ArtelInput.PointerHeldForRun = false;
             }
         }
 
-        private void HandleAction(Dictionary<string, object> root)
+        private void ObserveConnection()
         {
-            var actions = MiniJson.GetArray(root, "actions");
+            var connected = webSocketTransport != null && webSocketTransport.IsConnected;
+            var epoch = (webSocketTransport as IArtelConnectionEpochSource)?.ConnectionEpoch ?? 0;
+            if (observedTransport == webSocketTransport && observedConnected == connected &&
+                observedConnectionEpoch == epoch) return;
+
+            // 1프레임 사이에 끊겼다가 다시 붙어도 epoch가 바뀌면 이전 실행은 폐기한다.
+            if (observedTransport != null)
+            {
+                var resume = ReferenceEquals(observedTransport, webSocketTransport)
+                    && (resumeReadingsOnConnect || Affordances.Scan.AffordanceBootstrap.Watching);
+                ResetConnectionRuntime(false);
+                resumeReadingsOnConnect = resume;
+            }
+            observedTransport = webSocketTransport;
+            observedConnected = connected;
+            observedConnectionEpoch = epoch;
+
+            // 새 관찰은 이전 델타 기준을 버리고 현재 씬의 전체 상태부터 보낸다.
+            if (connected && resumeReadingsOnConnect)
+            {
+                resumeReadingsOnConnect = false;
+                StartReadings(readingPace);
+            }
+        }
+
+        private bool TryEnsureRuntime()
+        {
+            try
+            {
+                EnsureRuntime();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                // 매 frame 같은 예외를 내지 않고 다음 초기화를 5초 뒤에 다시 시도한다.
+                ownsRuntime = false;
+                nextRuntimeRecoveryTime = Time.unscaledTime + 5f;
+                Debug.LogWarning("[Artel] Runtime initialization failed; retrying in 5s: " + exception.Message);
+                return false;
+            }
+        }
+
+        private void ResetConnectionRuntime(bool reportEndings = true)
+        {
+            CancelActions();
+            Cleanup(() => actionExecutor?.RestoreTimeScale(), "time scale");
+            Cleanup(() =>
+            {
+                if (reportEndings) streamHost?.Stop();
+                else streamHost?.Abandon();
+            }, "stream");
+            Cleanup(ReleaseAgentInput, "input");
+            Cleanup(StopReadings, "readings");
+            Cleanup(() => gameFunctions?.EndRun("connection closed"), "behaviors");
+            if (gameFunctions != null)
+            {
+                if (reportEndings) Cleanup(SendBehaviorEndedFrames, "behavior results");
+                else while (gameFunctions.TryDequeueEnded(out _)) { }
+            }
+            reportedDeviceContext = false;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            sentCatalogRevision = 0;
+#endif
+        }
+
+        private static void Cleanup(Action cleanup, string operation)
+        {
+            try { cleanup(); }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("[Artel] " + operation + " cleanup failed: " + exception.Message);
+            }
+        }
+
+        private void CancelActions()
+        {
+            CompleteInterruptedActions();
+            actionRequests.Clear();
+            if (actionCoroutine != null) StopCoroutine(actionCoroutine);
+            var endingWorker = actionWorker;
+            actionWorker = null;
+            actionCoroutine = null;
+            Cleanup(() => (endingWorker as IDisposable)?.Dispose(), "action worker");
+            DisposeActionStack();
+            processingActions = false;
+            activeActionIsCurrent = null;
+        }
+
+        private void CompleteInterruptedActions()
+        {
+            CompleteInterruptedAction(activeDeliveryAction);
+            foreach (var pending in actionRequests) CompleteInterruptedAction(pending);
+        }
+
+        private void CompleteInterruptedAction(PendingAction pending)
+        {
+            if (pending?.Delivery == null || pending.Delivery.Result != null) return;
+            pending.Delivery.Complete(jsonCodec.Serialize(DeliveryFailure(pending.Request,
+                "ACTION interrupted; execution outcome unknown. The request will not execute again.")));
+        }
+
+        private void DisposeActionStack()
+        {
+            while (actionStack.Count > 0)
+            {
+                var endingAction = actionStack.Pop();
+                Cleanup(() => (endingAction as IDisposable)?.Dispose(), "action");
+            }
+        }
+
+        internal bool HasWebSocketTransport { get { return webSocketTransport != null; } }
+
+        /// <summary>
+        /// Releases a transport this manager does not own, so the component that installed one
+        /// can hand the connection back when it is switched off.
+        /// </summary>
+        internal void ClearWebSocketTransport(IArtelWebSocketTransport transport)
+        {
+            if (ownsTransport || webSocketTransport != transport)
+            {
+                return;
+            }
+
+            ResetConnectionRuntime();
+            webSocketTransport = null;
+            ownsTransport = true;
+
+            // 읽기를 청한 연결이 사라졌으므로 읽기도 함께 간다 — 이 매니저가 스스로 만든 전송에 대해 StopTransport 가 지키는 것과
+            // 같은 짝짓기다.
+            EndDiscovery();
+        }
+
+        /// <summary>
+        /// Sends captures somewhere other than orchestration, until <see cref="RestoreCaptureUploader"/>.
+        /// </summary>
+        /// <remarks>
+        /// 전송을 건네받는 것과 같은 짝짓기다. 그리고 같은 컴포넌트가 쓴다 — 테스트 페이지는 오케스트레이션의
+        /// 티켓 엔드포인트를 못 쓴다. 그쪽은 실행 중인 QA 가 없는 인스턴스를 거절하고, 테스트 페이지에서 찍는
+        /// 캡처는 전부 그 경우다.
+        /// </remarks>
+        internal void SetCaptureUploader(ICaptureUploader uploader)
+        {
+            // 전송과 같은 이유로 여기서도 부른다: 설치하는 쪽이 이 매니저의 Awake 보다 먼저 돌 수 있다.
+            EnsureRuntime();
+            actionExecutor.SetCaptureUploader(uploader);
+        }
+
+        internal void RestoreCaptureUploader()
+        {
+            if (actionExecutor == null)
+            {
+                return;
+            }
+
+            actionExecutor.RestoreCaptureUploader();
+        }
+
+        internal void SetWebSocketTransport(IArtelWebSocketTransport transport, bool takeOwnership)
+        {
+            // The installer may run before this manager's own Awake, and what follows reads state
+            // that Awake builds.
+            EnsureRuntime();
+
+            if (webSocketTransport != null)
+            {
+                throw new InvalidOperationException("WebSocket transport is already configured.");
+            }
+
+            webSocketTransport = transport ?? throw new ArgumentNullException(nameof(transport));
+            ownsTransport = takeOwnership;
+
+            // 주입된 전송도 다른 것과 마찬가지로 하나의 연결이다. 로컬 테스트 페이지는 여기로만 도착하고 — StartTransport 를 결코
+            // 부르지 않는다 — 그래서 그 실행이 게임을 읽겠다고 청하는 누군가로 인식될 수 있는 유일한 자리가 여기다.
+            BeginDiscovery();
+        }
+
+        internal bool CanChangeServer => !processingActions && ownsTransport;
+
+        public void SetServer(Server configuredServer)
+        {
+            if (webSocketTransport != null || processingActions)
+            {
+                throw new InvalidOperationException("Server cannot change after WebSocket transport is configured.");
+            }
+
+            if (configuredServer == null) throw new ArgumentNullException(nameof(configuredServer));
+            ArtelSdkSession.UseServer(configuredServer);
+            server = new Server(configuredServer.HttpBaseUri.AbsoluteUri);
+        }
+
+        private void HandleMessage(ArtelWebSocketMessage message)
+        {
+            if (!message.IsCurrent()) return;
+            try
+            {
+                var request = jsonCodec.Deserialize<ArtelRequestDto>(message.Text);
+                if (request == null)
+                {
+                    throw new InvalidOperationException("Message body is empty.");
+                }
+
+                if (request.Type == "ACTION")
+                {
+                    EnqueueAction(message, request);
+                    return;
+                }
+
+                if (request.Type == "RUN_STATUS")
+                {
+                    HandleRunStatus(message.Text);
+                    return;
+                }
+
+                if (request.Type == "CANCEL_EVIDENCE_SCAN")
+                {
+                    HandleCancelEvidenceScan();
+                    return;
+                }
+
+                if (streamHost.TryHandleMessage(request.Type, message.Text, Time.unscaledTime))
+                {
+                    return;
+                }
+
+                if (request.Method == "scan_scene" || request.Type == "SCAN_SCENE" || request.Type == "GET_GAME_STATE")
+                {
+                    ReplyWithGameState(message);
+                    return;
+                }
+
+                SendError(message, "Unsupported message. Use JSON-RPC method scan_scene or ACTION.");
+            }
+            catch (Exception exception)
+            {
+                SendError(message, "Invalid message: " + exception.Message);
+            }
+        }
+
+        private void EnqueueAction(ArtelWebSocketMessage message, ArtelRequestDto request)
+        {
+            ActionDeliveryJournal.Entry delivery = null;
+            if (request.Delivery != null)
+            {
+                var journal = (webSocketTransport as IArtelActionDeliverySource)?.ActionDelivery;
+                if (journal == null)
+                {
+                    message.Reply(jsonCodec.Serialize(DeliveryFailure(request, "ACTION delivery is not supported by this transport.")));
+                    return;
+                }
+                delivery = journal.Register(request, message.Text, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    out var added, out var error);
+                if (delivery == null)
+                {
+                    message.Reply(jsonCodec.Serialize(DeliveryFailure(request, error)));
+                    return;
+                }
+                // 등록된 요청은 ACK 전송이 실패해도 다시 실행하지 않는다.
+                var pending = new PendingAction(message, request, delivery);
+                if (added) actionRequests.Enqueue(pending);
+                try
+                {
+                    message.Reply(jsonCodec.Serialize(new ActionAcceptedMessage
+                    {
+                        RequestId = request.Id,
+                        ProcessId = journal.ProcessId
+                    }));
+                    if (delivery.Result != null) message.Reply(delivery.Result);
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning("[Artel] ACTION acknowledgement send failed: " + exception.Message);
+                }
+                if (!added) return;
+            }
+            else actionRequests.Enqueue(new PendingAction(message, request, null));
+            if (!processingActions)
+            {
+                actionWorker = ProcessActions();
+                actionCoroutine = StartCoroutine(actionWorker);
+            }
+        }
+
+        private ActionResultMessage DeliveryFailure(ArtelRequestDto request, string error)
+        {
+            var results = new List<ActionResultDto>();
+            foreach (var action in request.Actions ?? new List<ActionRequestDto>())
+                results.Add(ActionResultDto.Failure(action?.Id ?? 0, error));
+            return new ActionResultMessage
+            {
+                Type = "ACTION_RESULT", Id = nextMessageId++, RequestId = request.Id,
+                ProcessId = request.Delivery?.ProcessId, Frame = Time.frameCount, Results = results
+            };
+        }
+
+        private sealed class PendingAction
+        {
+            internal readonly ArtelWebSocketMessage Message;
+            internal readonly ArtelRequestDto Request;
+            internal readonly ActionDeliveryJournal.Entry Delivery;
+            internal PendingAction(ArtelWebSocketMessage message, ArtelRequestDto request,
+                ActionDeliveryJournal.Entry delivery)
+            {
+                Message = message;
+                Request = request;
+                Delivery = delivery;
+            }
+        }
+
+        /// <summary>
+        /// 도는 근거 스캔을 멈춰 달라는 통지(ARTEL-1182).
+        /// </summary>
+        /// <remarks>
+        /// <b>큐에 넣지 않는다.</b> <c>scan_evidence</c> 는 액션 큐를 쥐고 도는 긴 작업이라, 취소를 큐로 보내면 그 스캔이
+        /// 끝난 다음에야 꺼내진다 — 멈추려던 것이 끝난 뒤에 멈추라는 말을 듣는 셈이다. 진행 보고가 큐 밖에서 나가는 것과
+        /// 같은 이유로 여기서 바로 처리한다.
+        ///
+        /// 도는 스캔이 없어도 탓하지 않는다. 사람이 누른 시점과 스캔이 끝난 시점이 스칠 수 있고, 그때 올 답은 어차피
+        /// 실패가 아니라 그 스캔의 원래 결과다. 다음 순회가 시작할 때 이 표시를 지운다.
+        /// </remarks>
+        private void HandleCancelEvidenceScan()
+        {
+            SceneWalkHooks.RequestCancel();
+        }
+
+        /// <summary>
+        /// <c>RUN_STATUS</c> 는 답을 기다리는 요청이 아니라 통지다. 창이 지금 무엇을 하고
+        /// 있는지 그리는 것은 오버레이의 몫이므로, 여기서는 파싱만 하고 구독자에게 넘긴다
+        /// (ARTEL-835).
+        /// </summary>
+        private void HandleRunStatus(string json)
+        {
+            var runStatus = jsonCodec.Deserialize<RunStatusMessageDto>(json);
+            if (runStatus == null)
+            {
+                return;
+            }
+
+            HoldPointerFor(runStatus.State);
+
+            if (runStatus.State == RunStatusState.Finished)
+            {
+                gameFunctions.EndRun("run finished");
+            }
+
+            var handler = RunStatusReceived;
+            if (handler != null)
+            {
+                handler(runStatus);
+            }
+        }
+
+        /// <summary>
+        /// Keeps the agent's pointer for as long as a run is <c>RUNNING</c>, and hands everything
+        /// back when it is not.
+        /// </summary>
+        /// <remarks>
+        /// Any other state lets go, including one this SDK does not know yet: a pointer held
+        /// when no run needs it is the ARTEL-154 failure, where the person could not use the
+        /// mouse in the game at all. <c>FINISHED</c> also releases held buttons and keys, because
+        /// a run that ends mid-drag would otherwise leave the game holding them. The server sends
+        /// the current state again on reconnect, so a hold lost with the connection comes back.
+        /// </remarks>
+        private void HoldPointerFor(string state)
+        {
+            if (state == RunStatusState.Running)
+            {
+                ArtelInput.PointerHeldForRun = true;
+                return;
+            }
+
+            if (state == RunStatusState.Finished)
+            {
+                ReleaseAgentInput();
+                return;
+            }
+
+            ArtelInput.PointerHeldForRun = false;
+        }
+
+        /// <summary>
+        /// Ctrl+Shift+M on the real keyboard. Read straight from the engine, not through
+        /// <see cref="ArtelInput"/>, so a key the agent holds can never count as the person's.
+        /// </summary>
+        private static bool IsPointerTakeoverPressed()
+        {
+            var control = LegacyInput.GetKey(KeyCode.LeftControl) ||
+                          LegacyInput.GetKey(KeyCode.RightControl);
+            var shift = LegacyInput.GetKey(KeyCode.LeftShift) ||
+                        LegacyInput.GetKey(KeyCode.RightShift);
+            return NewInputMouse.TakeoverPressed || control && shift && LegacyInput.GetKeyDown(KeyCode.M);
+        }
+
+        /// <summary>
+        /// The person takes the pointer during a run. Every button and key the agent holds is
+        /// released, so a drag in progress ends on the game's own terms, and the run falls back
+        /// to the rule outside runs: the agent's next pointer action claims the pointer again,
+        /// and moving the real mouse more than a few pixels takes it back.
+        /// </summary>
+        /// <remarks>
+        /// It lasts until the next <c>RUNNING</c>, which the server sends when the next scenario
+        /// of the run starts.
+        /// </remarks>
+        internal void TakePointerBack()
+        {
+            ReleaseAgentInput();
+            Debug.Log("[Artel] The person took the pointer back during a run (Ctrl+Shift+M).");
+        }
+
+        private IEnumerator ProcessActions()
+        {
+            processingActions = true;
+            try
+            {
+                while (actionRequests.Count > 0)
+                {
+                    var pending = actionRequests.Dequeue();
+                    var message = pending.Message;
+                    if (!message.IsCurrent())
+                    {
+                        CompleteInterruptedAction(pending);
+                        continue;
+                    }
+                    if (pending.Delivery != null && pending.Request.Delivery.ExpiresAtUnixMs <=
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+                    {
+                        var expired = jsonCodec.Serialize(DeliveryFailure(pending.Request,
+                            "ACTION delivery expired before execution."));
+                        pending.Delivery.Complete(expired);
+                        try { message.Reply(expired); }
+                        catch (Exception exception)
+                        {
+                            Debug.LogWarning("[Artel] ACTION expiration result send failed: " + exception.Message);
+                        }
+                        continue;
+                    }
+                    activeDeliveryAction = pending;
+                    activeActionIsCurrent = message.IsCurrent;
+                    var request = pending.Request;
+                    actionStack.Push(ExecuteActionRequest(request));
+                    while (actionStack.Count > 0 && message.IsCurrent())
+                    {
+                        var action = actionStack.Peek();
+                        object waitingFor = null;
+                        bool moved = false;
+                        Exception failure = null;
+                        try
+                        {
+                            moved = action.MoveNext();
+                            if (moved) waitingFor = action.Current;
+                        }
+                        catch (Exception exception) { failure = exception; }
+
+                        if (failure != null)
+                        {
+                            Debug.LogWarning("[Artel] Action execution failed: " + failure.Message);
+                            CompleteInterruptedActions();
+                            actionRequests.Clear();
+                            Cleanup(() => actionExecutor?.RestoreTimeScale(), "time scale");
+                            Cleanup(ReleaseAgentInput, "input");
+                            break;
+                        }
+                        if (!moved)
+                        {
+                            actionStack.Pop();
+                            Cleanup(() => (action as IDisposable)?.Dispose(), "action");
+                        }
+                        else if (waitingFor is IEnumerator nested)
+                        {
+                            actionStack.Push(nested);
+                        }
+                        else yield return waitingFor;
+                    }
+                    DisposeActionStack();
+                    CompleteInterruptedAction(pending);
+                    activeDeliveryAction = null;
+                }
+            }
+            finally
+            {
+                DisposeActionStack();
+                processingActions = false;
+                activeActionIsCurrent = null;
+                activeDeliveryAction = null;
+                actionWorker = null;
+                actionCoroutine = null;
+            }
+        }
+
+        private IEnumerator ExecuteActionRequest(ArtelRequestDto request)
+        {
             var results = new List<ActionResultDto>();
 
-            foreach (var item in actions)
+            // 배치를 꺼낸 frame. 이 frame 부터 찍힌 예외를 답에 붙인다(ARTEL-1218).
+            var startFrame = Time.frameCount;
+
+            foreach (var action in request.Actions ?? new List<ActionRequestDto>())
             {
-                if (!(item is Dictionary<string, object> action))
+                if (action == null)
                 {
                     results.Add(ActionResultDto.Failure(0, "Action item must be an object."));
                     continue;
                 }
 
-                var actionId = MiniJson.GetInt(action, "id", 0);
-                var method = MiniJson.GetString(action, "method");
-                var parameters = MiniJson.GetArray(action, "params");
-                results.Add(actionExecutor.Execute(actionId, method, parameters));
+                if (action.Method == "scan_scene")
+                {
+                    // Scanning from inside the batch is what orders a read against the writes
+                    // before it. The top-level scan path answers straight out of HandleMessage,
+                    // so it can report the scene while a preceding button_click is still moving
+                    // the cursor — and it consumes the pending action snapshot that click has
+                    // not produced yet.
+                    SendGameState();
+                    results.Add(ActionResultDto.Success(action.Id));
+                    continue;
+                }
+
+                if (action.Method == "scan_all_scenes")
+                {
+                    if (!TryReadScanOptions(action.Parameters, out var scanOptions))
+                    {
+                        results.Add(ActionResultDto.Failure(
+                            action.Id, "scan_all_scenes params must be [] or [\"full\"]."));
+                        continue;
+                    }
+
+                    List<ScannedSceneDto> scenes = null;
+                    yield return allSceneScanner.ScanAll(scanOptions, result => scenes = result);
+                    SendAllScenes(scenes);
+                    results.Add(ActionResultDto.Success(action.Id));
+                    continue;
+                }
+
+                yield return actionExecutor.Execute(
+                    action.Id,
+                    action.Method,
+                    action.Parameters,
+                    result => results.Add(result));
             }
 
+            // 입력을 받은 게임의 Update와 예외 관측이 끝난 다음 결과를 보낸다.
+            yield return null;
             var response = new ActionResultMessage
             {
-                type = "ACTION_RESULT",
-                id = nextMessageId++,
-                results = results
+                Type = "ACTION_RESULT",
+                Id = nextMessageId++,
+                // Echoed so the caller can tell which ACTION this answers. `Id`
+                // cannot serve: it is this message's own number and shares no
+                // sequence with the request's.
+                RequestId = request.Id,
+                ProcessId = request.Delivery?.ProcessId,
+                // 여기서 읽는다. 배치를 받은 자리가 아니라 마지막 액션이 끝난 자리다 — 커서 활강처럼
+                // 여러 프레임에 걸치는 액션이 있고, 그때 둘이 갈린다. 기다리는 쪽이 궁금한 것은 배치가
+                // 끝난 뒤의 화면이므로 끝난 프레임이라야 답이 된다(ARTEL-620).
+                Frame = Time.frameCount,
+                Results = results,
+                Errors = ErrorsSince(startFrame)
             };
 
-            server.SendToAll(JsonUtility.ToJson(response));
-        }
-
-        private void SendGameState(ArtelConnection connection)
-        {
-            var scene = scanner.Scan();
-            var message = new GameStateMessage
+            var serialized = jsonCodec.Serialize(response);
+            if (activeDeliveryAction?.Request == request)
+                activeDeliveryAction.Delivery?.Complete(serialized);
+            if (webSocketTransport != null && webSocketTransport.IsConnected &&
+                (activeActionIsCurrent == null || activeActionIsCurrent()))
             {
-                type = "GAME_STATE",
-                id = nextMessageId++,
-                scene = scene
-            };
-
-            server.Send(connection, JsonUtility.ToJson(message));
+                webSocketTransport.Send(serialized);
+            }
         }
 
-        private void SendError(ArtelConnection connection, string error)
+        /// <summary>배치가 도는 동안 찍힌 예외 묶음. 없으면 null 이라 필드가 빠진다.</summary>
+        private List<LoggedErrorDto> ErrorsSince(int startFrame)
+        {
+            if (loggedErrors == null)
+            {
+                return null;
+            }
+
+            var seen = loggedErrors.SeenSince(startFrame, ActionResultMessage.MaxErrors);
+            return seen.Count == 0 ? null : seen;
+        }
+
+        /// <summary>
+        /// Reads the optional scan mode of <c>scan_all_scenes</c>. No parameter keeps the original
+        /// behaviour, so callers written before the mode existed are unaffected.
+        /// </summary>
+        private static bool TryReadScanOptions(List<object> parameters, out SceneScanOptions options)
+        {
+            options = SceneScanOptions.Default;
+            if (parameters == null || parameters.Count == 0)
+            {
+                return true;
+            }
+
+            if (parameters.Count > 1)
+            {
+                return false;
+            }
+
+            var mode = parameters[0] as string;
+            if (mode == "default")
+            {
+                return true;
+            }
+
+            if (mode == "full")
+            {
+                options = SceneScanOptions.Full;
+                return true;
+            }
+
+            return false;
+        }
+
+        private void ReplyWithGameState(ArtelWebSocketMessage request)
+        {
+            var scanResult = scanner.Scan();
+
+            request.Reply(SerializeGameState(SceneSnapshotMapper.ToDto(scanResult.Scene)));
+            scanResult.CommitActions();
+        }
+
+        private void SendGameState()
+        {
+            if (webSocketTransport == null)
+            {
+                return;
+            }
+
+            var scanResult = scanner.Scan();
+
+            webSocketTransport.Send(SerializeGameState(SceneSnapshotMapper.ToDto(scanResult.Scene)));
+            scanResult.CommitActions();
+        }
+
+        private void SendAllScenes(List<ScannedSceneDto> scenes)
+        {
+            if (webSocketTransport == null)
+            {
+                return;
+            }
+
+            webSocketTransport.Send(jsonCodec.Serialize(new AllScenesMessageDto
+            {
+                Type = "ALL_SCENES",
+                Id = nextMessageId++,
+                Scenes = scenes
+            }));
+        }
+
+        private void PumpStreaming()
+        {
+            streamHost.Tick(Time.unscaledTime);
+        }
+
+        /// <summary>
+        /// 전송 상태와 무관하게 매 프레임 돈다. 소켓이 끊긴 동안의 성능도 남아야 QA 런에서
+        /// 끊김 구간을 설명할 수 있다.
+        /// </summary>
+        private void RecordFrameTime()
+        {
+            // timeScale이 아니라 실제 경과 시간이 필요하다. pause_time 계열 액션이 timeScale을
+            // 임의로 바꾸므로 deltaTime은 프레임 성능 지표가 되지 못한다.
+            //
+            // 백그라운드 throttling도 사용자가 실제로 겪는 실행 상태다. 포커스 여부는 보고의
+            // status.isFocused로 함께 보내므로 소비자가 필요에 따라 구분할 수 있다.
+            frameTimeRecorder.Record(Time.unscaledDeltaTime);
+
+            // 캡처만 시키고 값은 읽지 않는다. Unity의 프레임 타이밍 이력은 매 프레임 캡처해야
+            // 채워지고, 읽기와 평균은 전송 게이트가 열릴 때 한 번만 돈다.
+            //
+            // 포커스 여부로 거르지 않는다. 프레임을 건너뛰면 이력에 구멍이 생기는 것이 아니라
+            // 그만큼 오래된 프레임이 남아, 어느 구간을 잰 값인지가 흐려진다.
+            frameTimingSampler.Record();
+        }
+
+        /// <summary>
+        /// 전송 주기가 곧 집계 창이다. 레코더에 따로 타이머를 두면 두 주기가 어긋나 같은 구간을
+        /// 두 번 보내거나 통째로 버리게 되므로, 보낼 때 그 자리에서 접는다.
+        /// </summary>
+        private void SendPerformanceReport()
+        {
+            if (!webSocketTransport.IsConnected)
+            {
+                // 재연결한 서버 인스턴스는 이 세션의 컨텍스트를 모른다. 끊긴 것을 본 시점에
+                // 표시를 내려 두어 다음 연결에서 다시 보내게 한다.
+                if (reportedDeviceContext)
+                {
+                    // 연결돼 있다가 끊긴 첫 프레임이다. 끊긴 연결의 run 은 끝났다 — 다시 붙는 서버는 새 세션을 연다.
+                    // 그 BEHAVIOR_ENDED 는 닫힌 소켓으로 나갈 수 없어 버려진다.
+                    gameFunctions.EndRun("connection closed");
+                }
+
+                reportedDeviceContext = false;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                sentCatalogRevision = 0;
+#endif
+                return;
+            }
+
+            if (!reportedDeviceContext)
+            {
+                webSocketTransport.Send(jsonCodec.Serialize(new DeviceContextMessageDto
+                {
+                    Type = "DEVICE_CONTEXT",
+                    Id = nextMessageId++,
+                    Device = RuntimeEnvironment.ReadDeviceContext()
+                }));
+                reportedDeviceContext = true;
+                SendGameFunctionCatalog();
+                SendGameIdentityCatalog();
+            }
+
+            var now = Time.unscaledTime;
+            if (now < nextPerformanceReportTime)
+            {
+                return;
+            }
+
+            nextPerformanceReportTime = now + PerformanceReportIntervalSeconds;
+
+            // CPU 비율의 분모. 보고를 걸렀는지와 무관하게 샘플러를 부를 때마다 갱신해야
+            // 누적 CPU 시간과 구간 길이가 같은 창을 가리킨다.
+            var elapsedSeconds = now - lastPerformanceSampleTime;
+            lastPerformanceSampleTime = now;
+
+            // 프레임이 없어 보고를 건너뛰더라도 여기서 먼저 소비한다. 뒤로 미루면 다음 구간의
+            // 분모만 짧아지고 CPU 시간은 두 구간 치가 실려 사용률이 부풀려진다.
+            var processUsage = default(ProcessResourceUsage);
+            var hasProcessUsage =
+                processResourceSampler != null &&
+                processResourceSampler.TrySample(elapsedSeconds, SystemInfo.processorCount, out processUsage);
+
+            // 예산 해석은 Screen과 QualitySettings를 읽는다. 보내는 순간에만 부른다.
+            if (!frameTimeRecorder.TrySummarize(ResolveFrameBudgetSeconds(), out var frameTimes))
+            {
+                return;
+            }
+
+            var report = new PerformanceMessageDto
+            {
+                Type = "PERFORMANCE",
+                Id = nextMessageId++,
+                FrameTimes = FrameTimesMapper.ToDto(frameTimes),
+                Status = RuntimeEnvironment.ReadStatus()
+            };
+
+            if (hasProcessUsage)
+            {
+                report.Process = ProcessResourcesMapper.ToDto(processUsage);
+            }
+
+            if (frameTimingSampler.TrySummarize(out var frameTiming))
+            {
+                report.FrameTiming = FrameTimingMapper.ToDto(frameTiming);
+            }
+            else
+            {
+                WarnFrameTimingUnavailableOnce();
+            }
+
+            // 게이트가 열린 뒤에만 읽는다. 순간값이라 누적 상태가 없어 건너뛴 프레임이 다음 값을
+            // 왜곡하지 않으므로, 매 프레임 읽을 이유가 없다. 에디터 밖에서는 항상 false다.
+            if (EditorRenderStatsReader.TryRead(out var editorRenderStats))
+            {
+                report.EditorRender = EditorRenderStatsMapper.ToDto(editorRenderStats);
+            }
+
+            webSocketTransport.Send(jsonCodec.Serialize(report));
+        }
+
+        /// <summary>
+        /// behavior 를 한 프레임 밀고, 끝난 behavior 와 바뀐 catalog 를 보낸다.
+        /// </summary>
+        /// <remarks>
+        /// <c>BEHAVIOR_ENDED</c> 는 runner 가 쌓아 둔 것을 여기서 꺼낸다. 끝난 걸음이 action 배치 안이었다면 그 배치의
+        /// <c>ACTION_RESULT</c> 가 먼저 나간 다음 프레임에 나간다.
+        ///
+        /// catalog 는 <c>DEVICE_CONTEXT</c> 바로 뒤에 한 번 나가고(<see cref="SendPerformanceReport"/>), 그 뒤로는 목록이
+        /// 바뀌었을 때 1초에 한 번까지 다시 나간다. 그 사이의 여러 변경은 마지막 revision 하나로 나간다.
+        /// </remarks>
+        private void PumpGameFunctions()
+        {
+            gameFunctions.Tick();
+            SendBehaviorEndedFrames();
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (sentCatalogRevision == 0 ||
+                gameFunctions.Registry.Revision == sentCatalogRevision ||
+                Time.unscaledTime < nextCatalogTime ||
+                webSocketTransport == null || !webSocketTransport.IsConnected)
+            {
+                return;
+            }
+
+            SendGameFunctionCatalog();
+#endif
+        }
+
+        /// <summary>쌓인 <c>BEHAVIOR_ENDED</c> 를 보낸다. 연결이 없으면 버린다 — 다음 연결은 새 세션이라 받을 쪽이 없다.</summary>
+        private void SendBehaviorEndedFrames()
+        {
+            while (gameFunctions.TryDequeueEnded(out var ended))
+            {
+                if (webSocketTransport != null && webSocketTransport.IsConnected)
+                {
+                    webSocketTransport.Send(jsonCodec.Serialize(ended));
+                }
+            }
+        }
+
+        private void SendGameIdentityCatalog()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (GameIdentityCatalog.TryCollect(out var catalog, out var error))
+            {
+                webSocketTransport.Send(jsonCodec.Serialize(catalog));
+            }
+            else
+            {
+                Debug.LogWarning("[Artel] 변수 메타데이터 수집 실패로 전송을 건너뜁니다: " + error);
+            }
+#endif
+        }
+
+        /// <summary>출시 빌드에는 등록할 수 있는 함수가 없으므로 catalog 를 보내지 않는다.</summary>
+        private void SendGameFunctionCatalog()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            var catalog = gameFunctions.BuildCatalog();
+            webSocketTransport.Send(jsonCodec.Serialize(catalog));
+            sentCatalogRevision = catalog.Revision;
+            nextCatalogTime = Time.unscaledTime + GameFunctionTiming.PollSeconds;
+#endif
+        }
+
+        /// <summary>
+        /// Frame Timing Stats는 프로젝트 설정이라 SDK가 켤 수 없다. 꺼진 프로젝트에서는 매 초
+        /// 미수집이 되므로, 고칠 방법을 한 번만 알리고 이후로는 조용히 보고에서 뺀다.
+        /// </summary>
+        private void WarnFrameTimingUnavailableOnce()
+        {
+            if (warnedFrameTimingUnavailable)
+            {
+                return;
+            }
+
+            warnedFrameTimingUnavailable = true;
+            Debug.LogWarning(
+                "[Artel] Frame timing data is unavailable, so CPU/GPU breakdown is left out of the " +
+                "performance report. Enable Project Settings > Player > Frame Timing Stats to collect it.");
+        }
+
+        /// <summary>
+        /// 프레임 예산. 같은 33ms라도 30fps 캡이 걸린 빌드에서는 정상이고 144Hz에서는 hitch다.
+        ///
+        /// vsync를 먼저 본다. Unity는 vSyncCount가 0보다 크면 targetFrameRate를 무시하므로,
+        /// 반대 순서로 보면 실제로 적용되지 않는 캡을 예산으로 삼게 된다.
+        /// </summary>
+        private static float ResolveFrameBudgetSeconds()
+        {
+            var vSyncCount = QualitySettings.vSyncCount;
+            if (vSyncCount > 0)
+            {
+                // refreshRate(int)는 2022.2에서 폐기됐다. 비율 형태가 60/1.001 같은 실제 주사율을 잃지 않는다.
+                var refreshRate = Screen.currentResolution.refreshRateRatio.value;
+                if (refreshRate > 0d)
+                {
+                    return (float)(vSyncCount / refreshRate);
+                }
+            }
+
+            var targetFrameRate = Application.targetFrameRate;
+            if (targetFrameRate > 0)
+            {
+                return 1f / targetFrameRate;
+            }
+
+            return 1f / 60f;
+        }
+
+        private string SerializeGameState(SceneDto scene)
+        {
+            return jsonCodec.Serialize(new GameStateMessageDto
+            {
+                Type = "GAME_STATE",
+                Id = nextMessageId++,
+                Scene = scene
+            });
+        }
+
+        private void SendError(ArtelWebSocketMessage request, string error)
         {
             var message = new ErrorMessage
             {
-                type = "ERROR",
-                id = nextMessageId++,
-                error = error
+                Type = "ERROR",
+                Id = nextMessageId++,
+                Error = error
             };
 
-            server.Send(connection, JsonUtility.ToJson(message));
+            request.Reply(jsonCodec.Serialize(message));
         }
     }
 }

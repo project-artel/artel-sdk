@@ -1,0 +1,1436 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using Artel.Auth;
+using Artel.Domain;
+using Artel.Protocol.Dto;
+using Artel.Serialization;
+using Artel.Affordances.Scan;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
+
+namespace Artel
+{
+    [RequireComponent(typeof(ArtelManager))]
+    public sealed class ArtelOverlayController : MonoBehaviour
+    {
+        private const string DarkThemePlayerPrefsKey = ArtelOwnedPlayerPrefs.DarkTheme;
+
+        private const int VisibleProjectRows = 4;
+        private const float ProjectRowHeight = 64f;
+        private const float GateWidth = 560f;
+        private const float GateContentWidth = 488f;
+
+        // -artel-window-label 판의 치수. 폭만 문구를 따라가고 높이는 한 줄로 고정이다
+        // (CreateWindowLabel 참조).
+        private const int WindowLabelFontSize = 16;
+        private const float WindowLabelPadding = 12f;
+        private const float WindowLabelHeight = 40f;
+        private const float MinWindowLabelTextWidth = 120f;
+        private const float MaxWindowLabelTextWidth = 900f;
+
+        // 라벨 판 바로 아래, 더 작은 글자로 지금 이 창에서 무엇이 도는지 그린다 (ARTEL-835).
+        // 치수를 정하는 규칙은 라벨 판과 같다 — 세로 여백을 두지 않고 글꼴의 줄 높이보다
+        // 넉넉한 판 높이를 고정으로 쓴다. 라벨 판은 16pt 에 40 을 썼으니(2.5배) 13pt 에는
+        // 그 비율을 지켜 32 를 쓴다.
+        private const int RunStatusFontSize = 13;
+        private const float RunStatusHeight = 32f;
+        private const float RunStatusGap = 4f;
+
+        private const string LoginMessage = "Artel 계정으로 로그인하면 연결됩니다.";
+        private const string ChooseProjectMessage = "이 게임을 연결할 프로젝트를 선택해 주세요.";
+
+        /// <summary>신 Input System 만 켠 프로젝트에서 상태 줄 아래에 붙는 문장(ARTEL-1233). <see cref="LegacyInput"/> 참고.</summary>
+        internal const string NewInputSystemOnlyNotice = "신 Input System에서는 마우스 조작만 지원합니다.";
+
+        // artel-home의 src/styles/tokens.css(Blueprint Paper)에서 가져온 값. CSS를 C#으로 자동 동기화할
+        // 수단이 없으므로, 16진 리터럴로 적어 두는 것이 원본과 대조하는 유일한 방법이다.
+        // Color32를 쓰는 이유는 컴파일 타임에 걸리기 때문이다. ColorUtility로 파싱하면
+        // 오타가 런타임에 조용히 잘못된 색이 된다.
+        private Color bgSurface;
+        private Color bgRaised;
+        private Color borderStrong;
+        private Color borderSubtle;
+        private Color bgHover;
+        private Color textPrimary;
+        private Color textSecondary;
+        private Color textMuted;
+        private Color bgCanvas;
+        private Color coverColor;
+        // 브랜드·action 색은 테마에 따라 달라지므로 static일 수 없다. 실패·성공은
+        // 의미 색이라 두 테마에서 같은 값을 유지한다.
+        private Color brandAccent;
+        private Color actionPrimary;
+        private Color textOnAccent;
+        private static readonly Color StatusCritical = new Color32(0xFF, 0x63, 0x4F, 0xFF);
+        private static readonly Color StatusSuccess = new Color32(0x48, 0xC7, 0x8E, 0xFF);
+
+        [SerializeField] private ArtelManager artelManager;
+
+        private GameObject canvasObject;
+        private Canvas canvas;
+        private bool hiddenForCapture;
+        private GameObject createdEventSystem;
+        private GameObject toggleObject;
+        private GameObject panelObject;
+        private GameObject advancedObject;
+        private GameObject coverObject;
+        private GameObject gateContent;
+        private GameObject progressContent;
+        private GameObject projectListObject;
+        private RectTransform projectListContent;
+        private ScrollRect projectScrollRect;
+        private InputField serverUrlInput;
+        private Button applyServerButton;
+        private bool serverSettingsOpen;
+        private GameObject serverSettingsContent;
+        private Text serverSettingsToggleText;
+        private Button loginButton;
+        private Button cancelLoginButton;
+        private Button reloadProjectsButton;
+        private Button refreshProjectsButton;
+        private Button gateLogOutButton;
+        private Button gateDismissButton;
+        private Button serverSettingsButton;
+        private Button connectButton;
+        private Text statusText;
+        private Text selectedProjectText;
+        private Text accountText;
+        private Text gateMessageText;
+        private Text gateSelectedProjectText;
+        private Text gateErrorText;
+        private Text coverMessageText;
+        private Text coverStatusText;
+        private Text runStatusText;
+        private bool appliedShowPanel;
+        private bool registrationRunning;
+        private bool loginRunning;
+        private bool darkTheme;
+
+        // 그려 둔 프로젝트 버튼의 id 목록. RefreshView는 상태가 바뀔 때마다 도므로, 목록이
+        // 실제로 달라졌을 때만 다시 만들어야 누르려던 버튼이 손 밑에서 사라지지 않는다.
+        private readonly List<string> listedProjectIds = new List<string>();
+
+        // 게이트를 이 세션에서 내려둘지. 덮개가 우상단 패널과 고급 섹션을 전부 덮으므로,
+        // 등록이 계속 실패할 때 이것이 게임으로 돌아가는 유일한 길이다. 되돌아오는 길은
+        // 고급 섹션의 키 지우기·연결이며, 둘 다 이 값을 지운다.
+        private bool gateDismissed;
+        private bool gateOpenedExplicitly;
+
+        private ArtelOverlayViewModel viewModel;
+        [NonSerialized] private bool initialized;
+        private float nextInitializationTime;
+
+        // Input Manager 경고는 controller 하나에 한 번만 남긴다. 재활성화와 5초 뒤 재시도도
+        // InitializeOverlay 를 다시 부르지만 project 설정은 그 사이에 바뀌지 않는다.
+        [NonSerialized] private bool warnedLegacyInputMissing;
+
+        // 가장 최근에 받은 RUN_STATUS (ARTEL-835). 아직 없으면 null 이고, CreateRunStatusLine
+        // 은 이 값으로 시작 문구를 정한다 — 다크 모드 토글로 CreateGui 가 다시 도는 동안에도
+        // run 이 계속 돌고 있었을 수 있어, 새로 그리는 줄이 지난 값을 잊으면 안 된다.
+        private RunStatusMessageDto latestRunStatus;
+
+        private void Awake()
+        {
+            EnsureViewModel();
+        }
+
+        private void OnEnable()
+        {
+            EnsureViewModel();
+        }
+
+        private void EnsureViewModel()
+        {
+            if (viewModel != null) return;
+
+            if (artelManager == null)
+            {
+                artelManager = GetComponent<ArtelManager>();
+            }
+
+            // reload 뒤에도 구독은 하나만 유지한다. GUI 재생성은 구독을 추가하지 않는다.
+            if (artelManager == null) return;
+            artelManager.RunStatusReceived -= OnRunStatusReceived;
+            artelManager.RunStatusReceived += OnRunStatusReceived;
+
+            initialized = false;
+            registrationRunning = false;
+            loginRunning = false;
+
+            var jsonCodec = new NewtonsoftJsonCodec();
+            viewModel = new ArtelOverlayViewModel(
+                new ArtelSdkRegistrationClient(jsonCodec),
+                new ArtelSdkAuthClient(jsonCodec),
+                jsonCodec);
+            viewModel.Changed += RefreshView;
+            darkTheme = PlayerPrefs.GetInt(DarkThemePlayerPrefsKey, 0) != 0;
+            ApplyPalette();
+        }
+
+        private void Start()
+        {
+            EnsureInitialized();
+        }
+
+        private void EnsureInitialized()
+        {
+            if (initialized || artelManager == null || viewModel == null ||
+                Time.unscaledTime < nextInitializationTime) return;
+
+            try { InitializeOverlay(); }
+            catch (Exception exception)
+            {
+                initialized = false;
+                nextInitializationTime = Time.unscaledTime + 5f;
+                Debug.LogWarning("[Artel] Overlay initialization failed; retrying in 5s: " + exception.Message);
+            }
+        }
+
+        private void InitializeOverlay()
+        {
+            if (!LegacyInput.IsAvailable && !warnedLegacyInputMissing)
+            {
+                warnedLegacyInputMissing = true;
+                // 콘솔에도 한 번 남긴다. overlay 를 보지 않고 로그만 읽는 사람도 왜 조작이 게임에 닿지 않는지 알 수 있게.
+                Debug.LogWarning("[Artel] This project uses only the Input System package. " +
+                                 "Artel supports mouse actions; keyboard actions require the legacy Input Manager.");
+            }
+
+            // reload로 유실된 버튼 callback도 다시 연결한다. 기존 canvas는 즉시 숨긴다.
+            if (canvasObject != null)
+            {
+                canvasObject.SetActive(false);
+                Destroy(canvasObject);
+            }
+            listedProjectIds.Clear();
+            hiddenForCapture = false;
+            viewModel.Initialize(artelManager.Server);
+            CreateGui();
+            RefreshView();
+            initialized = true;
+
+            if (viewModel.HasStoredSession)
+            {
+                RegisterInstance();
+                return;
+            }
+
+            // 토큰만 남고 프로젝트가 없는 경우. 목록을 읽어야 고를 수 있고, 하나뿐이면
+            // 고르는 화면 없이 그대로 등록으로 이어진다.
+            if (viewModel.HasToken)
+            {
+                StartCoroutine(LoadProjectsThenRegister());
+            }
+        }
+
+        private void OnDisable()
+        {
+            viewModel?.CancelLogin();
+            StopAllCoroutines();
+            registrationRunning = false;
+            loginRunning = false;
+            initialized = false;
+            nextInitializationTime = 0f;
+        }
+
+        private void OnDestroy()
+        {
+            if (canvasObject != null)
+            {
+                Destroy(canvasObject);
+            }
+
+            if (createdEventSystem != null)
+            {
+                Destroy(createdEventSystem);
+            }
+
+            if (viewModel != null)
+            {
+                viewModel.Changed -= RefreshView;
+            }
+
+            if (artelManager != null)
+            {
+                artelManager.RunStatusReceived -= OnRunStatusReceived;
+            }
+        }
+
+        /// <summary>
+        /// HandleMessage 가 이미 메인 스레드에서 부르므로 여기서 곧장 Text 를 만져도 된다
+        /// (ARTEL-835). 줄이 아직 없으면(라벨이 없어 CreateRunStatusLine 을 건너뛴 경우) 값만
+        /// 적어 두고, 나중에 줄이 생기면(다크 모드 토글) 그 값으로 시작한다.
+        /// </summary>
+        private void OnRunStatusReceived(RunStatusMessageDto message)
+        {
+            latestRunStatus = message;
+            if (runStatusText != null)
+            {
+                runStatusText.text = RunStatusLine.Describe(message);
+            }
+        }
+
+        /// <summary>
+        /// 전송의 상태를 화면으로 옮기고, 우상단 Artel 버튼을 사람이 마우스를 쥔 동안만 띄운다.
+        /// </summary>
+        /// <remarks>
+        /// 프레임마다 보는 이유가 둘 다 있다. 전송은 스스로 알려줄 수 없다 — 소켓의 닫힘과 열림은
+        /// websocket-sharp 수신 스레드에서 오고, 그 자리에서는 Unity API 를 만질 수 없다. 여기서
+        /// 읽으면 판정과 그리기가 모두 메인 스레드에 남는다. 값이 달라졌을 때만
+        /// <see cref="ArtelOverlayViewModel.NoticeTransport"/> 가 Changed 를 올린다.
+        /// 포인터 소유도 프레임마다 바뀐다 — 사람이 실제 마우스를 4px 움직이면
+        /// <see cref="ArtelInput.AdvanceFrame"/> 이 그 프레임에 에이전트의 포인터 소유를
+        /// 놓는다(<c>VirtualMouseState.OwnsPointer</c>). RefreshView 는 viewModel 이 바뀔 때만
+        /// 도므로 이 신호를 실을 자리가 없다.
+        /// </remarks>
+        private void Update()
+        {
+            // reload 뒤에는 Start도 반복되지 않으므로 첫 Update에서 GUI와 세션을 복원한다.
+            EnsureInitialized();
+            if (!initialized || artelManager == null || viewModel == null) return;
+
+            viewModel.NoticeTransport(artelManager.TransportPhase);
+
+            // 우상단 Artel 버튼은 사람이 마우스를 쥐고 있을 때만 있다. 에이전트가 게임을 모는
+            // 동안 이 버튼은 사람이 누를 것도 아니고, 에이전트가 눌러야 할 것도 아니다.
+            // 버튼이 사라질 때 열려 있던 패널도 함께 닫는다 — 패널을 여닫는 길이 이 버튼
+            // 하나뿐이라, 버튼 없이 남은 패널은 게임 화면을 440x300 만큼 가린 채 닫히지 않는다.
+            if (toggleObject == null)
+            {
+                return;
+            }
+
+            var humanHoldsMouse = HumanHoldsMouse;
+            if (toggleObject.activeSelf == humanHoldsMouse)
+            {
+                return;
+            }
+
+            toggleObject.SetActive(humanHoldsMouse);
+
+            // 마우스가 사람에게 돌아와도 패널을 도로 열지는 않는다. 몇 분 전에 열어 둔
+            // 패널이 혼자 돌아오는 것보다, 버튼을 한 번 더 누르는 편이 덜 놀랍다.
+            // appliedShowPanel 은 건드리지 않는다 — 그것은 viewModel.ShowPanel 의 전이를
+            // 재는 값이고, 여기서 내리면 다음 Changed 에 RefreshView 가 패널을 다시 연다.
+            if (!humanHoldsMouse && panelObject != null)
+            {
+                panelObject.SetActive(false);
+            }
+        }
+
+        /// <summary>
+        /// 에이전트가 포인터를 옮긴 적이 없거나, 옮긴 뒤 사람이 실제 마우스를 도로 가져갔나.
+        /// </summary>
+        private static bool HumanHoldsMouse
+        {
+            get { return !ArtelInput.HasVirtualMousePosition; }
+        }
+
+        /// <summary>
+        /// 캡처가 잡을 프레임에서 이 캔버스를 통째로 그리지 않는다 — 우상단 토글 버튼, 패널,
+        /// window label, run status 줄, 로그인 게이트 전부다 (ARTEL-905).
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Capture.ScreenCapturer"/> 가 back buffer 를 통째로 읽으므로, 이미지에서 빼는
+        /// 방법은 그 프레임에 안 그리는 것뿐이다. <see cref="KeyboardStatusController.HideForCapture"/>
+        /// 와 같은 이유, 같은 모양이다 (ARTEL-881).
+        ///
+        /// 껐다는 사실을 여기서 기억한다. 호출자가 그 값을 들고 다니면 짝을 맞출 책임이 호출부마다
+        /// 생기고, 원래 꺼져 있던 캔버스를 캡처 뒤에 켜 버리는 경우를 손으로 막아야 한다.
+        ///
+        /// <c>GameObject.SetActive</c> 가 아니라 <c>Canvas.enabled</c> 다. <see cref="Update"/> 가
+        /// 매 프레임 <c>toggleObject.SetActive(HumanHoldsMouse)</c> 를 부르지만, 부모 캔버스의 렌더를
+        /// 끄면 그 호출과 무관하게 화면에 안 그려진다.
+        /// </remarks>
+        internal void HideForCapture()
+        {
+            if (hiddenForCapture || canvas == null || !canvas.enabled)
+            {
+                return;
+            }
+
+            canvas.enabled = false;
+            hiddenForCapture = true;
+        }
+
+        /// <summary>
+        /// <see cref="HideForCapture"/> 가 끈 캔버스를 다시 그린다. 끄지 않았으면 아무것도 하지
+        /// 않는다.
+        /// </summary>
+        /// <remarks>
+        /// 캡처가 실패하거나 예외로 끝나도 불려야 한다. 캔버스가 꺼진 채 남는 것이 캡처 한 장을
+        /// 놓치는 것보다 나쁘다 — 사람이 게임을 보는 동안 로그인 게이트도 우상단 버튼도 영영 안
+        /// 보이게 된다.
+        /// </remarks>
+        internal void ShowAfterCapture()
+        {
+            if (!hiddenForCapture)
+            {
+                return;
+            }
+
+            hiddenForCapture = false;
+            if (canvas != null)
+            {
+                canvas.enabled = true;
+            }
+        }
+
+        private void RegisterInstance()
+        {
+            // viewModel은 Register에 들어가야 Registering이 된다. 그때까지 프로젝트 버튼이
+            // 살아 있으므로, 이 가드가 없으면 연타한 만큼 등록 요청이 겹쳐 나간다.
+            if (registrationRunning)
+            {
+                return;
+            }
+
+            StartCoroutine(SendRegistration());
+        }
+
+        private void BeginLogin()
+        {
+            if (loginRunning || registrationRunning)
+            {
+                return;
+            }
+
+            StartCoroutine(LogInThenRegister());
+        }
+
+        private IEnumerator LogInThenRegister()
+        {
+            loginRunning = true;
+            gateDismissed = false;
+            ShowCoverMessage("브라우저에서 로그인을 완료해 주세요.");
+            try
+            {
+                yield return viewModel.LogIn(artelManager.Server);
+            }
+            finally
+            {
+                loginRunning = false;
+                RefreshView();
+            }
+
+            // 프로젝트가 하나뿐이면 LogIn이 그 자리에서 골라 둔다. 그럴 때만 이어서 등록한다.
+            if (viewModel.HasStoredSession)
+            {
+                RegisterInstance();
+            }
+        }
+
+        private IEnumerator LoadProjectsThenRegister(bool registerStoredSession = true)
+        {
+            loginRunning = true;
+            ShowCoverMessage("프로젝트 목록을 불러오는 중입니다.");
+            try
+            {
+                yield return viewModel.LoadProjects(artelManager.Server, registerStoredSession);
+            }
+            finally
+            {
+                loginRunning = false;
+                RefreshView();
+            }
+
+            if (registerStoredSession && viewModel.HasStoredSession)
+            {
+                RegisterInstance();
+            }
+        }
+
+        private void ReloadProjects()
+        {
+            if (loginRunning || registrationRunning)
+            {
+                return;
+            }
+
+            gateDismissed = false;
+            StartCoroutine(LoadProjectsThenRegister(false));
+        }
+
+        private void ChooseProject(string projectId)
+        {
+            gateDismissed = false;
+            serverSettingsOpen = false;
+            gateOpenedExplicitly = false;
+            viewModel.SelectProject(projectId);
+            RegisterInstance();
+        }
+
+        private IEnumerator SendRegistration()
+        {
+            registrationRunning = true;
+            gateDismissed = false;
+            serverSettingsOpen = false;
+            gateOpenedExplicitly = false;
+
+            // registrationRunning은 RefreshView가 읽는다. 뒤집은 직후 직접 불러야 하는데,
+            // 이 플래그는 컨트롤러 로컬이라 viewModel.Changed가 뜨지 않는다.
+            ShowCoverMessage("인스턴스를 등록하는 중입니다. 잠시만 기다려 주세요.");
+            RefreshView();
+            try
+            {
+                // CreateReport 는 Build Settings 목록만 읽어 그 자리에서 끝난다. 캐시를 두던
+                // 시절이 있었지만 그때는 씬을 하나씩 로드하는 워크가 붙어 있었다.
+                yield return viewModel.Register(
+                    artelManager.Server,
+                    artelManager.SdkId,
+                    artelManager.InstanceName,
+                    artelManager.GameVersion,
+                    artelManager.IsEditor,
+                    artelManager.StartTransport,
+                    SceneScanReporter.CreateReport());
+            }
+            finally
+            {
+                registrationRunning = false;
+                RefreshView();
+            }
+        }
+
+        // 덮개는 로그인·목록 조회·등록을 모두 덮는다. 어느 단계에서 기다리는지 말해 주지
+        // 않으면 셋 다 똑같이 멈춘 화면으로 보인다.
+        private void ShowCoverMessage(string message)
+        {
+            if (coverMessageText == null)
+            {
+                return;
+            }
+
+            coverMessageText.text = message;
+        }
+
+        // 나중에로 게이트를 내리면 게이트의 버튼도 함께 비활성된다. 그래서 게이트로
+        // 되돌아오는 길은 고급 섹션의 이 두 버튼뿐이고, 둘 다 gateDismissed를 지워야 한다.
+        // 연결이 있는 이유는 로그인을 버리지 않고 재시도할 길을 남기는 것이다.
+        private void ConnectWebSocket()
+        {
+            if (registrationRunning || loginRunning)
+            {
+                return;
+            }
+
+            gateDismissed = false;
+            StartCoroutine(RegisterThenConnect());
+        }
+
+        /// <summary>
+        /// 연결 버튼이 도는 길. 등록부터 다시 하고 그 끝에서 소켓을 건다.
+        /// </summary>
+        /// <remarks>
+        /// 소켓만 다시 거는 것으로는 자격증명이 거절된 끊김(닫힘 코드 4001)에서 벗어날 수 없다.
+        /// 같은 토큰과 같은 instanceId 로 걸어 같은 대답을 받을 뿐이다. 등록은 만료된 토큰을
+        /// refresh 로 바꾸고 instanceId 를 다시 받아 오므로, 그 두 값이 새로워진 뒤에야 다시 거는
+        /// 일에 뜻이 생긴다. 등록은 (프로젝트, sdkUuid) 로 idempotent 하니 돌고 있는 런의
+        /// instanceId 도 그대로다(ARTEL-842).
+        ///
+        /// sceneScan 은 <see cref="SendRegistration"/> 과 똑같이 그 자리에서 만들어 보낸다.
+        /// CreateReport 는 Build Settings 목록만 읽으므로, 돌고 있는 게임의 씬을 건드리지 않는다.
+        /// </remarks>
+        private IEnumerator RegisterThenConnect()
+        {
+            registrationRunning = true;
+            ShowCoverMessage("실시간 서버에 다시 연결하는 중입니다.");
+            RefreshView();
+            try
+            {
+                yield return viewModel.Register(
+                    artelManager.Server,
+                    artelManager.SdkId,
+                    artelManager.InstanceName,
+                    artelManager.GameVersion,
+                    artelManager.IsEditor,
+                    artelManager.StartTransport,
+                    SceneScanReporter.CreateReport());
+            }
+            finally
+            {
+                registrationRunning = false;
+                RefreshView();
+            }
+        }
+
+        private void ApplyServer()
+        {
+            if (loginRunning || registrationRunning) return;
+            if (!artelManager.CanChangeServer)
+            {
+                gateErrorText.text = "진행 중인 작업이 끝난 뒤 서버를 변경해 주세요.";
+                return;
+            }
+            Server selected;
+            try
+            {
+                selected = new Server(serverUrlInput.text);
+            }
+            catch (ArgumentException exception)
+            {
+                gateErrorText.text = exception.Message;
+                return;
+            }
+
+            artelManager.StopTransport();
+            artelManager.SetServer(selected);
+            PlayerPrefs.SetString(ArtelOwnedPlayerPrefs.ServerUrl, selected.HttpBaseUri.AbsoluteUri);
+            PlayerPrefs.Save();
+            serverSettingsOpen = false;
+            gateDismissed = false;
+            viewModel.Initialize(selected);
+            serverUrlInput.text = selected.HttpBaseUri.AbsoluteUri;
+            if (viewModel.HasStoredSession) RegisterInstance();
+            else if (viewModel.HasToken) StartCoroutine(LoadProjectsThenRegister());
+        }
+
+        private void LogOut()
+        {
+            gateDismissed = false;
+            if (loginRunning || registrationRunning) return;
+            artelManager.StopTransport();
+            viewModel.LogOut();
+            RefreshView();
+        }
+
+        private void DismissGate()
+        {
+            serverSettingsOpen = false;
+            gateOpenedExplicitly = false;
+            gateDismissed = true;
+            RefreshView();
+        }
+
+        private void CreateGui()
+        {
+            canvasObject = new GameObject("Artel Overlay Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            // Parented to the manager so it rides along across scene loads. Left at
+            // the scene root it is destroyed with that scene, and this controller —
+            // which does survive — would be left holding a destroyed canvas and
+            // never rebuild it. CursorController and KeyboardStatusController
+            // already attach theirs the same way.
+            canvasObject.transform.SetParent(transform, false);
+            // 이 아래는 계기다. 사람이 보는 것이고 판독은 보고하지 않는다 (ARTEL-698).
+            canvasObject.AddComponent<Instrument>();
+            canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = short.MaxValue - 1;
+
+            var scaler = canvasObject.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1440f, 900f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.Expand;
+
+            if (createdEventSystem == null)
+            {
+                createdEventSystem = EnsureEventSystem(transform);
+            }
+
+            var toggleButton = CreateButton(canvasObject.transform, "Artel", new Vector2(56f, 48f));
+            toggleButton.GetComponentInChildren<Text>().text = string.Empty;
+            CreateLogo(toggleButton.transform, Vector2.zero, 36f);
+            AnchorTopRight(toggleButton.GetComponent<RectTransform>(), new Vector2(-24f, -24f));
+            toggleButton.onClick.AddListener(() => panelObject.SetActive(!panelObject.activeSelf));
+            // 다크 모드 토글로 이 GUI 가 다시 만들어질 때도 지금 포인터를 쥔 쪽에 맞춰
+            // 시작해야, 에이전트가 모는 중에 버튼이 한 프레임 깜박이지 않는다.
+            toggleObject = toggleButton.gameObject;
+            toggleObject.SetActive(HumanHoldsMouse);
+
+            panelObject = new GameObject("Artel Panel", typeof(RectTransform), typeof(Image));
+            panelObject.transform.SetParent(canvasObject.transform, false);
+            panelObject.GetComponent<Image>().color = bgSurface;
+            var panelRect = panelObject.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(1f, 1f);
+            panelRect.anchorMax = new Vector2(1f, 1f);
+            panelRect.pivot = new Vector2(1f, 1f);
+            panelRect.anchoredPosition = new Vector2(-24f, -84f);
+            panelRect.sizeDelta = new Vector2(440f, 402f);
+
+            // 로그인과 프로젝트 선택은 게이트가 소유한다. 진입 지점이 둘이면 처음 쓰는
+            // 사람이 어느 쪽을 봐야 할지 모른다. 패널에는 선택 프로젝트, 상태와 고급 섹션을 둔다.
+            var title = CreateText(panelObject.transform, "Artel SDK", 24, TextAnchor.MiddleLeft);
+            SetRect(title.rectTransform, new Vector2(20f, -16f), new Vector2(400f, 36f));
+
+            selectedProjectText = CreateText(panelObject.transform, string.Empty, 16, TextAnchor.UpperLeft);
+            selectedProjectText.name = "Selected Project";
+            selectedProjectText.supportRichText = false;
+            selectedProjectText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            selectedProjectText.verticalOverflow = VerticalWrapMode.Truncate;
+            SetRect(selectedProjectText.rectTransform, new Vector2(20f, -60f), new Vector2(400f, 44f));
+
+            statusText = CreateText(panelObject.transform, string.Empty, 15, TextAnchor.UpperLeft, textSecondary);
+            SetRect(statusText.rectTransform, new Vector2(20f, -112f), new Vector2(400f, 66f));
+
+            var advancedButton = CreateButton(panelObject.transform, "고급", new Vector2(400f, 34f));
+            SetRect(advancedButton.GetComponent<RectTransform>(), new Vector2(20f, -184f), new Vector2(400f, 34f));
+            advancedButton.onClick.AddListener(() => advancedObject.SetActive(!advancedObject.activeSelf));
+
+            CreateAdvancedSection();
+            CreateCover();
+            CreateWindowLabel();
+
+            appliedShowPanel = viewModel.ShowPanel;
+            panelObject.SetActive(appliedShowPanel);
+        }
+
+        private void CreateCover()
+        {
+            // 캔버스의 마지막 자식이므로 같은 캔버스의 패널 위에 그려지고, 이 캔버스의
+            // sortingOrder가 short.MaxValue - 1이라 게임 쪽 캔버스보다도 위다. 정렬 순서
+            // 상수를 건드리지 않고 화면을 덮기 위해 여기에 붙인다. 위에 남는 것은 가상
+            // 커서 캔버스(short.MaxValue)뿐인데, 커서는 보이는 편이 맞다.
+            coverObject = new GameObject("Artel Overlay Cover", typeof(RectTransform), typeof(Image));
+            coverObject.transform.SetParent(canvasObject.transform, false);
+
+            // raycastTarget이 켜진 채라 덮인 게임 UI로 클릭이 새지 않는다.
+            coverObject.GetComponent<Image>().color = coverColor;
+            var coverRect = coverObject.GetComponent<RectTransform>();
+            coverRect.anchorMin = Vector2.zero;
+            coverRect.anchorMax = Vector2.one;
+            coverRect.offsetMin = Vector2.zero;
+            coverRect.offsetMax = Vector2.zero;
+
+            CreateProgressContent();
+            CreateGateContent();
+
+            coverObject.SetActive(false);
+        }
+
+        // -artel-window-label 이 없으면 아무것도 만들지 않는다 (ARTEL-826). CreateCover
+        // 다음, 그러니까 캔버스의 마지막 자식으로 붙이는 것이 요점이다. 형제는 나중에 올수록
+        // 위에 그려지므로, 패널이 접히든 게이트 덮개가 뜨든 이 라벨만은 그 위에 계속 보인다.
+        // 창 제목도 여기서 같이 정한다 — 화면과 제목 둘 다 같은 값을 보여 줄 자리라는 뜻이다.
+        private void CreateWindowLabel()
+        {
+            var label = ArtelWindowLabel.Value;
+            if (string.IsNullOrEmpty(label))
+            {
+                return;
+            }
+
+            var labelObject = new GameObject("Artel Window Label", typeof(RectTransform), typeof(Image));
+            labelObject.transform.SetParent(canvasObject.transform, false);
+            // 이 아래도 계기다. canvasObject 를 통해 조상만으로도 이미 표시가 걸리지만, 이
+            // 객체 스스로도 달아 둔다 — canvasObject 와 같은 표시를 쓴다 (ARTEL-698).
+            labelObject.AddComponent<Instrument>();
+
+            var labelRect = labelObject.GetComponent<RectTransform>();
+            AnchorTopLeft(labelRect, new Vector2(24f, -24f));
+            // 게임 화면 위에 얹히므로 읽을 수 있는 바탕이 있어야 한다.
+            labelObject.GetComponent<Image>().color = bgSurface;
+
+            var text = CreateText(labelObject.transform, label, WindowLabelFontSize, TextAnchor.MiddleLeft, textPrimary);
+            // 한 줄로 둔다. CreateText 의 기본은 Wrap + Truncate 라, 판보다 긴 문구는 두 줄로
+            // 접힌 뒤 판 높이를 넘긴 줄이 통째로 사라진다. `artel qa matrix` 가 만드는 문구는
+            // `slot 0 testRun=1 contentMap=off knowledge=server default` 처럼 50자가 넘으므로
+            // 그대로 두면 어느 조합의 창인지가 잘려 나간다.
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            // 세로로는 여백을 두지 않고 판 높이를 그대로 쓴다. 위아래로 12 씩 빼면 40 짜리
+            // 판에 16 만 남는데, 그것은 16pt 글자의 줄 높이(약 18)보다 낮다. CreateText 의
+            // 기본이 Truncate 라 들어가지 못한 줄은 잘리는 것이 아니라 통째로 사라지고,
+            // 화면에는 까만 판만 남는다 — 2026-09-04 실제 빌드에서 그렇게 떴다.
+            // verticalOverflow 도 함께 풀어, 더 큰 글꼴로 바꾸는 날 같은 방식으로 사라지지
+            // 않게 한다.
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+            var textRect = text.rectTransform;
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(WindowLabelPadding, 0f);
+            textRect.offsetMax = new Vector2(-WindowLabelPadding, 0f);
+
+            // 판을 문구에 맞춘다. preferredWidth 는 캔버스 배치를 기다리지 않고 이 자리에서
+            // 바로 나오지만, 폰트를 아직 못 읽은 경우 0 이 나올 수 있어 아래를 받쳐 둔다.
+            // 위쪽 상한은 1920 기준 폭의 절반 아래다 — 이보다 긴 문구는 판 밖으로 흘러 나가되
+            // 잘리지는 않는다. 잘린 라벨은 창을 구분해 주지 못하므로 없느니만 못하다.
+            var textWidth = Mathf.Clamp(text.preferredWidth, MinWindowLabelTextWidth, MaxWindowLabelTextWidth);
+            labelRect.sizeDelta = new Vector2(textWidth + WindowLabelPadding * 2f, WindowLabelHeight);
+
+            ArtelWindowTitle.Apply(label);
+
+            CreateRunStatusLine();
+        }
+
+        // 라벨 판 바로 아래에 더 작은 글자로 그린다. 라벨이 없으면 이 메서드 자체가 불리지
+        // 않는다 — CreateWindowLabel 의 이른 반환을 그대로 물려받으므로, 라벨 없는 화면은
+        // 지금과 똑같이 남는다. RUN_STATUS 가 아직 한 번도 오지 않았으면 빈 줄 대신
+        // RunStatusLine.NoRunYet 을 써서, 그리다가 실패한 빈 줄과 가려지게 두지 않는다
+        // (ARTEL-835).
+        private void CreateRunStatusLine()
+        {
+            var statusObject = new GameObject("Artel Run Status", typeof(RectTransform), typeof(Image));
+            statusObject.transform.SetParent(canvasObject.transform, false);
+            // 라벨 판과 같은 이유로 계기다. content map 과 pulse 는 이 줄도 보고하지 않는다
+            // (ARTEL-698).
+            statusObject.AddComponent<Instrument>();
+
+            var statusRect = statusObject.GetComponent<RectTransform>();
+            AnchorTopLeft(statusRect, new Vector2(24f, -(24f + WindowLabelHeight + RunStatusGap)));
+            statusObject.GetComponent<Image>().color = bgSurface;
+
+            var text = CreateText(
+                statusObject.transform,
+                RunStatusLine.Describe(latestRunStatus),
+                RunStatusFontSize,
+                TextAnchor.MiddleLeft,
+                textSecondary);
+            // 라벨 판이 잡았던 버그를 여기서 되풀이하지 않는다 — CreateText 의 기본은
+            // Wrap + Truncate 라, 판보다 긴 문구는 두 줄로 접힌 뒤 판 높이를 넘긴 줄이
+            // 통째로 사라진다. 세로 여백도 두지 않는다: 위아래로 빼면 남는 높이가 13pt 글자의
+            // 줄 높이보다 낮아질 수 있고, 그러면 라벨 판과 같은 방식으로 줄이 사라진다.
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+            var textRect = text.rectTransform;
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(WindowLabelPadding, 0f);
+            textRect.offsetMax = new Vector2(-WindowLabelPadding, 0f);
+
+            var textWidth = Mathf.Clamp(text.preferredWidth, MinWindowLabelTextWidth, MaxWindowLabelTextWidth);
+            statusRect.sizeDelta = new Vector2(textWidth + WindowLabelPadding * 2f, RunStatusHeight);
+
+            runStatusText = text;
+        }
+
+        private void CreateProgressContent()
+        {
+            progressContent = CreateCard("Progress Content", 296f);
+            CreateCardHeader(progressContent.transform);
+
+            coverMessageText = CreateText(
+                progressContent.transform,
+                "인스턴스를 등록하는 중입니다. 잠시만 기다려 주세요.",
+                20,
+                TextAnchor.UpperLeft,
+                textSecondary);
+            SetRect(coverMessageText.rectTransform, new Vector2(36f, -104f), new Vector2(GateContentWidth, 56f));
+
+            coverStatusText = CreateText(
+                progressContent.transform, string.Empty, 14, TextAnchor.UpperLeft, textMuted);
+            SetRect(coverStatusText.rectTransform, new Vector2(36f, -164f), new Vector2(GateContentWidth, 36f));
+
+            cancelLoginButton = CreateButton(progressContent.transform, "취소", new Vector2(GateContentWidth, 44f));
+            SetRect(cancelLoginButton.GetComponent<RectTransform>(), new Vector2(36f, -216f), new Vector2(GateContentWidth, 44f));
+            cancelLoginButton.onClick.AddListener(viewModel.CancelLogin);
+        }
+
+        // 게임 화면 거리에서 읽히도록 artel-home의 타이포보다 한 단계 크게 잡는다.
+        //
+        // 배치는 VerticalLayoutGroup이 아니라 CenterRect 고정 좌표다. 레이아웃 그룹은
+        // childControlHeight/childForceExpandHeight가 기본 true인데 스프라이트 없는
+        // Image/Button은 ILayoutElement를 구현하지 않아(Text만 한다) ContentSizeFitter
+        // 아래에서 높이가 0으로 접힌다. 요소마다 LayoutElement를 붙이는 쪽이 더 길다.
+        private void CreateGateContent()
+        {
+            gateContent = CreateCard("Gate Content", 312f);
+            CreateCardHeader(gateContent.transform);
+
+            serverSettingsContent = new GameObject("Server Settings", typeof(RectTransform));
+            serverSettingsContent.transform.SetParent(gateContent.transform, false);
+            SetRect(serverSettingsContent.GetComponent<RectTransform>(), Vector2.zero, new Vector2(GateContentWidth, 144f));
+            var settingsToggle = CreateButton(gateContent.transform, "고급 설정", new Vector2(144f, 36f));
+            serverSettingsButton = settingsToggle;
+            serverSettingsToggleText = settingsToggle.GetComponentInChildren<Text>();
+            settingsToggle.onClick.AddListener(() =>
+            {
+                serverSettingsOpen = !serverSettingsOpen;
+                if (serverSettingsOpen) gateOpenedExplicitly = true;
+                serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
+                RefreshView();
+            });
+            var serverLabel = CreateText(serverSettingsContent.transform, "서버 주소", 16, TextAnchor.MiddleLeft, textSecondary);
+            SetRect(serverLabel.rectTransform, new Vector2(0f, -8f), new Vector2(GateContentWidth, 24f));
+            var inputObject = new GameObject("Server URL", typeof(RectTransform), typeof(Image), typeof(InputField));
+            inputObject.transform.SetParent(serverSettingsContent.transform, false);
+            SetRect(inputObject.GetComponent<RectTransform>(), new Vector2(0f, -40f), new Vector2(384f, 44f));
+            inputObject.GetComponent<Image>().color = bgRaised;
+            serverUrlInput = inputObject.GetComponent<InputField>();
+            var addressText = CreateText(inputObject.transform, "", 16, TextAnchor.MiddleLeft);
+            Inset(addressText.rectTransform, 8f);
+            addressText.supportRichText = false;
+            serverUrlInput.textComponent = addressText;
+            serverUrlInput.targetGraphic = inputObject.GetComponent<Image>();
+            serverUrlInput.lineType = InputField.LineType.SingleLine;
+            serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
+            applyServerButton = CreateButton(serverSettingsContent.transform, "적용", new Vector2(92f, 44f));
+            SetRect(applyServerButton.GetComponent<RectTransform>(), new Vector2(396f, -40f), new Vector2(92f, 44f));
+            applyServerButton.onClick.AddListener(ApplyServer);
+            var resetServer = CreateButton(serverSettingsContent.transform, "ARTEL 서버로 복원", new Vector2(180f, 32f));
+            SetRect(resetServer.GetComponent<RectTransform>(), new Vector2(0f, -96f), new Vector2(180f, 32f));
+            resetServer.onClick.AddListener(() =>
+            {
+                serverUrlInput.text = Server.DefaultUrl;
+                ApplyServer();
+            });
+            serverSettingsContent.SetActive(false);
+
+            gateMessageText = CreateText(
+                gateContent.transform,
+                LoginMessage,
+                18,
+                TextAnchor.UpperLeft,
+                textSecondary);
+            SetRect(gateMessageText.rectTransform, new Vector2(36f, -100f), new Vector2(GateContentWidth, 48f));
+
+            gateSelectedProjectText = CreateText(gateContent.transform, string.Empty, 16, TextAnchor.MiddleLeft, textSecondary);
+            gateSelectedProjectText.gameObject.name = "Selected Project";
+            gateSelectedProjectText.supportRichText = false;
+            SetRect(gateSelectedProjectText.rectTransform, new Vector2(36f, -144f), new Vector2(360f, 36f));
+            refreshProjectsButton = CreateButton(gateContent.transform, "새로고침", new Vector2(112f, 36f));
+            SetRect(refreshProjectsButton.GetComponent<RectTransform>(), new Vector2(412f, -144f), new Vector2(112f, 36f));
+            refreshProjectsButton.onClick.AddListener(ReloadProjects);
+
+            // 오류 줄은 빈 문자열로도 자리를 차지한다. 나타날 때 아래 버튼이 밀리면 누르려던
+            // 위치가 어긋난다.
+            gateErrorText = CreateText(
+                gateContent.transform, string.Empty, 14, TextAnchor.UpperLeft, StatusCritical);
+            SetRect(gateErrorText.rectTransform, new Vector2(36f, -192f), new Vector2(GateContentWidth, 44f));
+
+            loginButton = CreateButton(gateContent.transform, "로그인", new Vector2(GateContentWidth, 48f), primary: true);
+            loginButton.onClick.AddListener(BeginLogin);
+
+            // 로그인은 됐는데 목록을 못 읽었거나 등록이 실패한 자리. 이것이 없으면 게이트에
+            // 남는 길이 로그아웃뿐이라, 잠깐 끊긴 서버 때문에 다시 로그인해야 한다.
+            reloadProjectsButton = CreateButton(gateContent.transform, "다시 시도", new Vector2(GateContentWidth, 48f), primary: true);
+            reloadProjectsButton.onClick.AddListener(ReloadProjects);
+
+            projectListObject = new GameObject(
+                "Project List", typeof(RectTransform), typeof(ScrollRect));
+            projectListObject.transform.SetParent(gateContent.transform, false);
+            var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
+            viewport.transform.SetParent(projectListObject.transform, false);
+            SetRect(viewport.GetComponent<RectTransform>(), Vector2.zero, new Vector2(GateContentWidth - 20f, VisibleProjectRows * ProjectRowHeight));
+            viewport.GetComponent<Image>().color = bgSurface;
+            projectListContent = new GameObject("Content", typeof(RectTransform)).GetComponent<RectTransform>();
+            projectListContent.SetParent(viewport.transform, false);
+            SetRect(projectListContent, Vector2.zero, new Vector2(GateContentWidth - 20f, 0f));
+            listedProjectIds.Clear();
+            projectScrollRect = projectListObject.GetComponent<ScrollRect>();
+            projectScrollRect.viewport = viewport.GetComponent<RectTransform>();
+            projectScrollRect.content = projectListContent;
+            projectScrollRect.horizontal = false;
+            projectScrollRect.movementType = ScrollRect.MovementType.Clamped;
+            projectScrollRect.scrollSensitivity = ProjectRowHeight;
+            var scrollTrack = CreateSurface(projectListObject.transform, "Scrollbar", bgRaised, 4f);
+            SetRect(scrollTrack.rectTransform, new Vector2(GateContentWidth - 8f, 0f), new Vector2(8f, VisibleProjectRows * ProjectRowHeight));
+            var scrollHandle = CreateSurface(scrollTrack.transform, "Handle", borderStrong, 4f);
+            Inset(scrollHandle.rectTransform, 0f);
+            var scrollbar = scrollTrack.gameObject.AddComponent<Scrollbar>();
+            scrollbar.handleRect = scrollHandle.rectTransform;
+            scrollbar.targetGraphic = scrollHandle;
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
+            projectScrollRect.verticalScrollbar = scrollbar;
+            projectScrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+
+            gateLogOutButton = CreateButton(gateContent.transform, "로그아웃", new Vector2(112f, 36f));
+            // 고급 섹션에도 같은 라벨의 버튼이 있다. GameObject 이름이 겹치면 어느 쪽을
+            // 집었는지 알 수 없어 계층에서도 테스트에서도 헷갈린다.
+            gateLogOutButton.gameObject.name = "게이트 로그아웃 Button";
+            gateLogOutButton.onClick.AddListener(LogOut);
+
+            gateDismissButton = CreateButton(gateContent.transform, "닫기", new Vector2(112f, 36f));
+            gateDismissButton.onClick.AddListener(DismissGate);
+        }
+
+        // 프로젝트 버튼은 목록을 받은 뒤에야 몇 개인지 안다. 목록이 실제로 달라졌을 때만
+        // 다시 만든다 — 매번 지웠다 만들면 누르는 순간 버튼이 사라진다.
+        private void RebuildProjectList()
+        {
+            var projects = viewModel.Projects;
+            if (MatchesListedProjects(projects))
+            {
+                return;
+            }
+
+            listedProjectIds.Clear();
+            for (var index = projectListContent.childCount - 1; index >= 0; index--)
+            {
+                var child = projectListContent.GetChild(index).gameObject;
+                child.SetActive(false);
+                if (Application.isPlaying)
+                {
+                    Destroy(child);
+                }
+                else
+                {
+                    DestroyImmediate(child);
+                }
+            }
+
+            var rowCount = projects.Count;
+            var rowWidth = GateContentWidth - 20f;
+            projectListContent.sizeDelta = new Vector2(rowWidth, rowCount * ProjectRowHeight);
+            projectScrollRect.StopMovement();
+            projectListContent.anchoredPosition = Vector2.zero;
+            for (var index = 0; index < rowCount; index++)
+            {
+                var project = projects[index];
+                var button = CreateButton(
+                    projectListContent, project.Name ?? project.Id, new Vector2(rowWidth, 56f));
+                SetRect(
+                    button.GetComponent<RectTransform>(),
+                    new Vector2(0f, -(index * ProjectRowHeight)),
+                    new Vector2(rowWidth, 56f));
+                var projectLabel = button.GetComponentInChildren<Text>();
+                projectLabel.alignment = TextAnchor.MiddleLeft;
+                projectLabel.fontSize = 17;
+                projectLabel.rectTransform.offsetMin = new Vector2(60f, 0f);
+                projectLabel.rectTransform.offsetMax = new Vector2(-36f, 0f);
+                projectLabel.supportRichText = false;
+                var icon = CreateSurface(button.transform, "Project Icon", bgSurface, 4f);
+                SetRect(icon.rectTransform, new Vector2(12f, -10f), new Vector2(36f, 36f));
+                var name = project.Name ?? project.Id ?? string.Empty;
+                var initial = CreateText(icon.transform, name.Length > 0 ? name.Substring(0, 1).ToUpperInvariant() : string.Empty, 16, TextAnchor.MiddleCenter, brandAccent);
+                Inset(initial.rectTransform, 0f);
+                var chevron = CreateText(button.transform, "›", 24, TextAnchor.MiddleCenter, textMuted);
+                SetRect(chevron.rectTransform, new Vector2(rowWidth - 32f, -10f), new Vector2(24f, 36f));
+                var projectId = project.Id;
+                button.onClick.AddListener(() => ChooseProject(projectId));
+                listedProjectIds.Add(projectId);
+            }
+        }
+
+        private bool MatchesListedProjects(IReadOnlyList<SdkProjectDto> projects)
+        {
+            var rowCount = projects.Count;
+            if (listedProjectIds.Count != rowCount)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < rowCount; index++)
+            {
+                if (!string.Equals(listedProjectIds[index], projects[index].Id, System.StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void CreateAdvancedSection()
+        {
+            advancedObject = new GameObject("Advanced Section", typeof(RectTransform));
+            advancedObject.transform.SetParent(panelObject.transform, false);
+            SetRect(advancedObject.GetComponent<RectTransform>(), new Vector2(0f, -222f), new Vector2(440f, 128f));
+
+            var details = CreateText(
+                advancedObject.transform,
+                "SDK UUID " + artelManager.SdkId + "\n게임 버전 " + GameVersionLabel(),
+                14,
+                TextAnchor.UpperLeft);
+            SetRect(details.rectTransform, new Vector2(20f, -8f), new Vector2(400f, 44f));
+            accountText = details;
+
+            var smoothCursorToggle = CreateToggle(advancedObject.transform, "부드러운 커서");
+            SetRect(smoothCursorToggle.GetComponent<RectTransform>(), new Vector2(20f, -58f), new Vector2(200f, 32f));
+            smoothCursorToggle.isOn = artelManager.SmoothCursorMovement;
+            smoothCursorToggle.onValueChanged.AddListener(value => artelManager.SmoothCursorMovement = value);
+
+            var themeToggle = CreateToggle(advancedObject.transform, "다크 모드");
+            SetRect(themeToggle.GetComponent<RectTransform>(), new Vector2(20f, -92f), new Vector2(200f, 32f));
+            themeToggle.isOn = darkTheme;
+            themeToggle.onValueChanged.AddListener(SetDarkTheme);
+
+            connectButton = CreateButton(advancedObject.transform, "연결", new Vector2(180f, 36f));
+            SetRect(connectButton.GetComponent<RectTransform>(), new Vector2(240f, -56f), new Vector2(180f, 36f));
+            connectButton.onClick.AddListener(ConnectWebSocket);
+
+            var logOutButton = CreateButton(advancedObject.transform, "로그아웃", new Vector2(180f, 32f));
+            SetRect(logOutButton.GetComponent<RectTransform>(), new Vector2(240f, -96f), new Vector2(180f, 32f));
+            logOutButton.onClick.AddListener(LogOut);
+
+            var changeServer = CreateButton(advancedObject.transform, "서버 변경", new Vector2(400f, 36f));
+            SetRect(changeServer.GetComponent<RectTransform>(), new Vector2(20f, -138f), new Vector2(400f, 36f));
+            changeServer.onClick.AddListener(() =>
+            {
+                if (loginRunning || registrationRunning) return;
+                serverSettingsOpen = true;
+                gateOpenedExplicitly = true;
+                gateDismissed = false;
+                serverUrlInput.text = artelManager.Server.HttpBaseUri.AbsoluteUri;
+                RefreshView();
+            });
+            advancedObject.SetActive(false);
+        }
+
+        private void RefreshView()
+        {
+            // 게이트 콘텐츠가 GUI에서 마지막에 만들어지고, 이 버튼은 그중에서도 마지막에
+            // 잡히는 참조다. 이것이 있으면 아래에서 만지는 나머지도 다 있다.
+            if (gateLogOutButton == null)
+            {
+                return;
+            }
+
+            var projectLabel = string.IsNullOrWhiteSpace(viewModel.SelectedProjectName)
+                ? viewModel.SelectedProjectId
+                : viewModel.SelectedProjectName;
+            selectedProjectText.text = "프로젝트 · " + (string.IsNullOrEmpty(projectLabel) ? "미선택" : projectLabel);
+            gateSelectedProjectText.text = selectedProjectText.text;
+            gateSelectedProjectText.gameObject.SetActive(viewModel.HasToken);
+            statusText.text = LegacyInput.IsAvailable
+                ? viewModel.Status
+                : viewModel.Status + "\n" + NewInputSystemOnlyNotice;
+            // 실패를 문장으로만 알리면 눈에 걸리지 않는다.
+            statusText.color = StatusColor();
+            accountText.text =
+                (viewModel.HasToken ? "로그인 " + AccountLabel() : "로그인하지 않음") +
+                "\nSDK UUID " + artelManager.SdkId +
+                "\n게임 버전 " + GameVersionLabel();
+            coverStatusText.text = viewModel.Status == coverMessageText.text ? string.Empty : viewModel.Status;
+            gateErrorText.text = viewModel.HasError ? viewModel.Status : string.Empty;
+            connectButton.interactable = viewModel.CanConnect;
+
+            // 게이트는 한 번에 하나만 묻는다. 토큰이 없으면 로그인, 목록이 있으면 프로젝트,
+            // 토큰만 있고 목록이 비었으면 다시 시도. 셋을 동시에 띄우면 무엇이 다음 단계인지
+            // 알 수 없다.
+            var choosingProject = viewModel.HasToken && viewModel.Projects.Count > 0;
+            loginButton.gameObject.SetActive(!viewModel.HasToken);
+            loginButton.interactable = viewModel.CanLogIn && !loginRunning;
+            cancelLoginButton.gameObject.SetActive(loginRunning && viewModel.CanCancelLogin);
+            reloadProjectsButton.gameObject.SetActive(viewModel.HasToken && !choosingProject);
+            reloadProjectsButton.interactable = !loginRunning;
+            refreshProjectsButton.gameObject.SetActive(viewModel.HasToken);
+            refreshProjectsButton.interactable = !loginRunning && !registrationRunning;
+            projectListObject.SetActive(choosingProject);
+            gateLogOutButton.gameObject.SetActive(viewModel.HasToken);
+            gateMessageText.text = viewModel.HasToken ? ChooseProjectMessage : LoginMessage;
+            RebuildProjectList();
+            var bodyTop = 156f + (viewModel.HasToken ? 40f : 0f) + (viewModel.HasError ? 52f : 0f);
+            SetRect(gateErrorText.rectTransform, new Vector2(36f, -(viewModel.HasToken ? 192f : 152f)), new Vector2(GateContentWidth, 44f));
+            SetRect(loginButton.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, 48f));
+            SetRect(reloadProjectsButton.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, 48f));
+            SetRect(projectListObject.GetComponent<RectTransform>(), new Vector2(36f, -bodyTop), new Vector2(GateContentWidth, VisibleProjectRows * ProjectRowHeight));
+            var footerTop = bodyTop + (choosingProject ? VisibleProjectRows * ProjectRowHeight : 48f) + 24f;
+            SetRect(gateLogOutButton.GetComponent<RectTransform>(), new Vector2(36f, -footerTop), new Vector2(112f, 36f));
+            SetRect(serverSettingsButton.GetComponent<RectTransform>(), new Vector2(viewModel.HasToken ? 164f : 36f, -footerTop), new Vector2(144f, 36f));
+            SetRect(gateDismissButton.GetComponent<RectTransform>(), new Vector2(412f, -footerTop), new Vector2(112f, 36f));
+            SetRect(serverSettingsContent.GetComponent<RectTransform>(), new Vector2(36f, -footerTop - 60f), new Vector2(GateContentWidth, 144f));
+            gateContent.GetComponent<RectTransform>().sizeDelta = new Vector2(GateWidth, footerTop + 72f + (serverSettingsOpen ? 152f : 0f));
+
+            // 덮개와 두 콘텐츠 그룹의 쓰기 주체는 여기 하나다. 코루틴이 따로 켜고 끄면
+            // 어느 한쪽 경로에서 덮개가 켜진 채 남아 게임 화면을 통째로 가린다.
+            //
+            // registrationRunning이 콘텐츠 선택에 들어가는 이유: 등록 요청이 도는 동안
+            // State가 아직 NeedsLogin일 수 있다. ShowGate만 보면 그 동안 게이트가 버튼을 켠
+            // 채 얼어 있다. 브라우저를 기다리는 동안도 같다.
+            var busy = registrationRunning || loginRunning;
+            serverSettingsContent.SetActive(serverSettingsOpen);
+            serverSettingsToggleText.text = serverSettingsOpen ? "고급 설정 닫기" : "고급 설정";
+            serverUrlInput.interactable = !busy;
+            applyServerButton.interactable = !busy;
+            var showGate = (viewModel.ShowGate || gateOpenedExplicitly) && !busy && !gateDismissed;
+            coverObject.SetActive(showGate || busy);
+            gateContent.SetActive(showGate);
+            progressContent.SetActive(busy);
+
+            // 패널을 매 Changed마다 덮어쓰면 Artel 토글이 무력화된다 — 직접 열어둔 패널이
+            // 다음 상태 변화에 닫혀버린다. 그래서 전이에서만 쓴다.
+            if (appliedShowPanel != viewModel.ShowPanel)
+            {
+                appliedShowPanel = viewModel.ShowPanel;
+                panelObject.SetActive(appliedShowPanel);
+            }
+        }
+
+        private string AccountLabel()
+        {
+            var displayName = viewModel.DisplayName;
+            return string.IsNullOrWhiteSpace(displayName) ? "완료" : displayName;
+        }
+
+        // 에디터 실행은 development build와 같은 버전 문자열을 쓰므로 overlay에서 구분해 보인다.
+        private string GameVersionLabel()
+        {
+            return artelManager.IsEditor
+                ? artelManager.GameVersion + " (editor)"
+                : artelManager.GameVersion;
+        }
+
+        private Color StatusColor()
+        {
+            if (viewModel.State == ArtelConnectionState.Connected)
+            {
+                return StatusSuccess;
+            }
+
+            return viewModel.HasError ? StatusCritical : textSecondary;
+        }
+
+        // primary는 화면에서 지금 눌러야 하는 버튼 하나에만 쓴다. 나머지는 secondary로
+        // 물러나 있어야 그 하나가 눈에 띈다. artel-home의 .button--primary /
+        // .button--secondary와 같은 구분이다.
+        private ArtelSurfaceGraphic CreateSurface(Transform parent, string name, Color color, float radius = 6f)
+        {
+            var surface = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(ArtelSurfaceGraphic));
+            surface.transform.SetParent(parent, false);
+            var graphic = surface.GetComponent<ArtelSurfaceGraphic>();
+            graphic.color = color;
+            graphic.Radius = radius;
+            return graphic;
+        }
+
+        private GameObject CreateCard(string name, float height)
+        {
+            var card = CreateSurface(coverObject.transform, name, borderSubtle);
+            CenterRect(card.rectTransform, Vector2.zero, new Vector2(GateWidth, height));
+            var fill = CreateSurface(card.transform, "Surface", bgSurface, 5f);
+            Inset(fill.rectTransform, 1f);
+            fill.raycastTarget = false;
+            return card.gameObject;
+        }
+
+        private void CreateCardHeader(Transform parent)
+        {
+            var mark = CreateSurface(parent, "Brand Mark", bgRaised, 4f);
+            SetRect(mark.rectTransform, new Vector2(36f, -32f), new Vector2(44f, 44f));
+            CreateLogo(mark.transform, Vector2.zero, 32f);
+            var title = CreateText(parent, "Artel SDK", 24, TextAnchor.MiddleLeft);
+            title.fontStyle = FontStyle.Bold;
+            SetRect(title.rectTransform, new Vector2(96f, -32f), new Vector2(220f, 44f));
+            var theme = CreateToggle(parent, "다크 모드");
+            SetRect(theme.GetComponent<RectTransform>(), new Vector2(388f, -40f), new Vector2(136f, 28f));
+            theme.isOn = darkTheme;
+            theme.onValueChanged.AddListener(SetDarkTheme);
+        }
+
+        private Button CreateButton(Transform parent, string label, Vector2 size, bool primary = false)
+        {
+            var outline = CreateSurface(parent, label + " Button", primary ? brandAccent : borderSubtle, 4f);
+            var buttonObject = outline.gameObject;
+            outline.rectTransform.sizeDelta = size;
+            var fill = CreateSurface(outline.transform, "Fill", Color.white, 3f);
+            Inset(fill.rectTransform, 1f);
+            var button = buttonObject.AddComponent<Button>();
+            button.targetGraphic = fill;
+            var colors = button.colors;
+            colors.normalColor = primary ? brandAccent : bgRaised;
+            colors.highlightedColor = primary ? Color.Lerp(brandAccent, textPrimary, 0.1f) : bgHover;
+            colors.selectedColor = colors.highlightedColor;
+            colors.pressedColor = primary ? Color.Lerp(brandAccent, textPrimary, 0.2f) : borderSubtle;
+            colors.disabledColor = bgCanvas;
+            colors.fadeDuration = 0.1f;
+            button.colors = colors;
+
+            var text = CreateText(
+                buttonObject.transform,
+                label,
+                16,
+                TextAnchor.MiddleCenter,
+                primary ? textOnAccent : textPrimary);
+            text.rectTransform.anchorMin = Vector2.zero;
+            text.rectTransform.anchorMax = Vector2.one;
+            text.rectTransform.offsetMin = Vector2.zero;
+            text.rectTransform.offsetMax = Vector2.zero;
+            return button;
+        }
+
+        private static void Inset(RectTransform rectTransform, float amount)
+        {
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = new Vector2(amount, amount);
+            rectTransform.offsetMax = new Vector2(-amount, -amount);
+        }
+
+        private Text CreateText(
+            Transform parent, string value, int fontSize, TextAnchor alignment, Color? color = null)
+        {
+            var textObject = new GameObject("Text", typeof(RectTransform), typeof(Text));
+            textObject.transform.SetParent(parent, false);
+            var text = textObject.GetComponent<Text>();
+            text.text = value;
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = fontSize;
+            text.color = color ?? textPrimary;
+            text.alignment = alignment;
+            text.raycastTarget = false;
+            text.horizontalOverflow = HorizontalWrapMode.Wrap;
+            text.verticalOverflow = VerticalWrapMode.Truncate;
+            return text;
+        }
+
+        private void CreateLogo(Transform parent, Vector2 position, float size)
+        {
+            var mark = new GameObject("Artel Logo", typeof(RectTransform), typeof(CanvasRenderer), typeof(ArtelLogoGraphic));
+            mark.transform.SetParent(parent, false);
+            var logo = mark.GetComponent<ArtelLogoGraphic>();
+            logo.BodyColor = ArtelLogoGraphic.Body(darkTheme);
+            logo.AccentColor = ArtelLogoGraphic.Accent(darkTheme);
+            logo.raycastTarget = false;
+            CenterRect(mark.GetComponent<RectTransform>(), position, new Vector2(size, size));
+        }
+
+        private Toggle CreateToggle(Transform parent, string label)
+        {
+            var toggleObject = new GameObject(label + " Toggle", typeof(RectTransform), typeof(Toggle));
+            toggleObject.transform.SetParent(parent, false);
+
+            var backgroundObject = new GameObject("Background", typeof(RectTransform), typeof(Image));
+            backgroundObject.transform.SetParent(toggleObject.transform, false);
+            var backgroundRect = backgroundObject.GetComponent<RectTransform>();
+            SetRect(backgroundRect, Vector2.zero, new Vector2(28f, 28f));
+            var background = backgroundObject.GetComponent<Image>();
+            background.color = bgRaised;
+
+            var checkmarkObject = new GameObject("Checkmark", typeof(RectTransform), typeof(Image));
+            checkmarkObject.transform.SetParent(backgroundObject.transform, false);
+            var checkmarkRect = checkmarkObject.GetComponent<RectTransform>();
+            checkmarkRect.anchorMin = new Vector2(0.2f, 0.2f);
+            checkmarkRect.anchorMax = new Vector2(0.8f, 0.8f);
+            checkmarkRect.offsetMin = Vector2.zero;
+            checkmarkRect.offsetMax = Vector2.zero;
+            var checkmark = checkmarkObject.GetComponent<Image>();
+            checkmark.color = actionPrimary;
+
+            var text = CreateText(toggleObject.transform, label, 16, TextAnchor.MiddleLeft);
+            text.raycastTarget = true;
+            SetRect(text.rectTransform, new Vector2(40f, 0f), new Vector2(180f, 28f));
+
+            var toggle = toggleObject.GetComponent<Toggle>();
+            toggle.targetGraphic = background;
+            toggle.graphic = checkmark;
+            return toggle;
+        }
+
+        private void SetDarkTheme(bool enabled)
+        {
+            if (darkTheme == enabled)
+            {
+                return;
+            }
+
+            darkTheme = enabled;
+            PlayerPrefs.SetInt(DarkThemePlayerPrefsKey, enabled ? 1 : 0);
+            PlayerPrefs.Save();
+            ApplyPalette();
+
+            var previousCanvas = canvasObject;
+            CreateGui();
+            RefreshView();
+            if (Application.isPlaying)
+            {
+                Destroy(previousCanvas);
+            }
+            else
+            {
+                DestroyImmediate(previousCanvas);
+            }
+        }
+
+        private void ApplyPalette()
+        {
+            if (darkTheme)
+            {
+                bgCanvas = new Color32(0x14, 0x16, 0x1C, 0xFF);
+                bgSurface = new Color32(0x1A, 0x1D, 0x24, 0xFF);
+                bgRaised = new Color32(0x22, 0x26, 0x2F, 0xFF);
+                borderStrong = new Color32(0x61, 0x6B, 0x7A, 0xFF);
+                borderSubtle = new Color32(0x2C, 0x31, 0x3C, 0xFF);
+                bgHover = new Color32(0x2B, 0x30, 0x38, 0xFF);
+                textPrimary = ArtelLogoGraphic.Ink;
+                textSecondary = new Color32(0x9A, 0xA1, 0xAD, 0xFF);
+                textMuted = new Color32(0x83, 0x8C, 0x9A, 0xFF);
+            }
+            else
+            {
+                bgCanvas = new Color32(0xF7, 0xF4, 0xEE, 0xFF);
+                bgSurface = new Color32(0xFD, 0xFB, 0xF7, 0xFF);
+                bgRaised = new Color32(0xF1, 0xED, 0xE5, 0xFF);
+                borderStrong = new Color32(0x92, 0x8C, 0x7D, 0xFF);
+                borderSubtle = new Color32(0xD8, 0xD4, 0xCB, 0xFF);
+                bgHover = new Color32(0xE8, 0xE3, 0xD8, 0xFF);
+                textPrimary = ArtelLogoGraphic.Charcoal;
+                textSecondary = new Color32(0x5A, 0x5F, 0x6B, 0xFF);
+                textMuted = new Color32(0x6F, 0x6C, 0x62, 0xFF);
+            }
+
+            brandAccent = ArtelLogoGraphic.Accent(darkTheme);
+            actionPrimary = brandAccent;
+
+            // 채운 accent 위에는 두 테마 모두 잉크를 얹는다. 흰 글자는 #F04B3A 위에서
+            // 3.64:1이고 잉크는 4.97:1이다. 버튼 라벨에는 후자만 통과한다.
+            textOnAccent = new Color32(0x14, 0x16, 0x1C, 0xFF);
+
+            // 덮개는 씬 전환을 비추지 않도록 항상 불투명하다.
+            coverColor = bgCanvas;
+        }
+
+        private static void AnchorTopRight(RectTransform rectTransform, Vector2 position)
+        {
+            rectTransform.anchorMin = new Vector2(1f, 1f);
+            rectTransform.anchorMax = new Vector2(1f, 1f);
+            rectTransform.pivot = new Vector2(1f, 1f);
+            rectTransform.anchoredPosition = position;
+        }
+
+        private static void AnchorTopLeft(RectTransform rectTransform, Vector2 position)
+        {
+            rectTransform.anchorMin = new Vector2(0f, 1f);
+            rectTransform.anchorMax = new Vector2(0f, 1f);
+            rectTransform.pivot = new Vector2(0f, 1f);
+            rectTransform.anchoredPosition = position;
+        }
+
+        private static void SetRect(RectTransform rectTransform, Vector2 position, Vector2 size)
+        {
+            rectTransform.anchorMin = new Vector2(0f, 1f);
+            rectTransform.anchorMax = new Vector2(0f, 1f);
+            rectTransform.pivot = new Vector2(0f, 1f);
+            rectTransform.anchoredPosition = position;
+            rectTransform.sizeDelta = size;
+        }
+
+        private static void CenterRect(RectTransform rectTransform, Vector2 position, Vector2 size)
+        {
+            rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+            rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+            rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            rectTransform.anchoredPosition = position;
+            rectTransform.sizeDelta = size;
+        }
+
+        private static GameObject EnsureEventSystem(Transform owner)
+        {
+            if (EventSystem.current != null)
+            {
+                return null;
+            }
+
+            var eventSystem = new GameObject("Artel EventSystem", typeof(EventSystem));
+            AddInputModule(eventSystem);
+            // Also parented to the manager: a scene that arrives without an
+            // EventSystem leaves the UI unclickable, and the one we made for that
+            // case must not disappear with the scene we made it in.
+            eventSystem.transform.SetParent(owner, false);
+            return eventSystem;
+        }
+
+        /// <summary>
+        /// 구 <c>Input</c> 이 있으면 <c>StandaloneInputModule</c>, 없으면 Input System 패키지의 UI 모듈을 붙인다(ARTEL-1233).
+        /// </summary>
+        /// <remarks>
+        /// 신 Input System 만 켠 프로젝트에서 <c>StandaloneInputModule</c> 은 매 frame 구 <c>Input</c> 을 읽다가 예외를 던지고,
+        /// 그러면 overlay 의 로그인 버튼도 눌리지 않는다. SDK 는 Input System 패키지를 참조하지 않으므로 이름으로 찾는다.
+        /// 찾지 못하면 모듈 없이 둔다 — 예외를 내는 모듈보다 낫다.
+        /// </remarks>
+        private static void AddInputModule(GameObject eventSystem)
+        {
+            if (LegacyInput.IsAvailable)
+            {
+                eventSystem.AddComponent<StandaloneInputModule>();
+                return;
+            }
+
+            var inputSystemModule = System.Type.GetType(
+                "UnityEngine.InputSystem.UI.InputSystemUIInputModule, Unity.InputSystem");
+            if (inputSystemModule != null)
+            {
+                eventSystem.AddComponent(inputSystemModule);
+            }
+        }
+    }
+}

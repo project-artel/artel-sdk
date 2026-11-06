@@ -1,4 +1,8 @@
+using System;
 using System.Collections.Generic;
+using Artel.Diagnostics;
+using Artel.Domain;
+using Artel.Tracking;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -8,106 +12,201 @@ namespace Artel
 {
     internal sealed class SceneScanner
     {
-        private readonly Dictionary<int, ScannedTarget> targetsById = new Dictionary<int, ScannedTarget>();
-        private int nextId;
+        private readonly SerializedFieldReader serializedFieldReader = new SerializedFieldReader();
+        private readonly BlockTransformReader transformReader = new BlockTransformReader();
 
-        public SceneNode Scan()
+        public SceneScanResult Scan()
         {
-            targetsById.Clear();
-            nextId = 1;
+            return Scan(SceneScanOptions.Default);
+        }
 
-            var activeScene = SceneManager.GetActiveScene();
-            var scene = new SceneNode
+        public SceneScanResult Scan(SceneScanOptions options)
+        {
+            using (ArtelProfilerMarkers.SceneScanScan.Auto())
             {
-                id = NextId(),
-                type = "scene",
-                name = string.IsNullOrEmpty(activeScene.name) ? "Unity Scene" : activeScene.name,
-                children = new List<SceneNode>()
-            };
+                transformReader.BeginScan();
 
-            foreach (var root in activeScene.GetRootGameObjects())
+                var actionCommits = new List<ActionBatchCommit>();
+                return new SceneScanResult(
+                    ScanScene(SceneManager.GetActiveScene(), options, actionCommits),
+                    actionCommits);
+            }
+        }
+
+        private SceneSnapshot ScanScene(
+            Scene scene,
+            SceneScanOptions options,
+            List<ActionBatchCommit> actionCommits)
+        {
+            var children = new List<SceneBlock>();
+            foreach (var root in scene.GetRootGameObjects())
             {
-                if (root == null || !root.activeInHierarchy)
+                if (root == null || (!options.IncludeInactive && !root.activeInHierarchy))
                 {
                     continue;
                 }
 
-                var child = ScanTransform(root.transform);
+                var child = ScanTransform(root.transform, options, actionCommits);
                 if (child != null)
                 {
-                    scene.children.Add(child);
+                    children.Add(child);
                 }
             }
 
-            return scene;
+            return new SceneSnapshot(
+                // 2022.3 에서 이것은 int 고, Unity 6000.4 부터 SceneHandle 이며 int 로의 암묵 변환이
+                // deprecated 다(6000.5 는 하드 오류). GetHashCode 는 양쪽에 있고 int 일 때는 값 자신을
+                // 돌려주므로, 두 버전이 같은 수를 낸다 — 어느 버전에서 형이 바뀌었는지 묻지 않아도 된다.
+                scene.handle.GetHashCode(),
+                string.IsNullOrEmpty(scene.name) ? "Unity Scene" : scene.name,
+                new Vector2Int(Screen.width, Screen.height),
+                children);
         }
 
+        /// <summary>
+        /// id 로 조작 대상을 찾는다.
+        /// </summary>
+        /// <remarks>
+        /// 한때 이것은 스캔이 채우고 매 스캔마다 비우는 사전이었다. 그래서 스캔이 멈추면 — 1초 <c>poller</c> 가
+        /// 사라진 지금은 아무도 <c>scan_scene</c> 을 보내지 않는 실행이 전부 그렇다(ARTEL-400) — 사전이 비고,
+        /// pulse 로 무엇이 바뀌었는지 아는 독자가 <b>그것을 건드릴 방법을 잃었다.</b>
+        ///
+        /// <c>Resources.InstanceIDToObject</c> 가 그 일을 이미 하고 있었다. 사전을 대신할 <c>AimableTargets</c> 를
+        /// 만들었다가 폐기한 것이 그 발견이다(ARTEL-397): 에디터가 아닌 실제 플레이어에서, 네 variation(mono·il2cpp ×
+        /// development·nondevelopment) 전부에 이 메서드가 있고 <c>onClick.Invoke()</c> 까지 실제로 됐다.
+        ///
+        /// 사전이 없어지면서 조준이 스캔에서 풀린다. 무엇을 겨눌 수 있는지는 이제 판독이 말하고, 그것을 실제로 쥐는
+        /// 일은 Unity 가 한다.
+        ///
+        /// Unity 6000.4 부터 그 메서드가 deprecated 고 <c>int</c> 로 객체를 되찾는 공인된 경로가 없다. 그래서
+        /// <c>ObjectIds</c> 가 내보낸 id 를 기억한다. 그 표는 비우지 않으므로 스캔이 멈춰도 조준은 풀리지
+        /// 않는다 — 위의 결론은 그대로다.
+        /// </remarks>
         public bool TryGetTarget(int id, out ScannedTarget target)
         {
-            return targetsById.TryGetValue(id, out target);
+            if (!TryResolveGameObject(id, out var gameObject))
+            {
+                target = null;
+                return false;
+            }
+
+            target = ScannedTarget.FromGameObject(gameObject);
+            return true;
         }
 
-        private SceneNode ScanTransform(Transform transform)
+        /// <summary>
+        /// id 로 <see cref="Transform"/> 을 찾는다. <see cref="TryGetTarget"/> 과 같은 자리를 겨누지만, 겨냥에는
+        /// 버튼도 입력란도 아닌 스프라이트나 맨 오브젝트도 필요해서 <see cref="ScannedTarget"/> 을 거치지 않는다.
+        /// </summary>
+        public bool TryGetTransform(int id, out Transform transform)
         {
-            if (transform == null || !transform.gameObject.activeInHierarchy)
+            if (!TryResolveGameObject(id, out var gameObject))
+            {
+                transform = null;
+                return false;
+            }
+
+            transform = gameObject.transform;
+            return true;
+        }
+
+        private static bool TryResolveGameObject(int id, out GameObject gameObject)
+        {
+            var found = ObjectIds.Find(id);
+
+            // 판독은 GameObject 의 id 를 싣지만 이 경로의 유일한 부름은 아니다. 컴포넌트를 받았으면 그것이 매달린
+            // 객체가 답이다 — 둘을 가르는 것은 부르는 쪽의 부담이 아니다.
+            gameObject = found as GameObject;
+            if (gameObject == null)
+            {
+                var component = found as Component;
+                gameObject = component == null ? null : component.gameObject;
+            }
+
+            return gameObject != null;
+        }
+
+        private SceneBlock ScanTransform(
+            Transform transform,
+            SceneScanOptions options,
+            List<ActionBatchCommit> actionCommits)
+        {
+            if (transform == null)
             {
                 return null;
             }
 
-            var target = ScannedTarget.FromGameObject(transform.gameObject);
-            var node = CreateNode(transform.gameObject, target);
-            targetsById[node.id] = target;
+            var active = transform.gameObject.activeInHierarchy;
+            if (!active && !options.IncludeInactive)
+            {
+                return null;
+            }
 
+            var id = ObjectIds.Of(transform.gameObject);
+            var target = ScannedTarget.FromGameObject(transform.gameObject);
+
+            var children = new List<SceneBlock>();
             for (var i = 0; i < transform.childCount; i++)
             {
-                var child = ScanTransform(transform.GetChild(i));
+                var child = ScanTransform(transform.GetChild(i), options, actionCommits);
                 if (child != null)
                 {
-                    node.children.Add(child);
+                    children.Add(child);
                 }
             }
 
-            return node;
-        }
-
-        private SceneNode CreateNode(GameObject gameObject, ScannedTarget target)
-        {
-            var node = new SceneNode
-            {
-                id = NextId(),
-                type = target.Kind,
-                name = gameObject.name,
-                children = new List<SceneNode>()
-            };
-
-            if (target.Kind == "Text")
-            {
-                node.content = target.GetText();
-            }
-            else if (target.Kind == "EditText")
-            {
-                node.content = target.GetText();
-                node.placeholder = target.GetPlaceholder();
-            }
-
-            return node;
-        }
-
-        private int NextId()
-        {
-            return nextId++;
+            return new SceneBlock(
+                id,
+                transform.gameObject.name,
+                active,
+                transformReader.Read(transform),
+                target.CreateComponents(transform.gameObject, serializedFieldReader, options, actionCommits),
+                children);
         }
     }
 
     internal sealed class ScannedTarget
     {
+        private static readonly IReadOnlyList<TrackedState> EmptyStates = new List<TrackedState>();
+        private static readonly IReadOnlyList<ActionInvocation> EmptyActions = new List<ActionInvocation>();
+        private static readonly IReadOnlyList<ButtonClickHandler> EmptyClickHandlers = new List<ButtonClickHandler>();
+
         private readonly Button button;
         private readonly InputField inputField;
         private readonly TMP_InputField tmpInputField;
         private readonly Text text;
         private readonly TMP_Text tmpText;
+        private readonly Image image;
+        private readonly SpriteRenderer spriteRenderer;
 
-        public string Kind { get; private set; }
+        public RectTransform RectTransform { get; }
+        public bool CanClick { get { return button != null; } }
+        public bool CanEnterText { get { return inputField != null || tmpInputField != null; } }
+
+        /// <summary>
+        /// Whether the button would accept a press from a person right now.
+        /// </summary>
+        public bool IsClickInteractable { get { return IsUsable(button); } }
+
+        /// <summary>
+        /// Whether the field this target's <see cref="EnterText"/> would write into accepts typing
+        /// right now. It follows the same InputField-before-TMP_InputField order EnterText writes in.
+        /// </summary>
+        public bool IsTextEntryInteractable
+        {
+            get { return inputField != null ? IsUsable(inputField) : IsUsable(tmpInputField); }
+        }
+
+        /// <summary>
+        /// IsInteractable covers the component's own flag and a blocking CanvasGroup, but not a
+        /// disabled component or an inactive object — and Unity's own event system refuses to
+        /// deliver a click to those. The null check comes first: reading isActiveAndEnabled on a
+        /// destroyed object throws.
+        /// </summary>
+        private static bool IsUsable(Selectable selectable)
+        {
+            return selectable != null && selectable.isActiveAndEnabled && selectable.IsInteractable();
+        }
 
         private ScannedTarget(
             Button button,
@@ -115,44 +214,224 @@ namespace Artel
             TMP_InputField tmpInputField,
             Text text,
             TMP_Text tmpText,
-            string kind)
+            Image image,
+            SpriteRenderer spriteRenderer,
+            RectTransform rectTransform)
         {
             this.button = button;
             this.inputField = inputField;
             this.tmpInputField = tmpInputField;
             this.text = text;
             this.tmpText = tmpText;
-            Kind = kind;
+            this.image = image;
+            this.spriteRenderer = spriteRenderer;
+            RectTransform = rectTransform;
         }
 
         public static ScannedTarget FromGameObject(GameObject gameObject)
         {
-            var button = gameObject.GetComponent<Button>();
-            var inputField = gameObject.GetComponent<InputField>();
-            var tmpInput = gameObject.GetComponent<TMP_InputField>();
-            var text = gameObject.GetComponent<Text>();
-            var tmpText = gameObject.GetComponent<TMP_Text>();
-
-            var kind = "block";
-            if (button != null)
-            {
-                kind = "Button";
-            }
-            else if (inputField != null || tmpInput != null)
-            {
-                kind = "EditText";
-            }
-            else if (text != null || tmpText != null)
-            {
-                kind = "Text";
-            }
-
-            return new ScannedTarget(button, inputField, tmpInput, text, tmpText, kind);
+            return new ScannedTarget(
+                gameObject.GetComponent<Button>(),
+                gameObject.GetComponent<InputField>(),
+                gameObject.GetComponent<TMP_InputField>(),
+                gameObject.GetComponent<Text>(),
+                gameObject.GetComponent<TMP_Text>(),
+                gameObject.GetComponent<Image>(),
+                gameObject.GetComponent<SpriteRenderer>(),
+                gameObject.GetComponent<RectTransform>());
         }
 
+        public IReadOnlyList<SceneComponent> CreateComponents(
+            GameObject gameObject,
+            SerializedFieldReader serializedFieldReader,
+            SceneScanOptions options,
+            List<ActionBatchCommit> actionCommits)
+        {
+            var components = new List<SceneComponent>();
+            var gameObjectName = gameObject.name;
+
+            if (button != null)
+            {
+                components.Add(new ButtonComponent(
+                    gameObjectName,
+                    IsUsable(button),
+                    EmptyStates,
+                    EmptyActions,
+                    options.IncludeButtonHandlers ? ReadClickHandlers(button) : EmptyClickHandlers));
+            }
+
+            if (inputField != null)
+            {
+                components.Add(new EditTextComponent(
+                    gameObjectName,
+                    inputField.text,
+                    GetPlaceholder(inputField),
+                    IsUsable(inputField),
+                    EmptyStates,
+                    EmptyActions));
+            }
+
+            if (tmpInputField != null)
+            {
+                components.Add(new EditTextComponent(
+                    gameObjectName,
+                    tmpInputField.text,
+                    GetPlaceholder(tmpInputField),
+                    IsUsable(tmpInputField),
+                    EmptyStates,
+                    EmptyActions));
+            }
+
+            if (text != null)
+            {
+                components.Add(new TextComponent(gameObjectName, text.text, EmptyStates, EmptyActions));
+            }
+
+            if (tmpText != null)
+            {
+                components.Add(new TextComponent(gameObjectName, tmpText.text, EmptyStates, EmptyActions));
+            }
+
+            // Reported even with no sprite assigned. A flat-colour panel is still something on
+            // screen, and an invisible one is still something the pointer would land on first.
+            if (image != null)
+            {
+                components.Add(new VisualComponent(
+                    gameObjectName,
+                    VisualKind.Image,
+                    image.sprite == null ? null : image.sprite.name,
+                    EmptyStates,
+                    EmptyActions));
+            }
+
+            if (spriteRenderer != null)
+            {
+                components.Add(new VisualComponent(
+                    gameObjectName,
+                    VisualKind.Sprite,
+                    spriteRenderer.sprite == null ? null : spriteRenderer.sprite.name,
+                    EmptyStates,
+                    EmptyActions));
+            }
+
+            foreach (var component in gameObject.GetComponents<Component>())
+            {
+                // A GameObject whose script failed to compile or went missing reports a null
+                // component here.
+                if (component == null)
+                {
+                    continue;
+                }
+
+                var actionSource = component as IArtelActionSource;
+                var readAllFields = options.IncludeAllSerializedFields && IsGameBehaviour(component);
+
+                // 조건이 둘이다. 셋이던 시절의 세 번째는 `[ArtelState]` 가 붙은 멤버를 가졌는가였고,
+                // 그 attribute 는 ARTEL-400 이 지웠다 — 상태는 이제 pulse 채널이 말한다.
+                if (actionSource == null && !readAllFields)
+                {
+                    continue;
+                }
+
+                var actionSnapshot = actionSource?.ArtelActionBuffer.Snapshot();
+                var actions = actionSnapshot?.Actions ?? EmptyActions;
+                if (actionSnapshot != null && actionSnapshot.Watermark > 0)
+                {
+                    actionCommits.Add(new ActionBatchCommit(actionSource.ArtelActionBuffer, actionSnapshot.Watermark));
+                }
+
+                components.Add(new TrackedComponent(
+                    component.GetType().FullName,
+                    component.GetType().Name,
+                    readAllFields ? ReadSerializedFields(component, serializedFieldReader) : EmptyStates,
+                    actions));
+            }
+
+            return components;
+        }
+
+        /// <summary>
+        /// Unity 가 직렬화할 필드를 전부 읽어 상태로 만든다. <c>scan_all_scenes ["full"]</c> 만
+        /// 지나는 길이다.
+        /// </summary>
+        /// <remarks>
+        /// 이름순으로 정렬해 돌려준다. 같은 객체를 두 번 스캔한 결과가 글자까지 같아야 읽는 쪽이
+        /// 두 스냅샷을 견줄 수 있다.
+        ///
+        /// 한 필드가 던져도 나머지는 싣는다. 값을 못 읽는 필드 하나 때문에 컴포넌트 전체가 빈 채로
+        /// 보고되면, 읽는 쪽은 그것이 비어 있는 것인지 못 읽은 것인지 가릴 수 없다.
+        /// </remarks>
+        private static IReadOnlyList<TrackedState> ReadSerializedFields(
+            Component component,
+            SerializedFieldReader serializedFieldReader)
+        {
+            var states = new List<TrackedState>();
+
+            // 필드 하나가 아니라 컴포넌트 하나에 marker 를 건다. 한 스캔이 필드 수만 개를 읽으므로,
+            // 필드마다 재면 Profiler 자신의 기록이 캡처에서 가장 큰 항목이 된다.
+            using (ArtelProfilerMarkers.StateReadSerializedFields.Auto())
+            {
+                foreach (var field in serializedFieldReader.GetSerializedFields(component.GetType()))
+                {
+                    try
+                    {
+                        states.Add(new TrackedState(
+                            string.Empty,
+                            field.Name,
+                            NormalizeType(field.FieldType),
+                            serializedFieldReader.ReadValue(field, component)));
+                    }
+                    catch (Exception exception)
+                    {
+                        Debug.LogWarning("[Artel] Failed to read field " + field.Name + ": " + exception.Message);
+                    }
+                }
+            }
+
+            states.Sort((left, right) => string.CompareOrdinal(left.Name, right.Name));
+            return states;
+        }
+
+        private static string NormalizeType(Type type)
+        {
+            if (type == typeof(float)) return "float";
+            if (type == typeof(double)) return "double";
+            if (type == typeof(int)) return "int";
+            if (type == typeof(long)) return "long";
+            if (type == typeof(bool)) return "bool";
+            if (type == typeof(string)) return "string";
+            return type.IsEnum ? "enum" : type.FullName;
+        }
+
+        /// <summary>
+        /// A MonoBehaviour the game wrote, as opposed to one shipped by Unity or by this SDK.
+        /// </summary>
+        /// <remarks>
+        /// Reading every serialized field of the engine's own behaviours — Image, TMP_Text,
+        /// EventTrigger — buries the game's own data under hundreds of layout fields nobody asked
+        /// for, so the assembly a component comes from is the line.
+        /// </remarks>
+        private static bool IsGameBehaviour(Component component)
+        {
+            if (!(component is MonoBehaviour))
+            {
+                return false;
+            }
+
+            var assembly = component.GetType().Assembly.GetName().Name;
+            return assembly != "Artel.Runtime" &&
+                   !assembly.StartsWith("Unity", StringComparison.Ordinal) &&
+                   !assembly.StartsWith("System", StringComparison.Ordinal) &&
+                   !assembly.StartsWith("mscorlib", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Refuses a button a person could not press. The executor already checked this before it
+        /// moved the cursor, but that move spans frames and the game can lock the button inside it.
+        /// </summary>
         public bool Click()
         {
-            if (button == null)
+            if (!IsUsable(button))
             {
                 return false;
             }
@@ -161,8 +440,16 @@ namespace Artel
             return true;
         }
 
+        /// <summary>
+        /// Refuses a field a person could not type into, for the same reason <see cref="Click"/> does.
+        /// </summary>
         public bool EnterText(string value)
         {
+            if (!IsTextEntryInteractable)
+            {
+                return false;
+            }
+
             if (inputField != null)
             {
                 inputField.text = value;
@@ -182,52 +469,49 @@ namespace Artel
             return false;
         }
 
-        public string GetText()
+        /// <summary>
+        /// Reads the onClick calls Unity serialized from the inspector.
+        /// </summary>
+        /// <remarks>
+        /// AddListener registrations live in a plain delegate with no public way to walk it, so a
+        /// button wired entirely in code reports nothing here rather than reporting it wrongly.
+        /// </remarks>
+        private static IReadOnlyList<ButtonClickHandler> ReadClickHandlers(Button button)
         {
-            if (inputField != null)
+            var count = button.onClick.GetPersistentEventCount();
+            if (count == 0)
             {
-                return inputField.text;
+                return EmptyClickHandlers;
             }
 
-            if (text != null)
+            var handlers = new List<ButtonClickHandler>(count);
+            for (var i = 0; i < count; i++)
             {
-                return text.text;
+                // A target whose object was deleted or never assigned still occupies a slot, and
+                // its method name is the only part left worth reporting.
+                var target = button.onClick.GetPersistentTarget(i);
+                handlers.Add(new ButtonClickHandler(
+                    target == null ? null : target.name,
+                    target == null ? null : target.GetType().FullName,
+                    button.onClick.GetPersistentMethodName(i)));
             }
 
-            if (tmpInputField != null)
-            {
-                return tmpInputField.text;
-            }
-
-            if (tmpText != null)
-            {
-                return tmpText.text;
-            }
-
-            return string.Empty;
+            return handlers;
         }
 
-        public string GetPlaceholder()
+        private static string GetPlaceholder(InputField target)
         {
-            if (inputField != null && inputField.placeholder is Text placeholderText)
+            return target.placeholder is Text placeholderText ? placeholderText.text : null;
+        }
+
+        private static string GetPlaceholder(TMP_InputField target)
+        {
+            if (target.placeholder is TMP_Text tmpPlaceholder)
             {
-                return placeholderText.text;
+                return tmpPlaceholder.text;
             }
 
-            if (tmpInputField != null)
-            {
-                if (tmpInputField.placeholder is TMP_Text tmpPlaceholder)
-                {
-                    return tmpPlaceholder.text;
-                }
-
-                if (tmpInputField.placeholder is Text uiPlaceholder)
-                {
-                    return uiPlaceholder.text;
-                }
-            }
-
-            return string.Empty;
+            return target.placeholder is Text uiPlaceholder ? uiPlaceholder.text : null;
         }
     }
 }
