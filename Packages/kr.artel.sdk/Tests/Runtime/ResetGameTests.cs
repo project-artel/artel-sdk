@@ -154,6 +154,30 @@ namespace Artel.Tests
             Assert.That(result.Error, Does.Contain("Build Settings"));
         }
 
+        /// <summary>
+        /// 리셋은 게임의 영구 오브젝트를 지우지만 SDK 의 것은 남긴다. 라이브 판독(<c>Artel Pulse</c>)이 첫 리셋에 지워지면
+        /// 그 뒤의 런은 화면이 무엇인지 모른 채 좌표로만 조작한다.
+        /// </summary>
+        [Test]
+        public void SdkObjectsSurviveTheResetAndGameObjectsDoNot()
+        {
+            var pulse = new GameObject("Artel Pulse");
+            var game = new GameObject("GameManager");
+            try
+            {
+                pulse.AddComponent<Artel.Affordances.Live.Pulse>();
+                game.AddComponent<GameStaticsFixtures.GameOwnedBehaviour>();
+
+                Assert.That(ActionExecutor.IsSdkOwned(pulse), Is.True);
+                Assert.That(ActionExecutor.IsSdkOwned(game), Is.False);
+            }
+            finally
+            {
+                Object.DestroyImmediate(pulse);
+                Object.DestroyImmediate(game);
+            }
+        }
+
         private static ActionResultDto Run(
             ActionExecutor executor, int actionId, string method, params object[] parameters)
         {
@@ -173,5 +197,13 @@ namespace Artel.Tests
                 }
             }
         }
+    }
+}
+
+namespace GameStaticsFixtures
+{
+    /// <summary>게임 코드의 컴포넌트처럼 굴 것. Artel.* 밖에 있어야 SDK 의 것으로 보지 않는다.</summary>
+    public sealed class GameOwnedBehaviour : MonoBehaviour
+    {
     }
 }
