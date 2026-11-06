@@ -62,6 +62,19 @@ namespace Artel.CodeGen.Tests
             }
         }
 
+        [Test]
+        public void WeavesGuiButtonWithoutLegacyInputCalls()
+        {
+            using (var module = BuildGameAssembly(callsInput: false, callsGui: true))
+            {
+                Assert.That(CalledTypeNames(module), Does.Contain("UnityEngine.GUI"));
+                var attempt = InputMethodWeaver.TryCreate(module, RealReferences());
+                Assert.That(attempt.Refusal, Is.Null);
+                Assert.That(attempt.Weaver.Process(), Is.True);
+                Assert.That(CalledTypeNames(module), Is.EqualTo(new[] { ProxyTypeName }));
+            }
+        }
+
         /// <summary>
         /// 참조는 위빙의 전제가 아니라 결과다. 교체가 그것을 만들어 준다.
         /// </summary>
@@ -149,7 +162,7 @@ namespace Artel.CodeGen.Tests
         /// <summary>
         /// <c>Input.GetKey</c> 를 부르는 것 말고는 아무것도 하지 않는 어셈블리를 만든다.
         /// </summary>
-        private static ModuleDefinition BuildGameAssembly(bool callsInput)
+        private static ModuleDefinition BuildGameAssembly(bool callsInput, bool callsGui = false)
         {
             var module = ModuleDefinition.CreateModule(
                 "Assembly-CSharp", new ModuleParameters { Kind = ModuleKind.Dll });
@@ -176,6 +189,17 @@ namespace Artel.CodeGen.Tests
                 il.Emit(OpCodes.Pop);
             }
 
+            if (callsGui)
+            {
+                var rect = new VariableDefinition(module.ImportReference(typeof(Rect)));
+                method.Body.Variables.Add(rect);
+                method.Body.InitLocals = true;
+                il.Emit(OpCodes.Ldloc, rect);
+                il.Emit(OpCodes.Ldstr, "Shuffle");
+                il.Emit(OpCodes.Call, module.ImportReference(
+                    typeof(GUI).GetMethod("Button", new[] { typeof(Rect), typeof(string) })));
+                il.Emit(OpCodes.Pop);
+            }
             il.Emit(OpCodes.Ret);
 
             // 바이트로 쓴 뒤 다시 읽는다. 갓 만든 모듈은 TypeRef 표가 비어 있어, 위버가 보는
