@@ -10,6 +10,12 @@ namespace Artel
     {
         /// <summary>씬 리로드에 더해 게임의 <c>PlayerPrefs</c> 도 비울지.</summary>
         public bool ClearPlayerPrefs;
+
+        /// <summary>
+        /// 씬을 다시 열기 전에 게임 코드의 static 을 처음 값으로 되돌릴지(<see cref="GameStatics"/>). 기본은 켠다 — 씬만 다시 열면
+        /// static 에 남은 옛 씬의 참조 때문에 새로 켠 게임과 달라진다.
+        /// </summary>
+        public bool ResetStatics;
     }
 
     /// <summary>
@@ -21,7 +27,8 @@ namespace Artel
         {
             request = new ResetRequest
             {
-                ClearPlayerPrefs = false
+                ClearPlayerPrefs = false,
+                ResetStatics = true
             };
             error = null;
 
@@ -62,6 +69,17 @@ namespace Artel
                 }
 
                 request.ClearPlayerPrefs = clearPlayerPrefs;
+            }
+
+            if (options.TryGetValue("resetStatics", out var statics) && statics != null)
+            {
+                if (!(statics is bool resetStatics))
+                {
+                    error = "reset_game resetStatics must be true or false.";
+                    return false;
+                }
+
+                request.ResetStatics = resetStatics;
             }
 
             // 모르는 필드는 무시한다 — CaptureRequestReader 와 같다. 서버가 필드를 먼저
