@@ -180,6 +180,19 @@ namespace Artel.Affordances.Live
             // 그리고 무엇이 사라졌는지도 말한다. 위의 것은 판독을 나가게 만들 뿐 — 이름은 `changed` 에 멤버 키로 실리고, 읽는 쪽에서
             // 그것은 "이 값이 움직였다" 로 읽힌다. 객체가 없어졌다는 것은 다른 문장이고, 아무도 그것을 말하지 않고 있었다.
             var gone = Gone(since, now, everything, truncated);
+            if (!everything && ledger.Offscreen.Count > 0)
+            {
+                gone?.RemoveAll(ledger.Offscreen.Contains);
+                text.Append(",\"offscreen\":[");
+                var separator = "";
+                foreach (var key in ledger.Offscreen)
+                {
+                    text.Append(separator);
+                    Json.String(text, key);
+                    separator = ",";
+                }
+                text.Append(']');
+            }
 
             if (gone != null)
             {
@@ -305,6 +318,7 @@ namespace Artel.Affordances.Live
             internal Dictionary<string, string> Since;
             internal Dictionary<string, string> Now;
             internal List<string> Moved;
+            internal readonly HashSet<string> Offscreen = new HashSet<string>(StringComparer.Ordinal);
 
             /// <summary>
             /// 값 하나를 제 이름 아래에 기록하고 그것이 새것인지 적어 둔다.
@@ -617,6 +631,14 @@ namespace Artel.Affordances.Live
                     // 예산을 먹어 켜진 조합 버튼이 잘렸다(QA 런 182). 그래서 `holder-limit` 은 켜진 객체가 잘렸다는 뜻만 갖는다.
                     if (transform.gameObject.activeInHierarchy)
                     {
+                        if (ScreenArea.IsOutsideViewport(transform))
+                        {
+                            var key = scene.name + "/" + ScenePath.SelectorOf(transform, index);
+                            if (ledger.Since.ContainsKey(key + Active))
+                                ledger.Offscreen.Add(key);
+                            continue;
+                        }
+
                         var kind = transform.gameObject.GetType();
                         seen.TryGetValue(kind, out var already);
                         seen[kind] = already + 1;

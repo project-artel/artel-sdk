@@ -19,6 +19,7 @@ namespace Artel.Affordances.Scan
         private static readonly Vector3[] Corners = new Vector3[4];
 
         private static Camera _camera;
+        private static readonly Plane[] Frustum = new Plane[6];
 
         /// <summary>객체마다가 아니라 스캔 전체에 대해 카메라를 한 번 푼다.</summary>
         /// <remarks>
@@ -27,6 +28,22 @@ namespace Artel.Affordances.Scan
         internal static void Begin()
         {
             _camera = Camera.main;
+            if (_camera != null)
+                GeometryUtility.CalculateFrustumPlanes(_camera, Frustum);
+        }
+
+        internal static bool IsOutsideViewport(Transform subject)
+        {
+            if (subject is RectTransform)
+            {
+                var rect = Of(subject);
+                return rect.width > 0 && rect.height > 0
+                    && !rect.Overlaps(new Rect(0, 0, Screen.width, Screen.height));
+            }
+
+            var renderer = subject.GetComponent<Renderer>();
+            return _camera != null && renderer != null && renderer.enabled
+                && !GeometryUtility.TestPlanesAABB(Frustum, renderer.bounds);
         }
 
         internal static void Forget()

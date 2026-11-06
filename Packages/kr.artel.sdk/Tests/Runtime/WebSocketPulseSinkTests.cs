@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
+using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Artel.Tests
@@ -79,6 +81,41 @@ namespace Artel.Tests
             var framed = transport.Sent[0];
             var body = "{" + framed.Substring(framed.IndexOf("\"schema\"", StringComparison.Ordinal));
             Assert.That(body, Is.EqualTo(Reading));
+        }
+
+        [Test]
+        public void 큰_판독은_바이트_한도_이하로_나뉘고_원문을_복원할_수_있다()
+        {
+            var transport = new FakeTransport();
+            var sink = new WebSocketPulseSink(() => transport, () => 1L);
+            var reading = JObject.Parse(Reading);
+            reading["scene"] = "Map_v2";
+            reading["functions"] = new JObject { ["cheats"] = new JArray("set_magazine_ammo") };
+            reading["active"] = new JArray(
+                new JObject { ["selector"] = "Ammo[0]" },
+                new JObject { ["value"] = new string('가', WebSocketPulseSink.MaxPulseBytes / 2) });
+
+            sink.Send(reading.ToString());
+
+            Assert.That(transport.Sent.Count, Is.GreaterThan(1));
+            var bytes = new List<byte>();
+            for (var index = 0; index < transport.Sent.Count; index++)
+            {
+                var message = transport.Sent[index];
+                Assert.That(Encoding.UTF8.GetByteCount(message), Is.LessThanOrEqualTo(WebSocketPulseSink.MaxPulseBytes));
+                var chunk = JObject.Parse(message);
+                Assert.That((string)chunk["type"], Is.EqualTo("PULSE_CHUNK"));
+                Assert.That((int)chunk["index"], Is.EqualTo(index));
+                Assert.That((int)chunk["count"], Is.EqualTo(transport.Sent.Count));
+                bytes.AddRange(Convert.FromBase64String((string)chunk["data"]));
+            }
+
+            var sent = JObject.Parse(Encoding.UTF8.GetString(bytes.ToArray()));
+            Assert.That((string)sent["type"], Is.EqualTo("PULSE"));
+            Assert.That((long)sent["id"], Is.EqualTo(1));
+            sent.Remove("type");
+            sent.Remove("id");
+            Assert.That(JToken.DeepEquals(sent, reading), Is.True);
         }
 
         [Test]
