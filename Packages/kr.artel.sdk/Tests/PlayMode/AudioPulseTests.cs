@@ -55,37 +55,28 @@ namespace Artel.Tests
             Assert.That(stopped["started"], Is.Empty);
         }
 
-        [UnityTest]
-        public IEnumerator ASourceAlreadyPlayingAtTheFirstReading_IsNotCalledStarted()
+        [Test]
+        public void ASourceAlreadyPlayingAtTheFirstReading_IsNotCalledStarted()
         {
             var source = host.AddComponent<AudioSource>();
             source.clip = clip;
-            source.loop = true;
-            source.Play();
-            yield return WaitForPlayback(source);
-
-            var first = Parse(new AudioPulse(() => new[] { source }).Compose(true, out _));
+            var pulse = new AudioPulse(() => new[] { source }, readPlayback: _ => (true, 0.5f));
+            var first = Parse(pulse.Compose(true, out _));
 
             Assert.That((int)first["playing"], Is.EqualTo(1));
             Assert.That(first["started"], Is.Empty);
         }
 
-        [UnityTest]
-        public IEnumerator PlayingAgainFromTheStart_CountsAsANewStart()
+        [Test]
+        public void PlayingAgainFromTheStart_CountsAsANewStart()
         {
             var source = host.AddComponent<AudioSource>();
             source.clip = clip;
-            var pulse = new AudioPulse(() => new[] { source });
+            var position = 0.5f;
+            var pulse = new AudioPulse(() => new[] { source }, readPlayback: _ => (true, position));
             pulse.Compose(true, out _);
-            source.Play();
-            yield return WaitForPlayback(source);
-            source.time = 1f;
-            pulse.Compose(false, out _);
 
-            source.Stop();
-            source.Play();
-            yield return null;
-
+            position = 0f;
             var again = Parse(pulse.Compose(false, out var news));
             Assert.That(news, Is.True);
             Assert.That(((JArray)again["started"]).Count, Is.EqualTo(1));
@@ -112,13 +103,6 @@ namespace Artel.Tests
             var started = Parse(pulse.Compose(false, out _));
             Assert.That(((JArray)started["started"]).Count, Is.EqualTo(1));
             Assert.That(started["started"][0]["clip"].Type, Is.EqualTo(JTokenType.Null));
-        }
-
-        private static IEnumerator WaitForPlayback(AudioSource source)
-        {
-            var deadline = Time.realtimeSinceStartup + 2f;
-            yield return new WaitUntil(() => source.isPlaying || Time.realtimeSinceStartup >= deadline);
-            Assert.That(source.isPlaying, Is.True, "AudioSource 재생이 시작되어야 합니다.");
         }
 
         private static JObject Parse(string fragment)
