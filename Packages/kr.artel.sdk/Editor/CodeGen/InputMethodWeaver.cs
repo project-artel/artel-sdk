@@ -11,6 +11,7 @@ namespace Artel.CodeGen
         private const string RuntimeAssemblyName = "Artel.Runtime";
         private const string ProxyTypeName = "Artel.ArtelInput";
         private const string UnityInputTypeName = "UnityEngine.Input";
+        private const string UnityGuiTypeName = "UnityEngine.GUI";
         private static readonly HashSet<string> SupportedMethodNames = new HashSet<string>
         {
             "GetKeyDown",
@@ -26,7 +27,8 @@ namespace Artel.CodeGen
             "GetAxisRaw",
             "GetButton",
             "GetButtonDown",
-            "GetButtonUp"
+            "GetButtonUp",
+            "Button"
         };
 
         private readonly ModuleDefinition module;
@@ -51,7 +53,7 @@ namespace Artel.CodeGen
         /// </remarks>
         public static Attempt TryCreate(ModuleDefinition module, string[] references)
         {
-            if (!module.GetTypeReferences().Any(IsUnityInput))
+            if (!module.GetTypeReferences().Any(type => type.FullName == UnityInputTypeName || type.FullName == UnityGuiTypeName))
             {
                 return Attempt.NothingToDo;
             }
@@ -63,9 +65,9 @@ namespace Artel.CodeGen
                 // 바꿀 호출이 있는데 프록시를 못 찾은 경우다. 조용히 지나가면 예전과 같은
                 // 침묵이 되므로 반드시 말한다.
                 return Attempt.Refused(
-                    UnityInputTypeName + " 호출이 있으나 " + RuntimeAssemblyName +
+                    "Unity 입력 호출이 있으나 " + RuntimeAssemblyName +
                     " 을 찾지 못해 입력 위빙을 건너뛴다. " +
-                    "이 어셈블리에서 Agent 의 키·축 입력이 동작하지 않는다.");
+                    "이 어셈블리에서 Agent의 가상 입력이 동작하지 않는다.");
             }
 
             var proxyMethods = ReadProxyMethods(module, runtimePath);
@@ -80,10 +82,6 @@ namespace Artel.CodeGen
             return Attempt.Ready(new InputMethodWeaver(module, proxyMethods));
         }
 
-        private static bool IsUnityInput(TypeReference type)
-        {
-            return string.Equals(type.FullName, UnityInputTypeName, StringComparison.Ordinal);
-        }
 
         /// <summary>
         /// 위버를 만들었는지, 못 만들었다면 그것이 할 말이 있는 일인지.
@@ -215,7 +213,8 @@ namespace Artel.CodeGen
                 foreach (var instruction in method.Body.Instructions)
                 {
                     if (!(instruction.Operand is MethodReference calledMethod) ||
-                        calledMethod.DeclaringType.FullName != UnityInputTypeName ||
+                        (calledMethod.DeclaringType.FullName != UnityInputTypeName &&
+                         (calledMethod.DeclaringType.FullName != UnityGuiTypeName || calledMethod.Name != "Button")) ||
                         !proxyMethods.TryGetValue(GetSignature(calledMethod), out var proxyMethod))
                     {
                         continue;
