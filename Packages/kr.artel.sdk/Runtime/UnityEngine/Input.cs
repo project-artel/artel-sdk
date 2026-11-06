@@ -102,6 +102,38 @@ namespace Artel
             }
         }
 
+        private static readonly System.Collections.Generic.List<global::UnityEngine.EventSystems.RaycastResult> UiHits =
+            new System.Collections.Generic.List<global::UnityEngine.EventSystems.RaycastResult>();
+
+        /// <summary>
+        /// <c>EventSystem.IsPointerOverGameObject()</c> 를 에이전트의 포인터로 답한다.
+        /// </summary>
+        /// <remarks>
+        /// 원래 호출은 입력 모듈이 실제 마우스로 만든 포인터를 본다. 그래서 에이전트가 UI 를 누르는 순간 게임이
+        /// "UI 위가 아니다"로 읽고 빈 곳을 누른 것처럼 군다 — 캐릭터를 눌러 연 차트를 동사를 끌기 시작하자마자 닫는
+        /// 게임이 그랬다. 사람이 하면 실제 마우스가 UI 위에 있으니 멀쩡하다. 에이전트가 포인터를 쥐고 있을 때만 그
+        /// 위치로 UI 를 레이캐스트하고, 아니면 원래 호출에 맡긴다.
+        /// </remarks>
+        public static bool IsPointerOverGameObject(global::UnityEngine.EventSystems.EventSystem eventSystem)
+        {
+            return IsPointerOverGameObject(eventSystem, global::UnityEngine.EventSystems.PointerInputModule.kMouseLeftId);
+        }
+
+        /// <summary>id 를 받는 overload. 마우스 id(음수)만 에이전트가 답하고, 터치 id 는 원래 호출에 맡긴다.</summary>
+        public static bool IsPointerOverGameObject(global::UnityEngine.EventSystems.EventSystem eventSystem, int pointerId)
+        {
+            // null 이면 원래 호출처럼 NullReferenceException 이다. 게임이 겪던 실패를 바꾸지 않는다.
+            if (eventSystem == null || pointerId >= 0 || !VirtualMouse.OwnsPointer(PhysicalMousePosition))
+            {
+                return eventSystem.IsPointerOverGameObject(pointerId);
+            }
+
+            var data = new global::UnityEngine.EventSystems.PointerEventData(eventSystem) { position = VirtualMouse.Position };
+            UiHits.Clear();
+            eventSystem.RaycastAll(data, UiHits);
+            return UiHits.Count > 0;
+        }
+
         public static bool GetMouseButton(int button)
         {
             return LegacyInput.GetMouseButton(button) ||
