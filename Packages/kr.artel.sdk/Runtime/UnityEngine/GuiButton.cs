@@ -40,7 +40,7 @@ namespace Artel
             bool down = VirtualMouse.GetButtonDown(0, frame);
             bool up = VirtualMouse.GetButtonUp(0, frame);
             if (GuiPressHandledByEventSystem || (!down && !up) ||
-                !VirtualMouse.OwnsPointer(global::UnityEngine.Input.mousePosition))
+                !OwnsVirtualPointer)
                 return clicked;
 
             var pointer = VirtualMouse.Position;
