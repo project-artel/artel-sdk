@@ -190,12 +190,13 @@ namespace Artel
 
         private void InitializeOverlay()
         {
-            if (!LegacyInput.IsAvailable && !warnedLegacyInputMissing)
+            // New Input System 키보드 adapter 가 있으면 키 명령도 닿는다(ARTEL-1412). adapter 가 없을 때만 알린다.
+            if (!LegacyInput.IsAvailable && !NewInputKeyboard.IsRegistered && !warnedLegacyInputMissing)
             {
                 warnedLegacyInputMissing = true;
                 // 콘솔에도 한 번 남긴다. overlay 를 보지 않고 로그만 읽는 사람도 왜 조작이 게임에 닿지 않는지 알 수 있게.
                 Debug.LogWarning("[Artel] This project uses only the Input System package. " +
-                                 "Artel supports mouse actions; keyboard actions require the legacy Input Manager.");
+                                 "QA key and mouse actions require Input System 1.7.0 or newer and the Artel.InputSystem adapter.");
             }
 
             // reload로 유실된 버튼 callback도 다시 연결한다. 기존 canvas는 즉시 숨긴다.

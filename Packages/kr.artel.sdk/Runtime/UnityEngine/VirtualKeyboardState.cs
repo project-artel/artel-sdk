@@ -62,6 +62,20 @@ namespace Artel
                    state.ReleaseFrame == frame;
         }
 
+        /// <summary>이 frame 에 눌린 키. Input System 장치에 그대로 옮길 상태다.</summary>
+        public void ReadHeldKeys(int frame, float time, List<KeyCode> into)
+        {
+            into.Clear();
+            Refresh(frame, time);
+            foreach (var pair in presses)
+            {
+                if (pair.Value.StartTime.HasValue && IsHeldOn(pair.Value, frame))
+                {
+                    into.Add(pair.Key);
+                }
+            }
+        }
+
         public bool AnyKey(int frame, float time)
         {
             Refresh(frame, time);

@@ -69,6 +69,15 @@ namespace Artel.CodeGen
                         });
                     }
 
+                    if (inputAttempt.Warning != null)
+                    {
+                        diagnostics.Add(new DiagnosticMessage
+                        {
+                            DiagnosticType = DiagnosticType.Warning,
+                            MessageData = "[Artel] " + compiledAssembly.Name + ": " + inputAttempt.Warning
+                        });
+                    }
+
                     var inputWeaver = inputAttempt.Weaver;
 
                     // 엔진 호출 훅(ARTEL-1283). 입력과 같은 pass 다 — 세 번째 ILPP 를 만들면 순서가 문제가 된다.

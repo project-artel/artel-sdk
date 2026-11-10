@@ -40,17 +40,26 @@ namespace Artel
         private double queuedTime;
         private bool claimedPosition;
         private NewInputMouseLifetime lifetime;
-        private InputSettings hostSettings;
-        private InputSettings qaSettings;
-        private bool hostRunInBackground;
+        private bool holdsSettings;
 
         public bool IsActive => mouse != null && mouse.added;
         public bool UsesNativeUi => EventSystem.current != null &&
             EventSystem.current.currentInputModule is InputSystemUIInputModule;
         public Vector2 PhysicalPosition => IsActive ? physicalPosition : ReadPhysicalPosition();
-        public bool TakeoverPressed => Keyboard.current != null &&
-            Keyboard.current.ctrlKey.isPressed && Keyboard.current.shiftKey.isPressed &&
-            Keyboard.current.mKey.wasPressedThisFrame;
+        // 사람의 키보드에서만 읽는다. QA 가상 키보드가 Keyboard.current 가 되어도 사람의 Ctrl+Shift+M 을 놓치지 않고,
+        // 에이전트가 누른 키는 회수로 세지 않는다.
+        public bool TakeoverPressed
+        {
+            get
+            {
+                var qaKeyboard = InputSystemKeyboardBackend.VirtualDevice;
+                foreach (var device in InputSystem.devices)
+                    if (device is Keyboard physical && device != qaKeyboard && physical.ctrlKey.isPressed &&
+                        physical.shiftKey.isPressed && physical.mKey.wasPressedThisFrame)
+                        return true;
+                return false;
+            }
+        }
 
         public string ValidationError
         {
@@ -77,16 +86,8 @@ namespace Artel
 
             physicalPosition = ReadPhysicalPosition();
             deliveredPosition = ArtelInput.mousePosition;
-            hostSettings = InputSystem.settings;
-            qaSettings = Object.Instantiate(hostSettings);
-            qaSettings.hideFlags = HideFlags.HideAndDontSave;
-            qaSettings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
-#if UNITY_EDITOR
-            qaSettings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
-#endif
-            hostRunInBackground = Application.runInBackground;
-            Application.runInBackground = true;
-            InputSystem.settings = qaSettings;
+            QaInputSettings.Acquire();
+            holdsSettings = true;
             // 이미 눌린 실제 버튼이 action의 active control로 남지 않게 한다. 위치는 soft reset이 유지한다.
             foreach (var device in InputSystem.devices)
                 if (device is Mouse) InputSystem.ResetDevice(device);
@@ -148,24 +149,14 @@ namespace Artel
                 InputSystem.ResetDevice(removed);
                 InputSystem.RemoveDevice(removed);
             }
-            if (removedLifetime != null) DestroyOwnedObject(removedLifetime.gameObject);
-            if (qaSettings != null)
+            if (removedLifetime != null) QaInputSettings.DestroyOwnedObject(removedLifetime.gameObject);
+            if (holdsSettings)
             {
-                if (InputSystem.settings == qaSettings) InputSystem.settings = hostSettings;
-                DestroyOwnedObject(qaSettings);
-                qaSettings = null;
-                hostSettings = null;
-                if (!hostRunInBackground) Application.runInBackground = false;
+                holdsSettings = false;
+                QaInputSettings.Release();
             }
             foreach (var device in InputSystem.devices)
                 if (device is Mouse) InputSystem.TrySyncDevice(device);
-        }
-
-        private static void DestroyOwnedObject(Object target)
-        {
-            // Play Mode 종료 뒤에도 남은 HideAndDontSave 객체는 즉시 정리한다.
-            if (Application.isPlaying) Object.Destroy(target);
-            else Object.DestroyImmediate(target);
         }
 
         private bool IsGameUpdate => InputState.currentUpdateType == InputUpdateType.Dynamic ||

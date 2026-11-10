@@ -3,6 +3,7 @@
   "rootNamespace": "Artel.Tests.PlayMode",
   "references": [
     "Artel.Runtime",
+    "Artel.InputSystem",
     "Artel.Runtime.PlayModeTests",
     "Unity.InputSystem",
     "UnityEngine.UI"
