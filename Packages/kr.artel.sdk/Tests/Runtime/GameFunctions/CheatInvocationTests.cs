@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Artel.Protocol.Dto;
 using Artel.Tests.GameFunctions;
 using NUnit.Framework;
@@ -25,6 +26,27 @@ namespace Artel.Tests.GameFunctions
             { "name", "give_gold" },
             { "args", new Dictionary<string, object> { { "amount", amount } } }
         });
+
+        [Test]
+        public void ReadOnlyFunctionReportsWalletAndCannotCallMutatingEntry()
+        {
+            Assert.That(GiveGold(5L).IsSuccess, Is.True);
+            var result = Invoke(actions, new Dictionary<string, object>
+            {
+                { "name", "get_gold" }, { "requireReadOnly", true }
+            });
+            Assert.That(result.IsSuccess, Is.True, result.Error);
+            Assert.That(((CheatInvokedDto)result.ReturnValue).Message, Is.EqualTo("gold=5"));
+            Assert.That(actions.BuildCatalog().Cheats.Single(entry => entry.Name == "get_gold").ReadOnly, Is.True);
+
+            var refused = Invoke(actions, new Dictionary<string, object>
+            {
+                { "name", "give_gold" }, { "requireReadOnly", true },
+                { "args", new Dictionary<string, object> { { "amount", 10L } } }
+            });
+            Assert.That(refused.IsSuccess, Is.False);
+            Assert.That(FixtureCheats.Gold, Is.EqualTo(5));
+        }
 
         [Test]
         public void ValidArguments_RunTheCheat_AndReturnItsMessage()
