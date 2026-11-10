@@ -17,7 +17,11 @@
 #
 # An existing <dest>/Library is left untouched so a restored CI cache survives.
 #
-# Usage: .github/scripts/setup-unity-test-project.sh <dest> [0|1|2] [absent|present]
+# Usage: .github/scripts/setup-unity-test-project.sh <dest> [0|1|2] [absent|present] [editor version] [input system version]
+#
+# The last two are for the Unity 6.5 compile job (ARTEL-1411). Leave them out and the
+# project keeps the template's 2022.3 editor and Input System 1.7.0 — the 1.7.0 package
+# itself does not compile on 6000.5, so that job passes the version 6000.5 bundles.
 
 set -euo pipefail
 
@@ -42,17 +46,19 @@ input_handling="${2:-0}"
 case "$input_handling" in 0|1|2) ;; *) echo "input handling must be 0, 1, or 2" >&2; exit 64 ;; esac
 input_package="${3:-absent}"
 case "$input_package" in absent|present) ;; *) echo "input package must be absent or present" >&2; exit 64 ;; esac
+editor_version="${4:-}"
+input_system_version="${5:-1.7.0}"
 if [ "$input_package" = absent ] && [ "$input_handling" != 0 ]; then
   echo "New/Both input handling requires the Input System package" >&2
   exit 64
 fi
-python3 - "${dest}/Packages/manifest.json" "$input_package" <<'PY'
+python3 - "${dest}/Packages/manifest.json" "$input_package" "$input_system_version" <<'PY'
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1])
 manifest = json.loads(path.read_text())
 if sys.argv[2] == "present":
-    manifest["dependencies"]["com.unity.inputsystem"] = "1.7.0"
+    manifest["dependencies"]["com.unity.inputsystem"] = sys.argv[3]
 else:
     manifest["dependencies"].pop("com.unity.inputsystem", None)
 path.write_text(json.dumps(manifest, indent=2) + "\n")
@@ -64,6 +70,10 @@ cat > "${dest}/ProjectSettings/ProjectSettings.asset" <<EOF
 PlayerSettings:
   activeInputHandler: ${input_handling}
 EOF
+
+if [ -n "${editor_version}" ]; then
+  printf 'm_EditorVersion: %s\n' "${editor_version}" > "${dest}/ProjectSettings/ProjectVersion.txt"
+fi
 
 rm -rf "${dest}/Packages/kr.artel.sdk"
 cp -R "${package}" "${dest}/Packages/kr.artel.sdk"

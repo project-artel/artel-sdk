@@ -111,6 +111,15 @@ described above. The editor version is pinned once, in
 `.github/unity-test-project/ProjectSettings/ProjectVersion.txt`; the workflow passes
 `unityVersion: auto` so it reads that file rather than repeating the version.
 
+A second job, `unity6`, runs EditMode on Unity 6000.5.6f1 (ARTEL-1411) with the Input
+System package absent and present. It exists because 6000.5 turns the old id APIs
+(`GetInstanceID`, `Resources.InstanceIDToObject`, `SceneHandle` → `int`) into CS0619 hard
+errors, and a 2022.3-only pipeline stays green while new code reintroduces them. Go through
+`ObjectIds` (`Of` for ids that leave the process, `KeyOf` for in-memory keys) and use
+`scene.handle.GetHashCode()` rather than calling those APIs directly. The job passes its
+editor version and Input System 1.20.0 to the setup script; the 2022.3 job's 1.7.0 does not
+compile on 6000.5.
+
 Failing test names and messages surface three ways: as check annotations and a job summary
 table written by `.github/scripts/summarize-test-results.py`, as the `Test Results` check
 run created by the action, and in the `unity-test-results-<mode>` artifact. The project's
