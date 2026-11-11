@@ -31,15 +31,20 @@ namespace Artel
 
         private readonly Func<IReadOnlyList<AudioSource>> findSources;
         private readonly Func<int> currentFrame;
+        private readonly Func<AudioSource, (bool IsPlaying, float Time)> readPlayback;
 
         private Dictionary<int, float> previousTimes;
         private int previousPlaying = -1;
 
-        public AudioPulse(Func<IReadOnlyList<AudioSource>> findSources = null, Func<int> currentFrame = null)
+        public AudioPulse(
+            Func<IReadOnlyList<AudioSource>> findSources = null,
+            Func<int> currentFrame = null,
+            Func<AudioSource, (bool IsPlaying, float Time)> readPlayback = null)
         {
             this.findSources = findSources ??
                                (() => UnityEngine.Object.FindObjectsByType<AudioSource>(FindObjectsSortMode.None));
             this.currentFrame = currentFrame ?? (() => Time.frameCount);
+            this.readPlayback = readPlayback ?? (source => source.isPlaying ? (true, source.time) : (false, 0f));
         }
 
         public string Compose(bool whole, out bool news)
@@ -65,14 +70,19 @@ namespace Artel
 
             foreach (var source in findSources())
             {
-                if (source == null || !source.isPlaying)
+                if (source == null)
+                {
+                    continue;
+                }
+
+                var (isPlaying, time) = readPlayback(source);
+                if (!isPlaying)
                 {
                     continue;
                 }
 
                 // 이 pulse 안에서만 쓰는 열쇠라 `ObjectIds.KeyOf` 다. GetInstanceID 는 6000.5 에서 하드 오류다(ARTEL-1411).
                 var id = ObjectIds.KeyOf(source);
-                var time = source.time;
                 nowTimes[id] = time;
 
                 if (seeding || !StartedSince(source, id, time))

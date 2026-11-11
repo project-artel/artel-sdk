@@ -603,9 +603,28 @@ namespace Artel
             RefreshView();
         }
 
+        internal bool ContainsOverlayInput(Vector2 guiPosition)
+        {
+            if (!isActiveAndEnabled || canvas == null || !canvas.isActiveAndEnabled)
+            {
+                return false;
+            }
+
+            var position = new Vector2(guiPosition.x, Screen.height - guiPosition.y);
+            return Contains(coverObject, position) || Contains(panelObject, position) ||
+                   Contains(toggleObject, position);
+        }
+
+        private bool Contains(GameObject target, Vector2 position)
+        {
+            return target != null && target.activeInHierarchy &&
+                   RectTransformUtility.RectangleContainsScreenPoint(
+                       (RectTransform)target.transform, position, canvas.worldCamera);
+        }
+
         private void CreateGui()
         {
-            canvasObject = new GameObject("Artel Overlay Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            canvasObject = new GameObject("Artel Overlay Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(ArtelOverlayRaycaster));
             // Parented to the manager so it rides along across scene loads. Left at
             // the scene root it is destroyed with that scene, and this controller —
             // which does survive — would be left holding a destroyed canvas and
@@ -615,7 +634,7 @@ namespace Artel
             // 이 아래는 계기다. 사람이 보는 것이고 판독은 보고하지 않는다 (ARTEL-698).
             canvasObject.AddComponent<Instrument>();
             canvas = canvasObject.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            ArtelOverlayPresentation.Attach(canvas, this);
             canvas.sortingOrder = short.MaxValue - 1;
 
             var scaler = canvasObject.GetComponent<CanvasScaler>();

@@ -10,7 +10,6 @@ namespace Artel
     {
         private const int CursorWidth = 36;
         private const int CursorHeight = 48;
-        private const int OverlaySortingOrder = short.MaxValue;
         private const string DarkThemePlayerPrefsKey = ArtelOwnedPlayerPrefs.DarkTheme;
 
         [SerializeField] private bool smoothMovement;
@@ -43,6 +42,19 @@ namespace Artel
 
             darkTheme = currentDarkTheme;
             PaintCursorTexture(cursorTexture, darkTheme);
+        }
+
+        private void OnGUI()
+        {
+            if (Event.current.type != EventType.Repaint || cursorTransform == null ||
+                !cursorTransform.gameObject.activeInHierarchy)
+            {
+                return;
+            }
+
+            GUI.depth = -101;
+            var position = cursorTransform.position;
+            GUI.DrawTexture(new Rect(position.x, Screen.height - position.y, CursorWidth, CursorHeight), cursorTexture);
         }
 
         private void OnDestroy()
@@ -134,7 +146,7 @@ namespace Artel
 
             var canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = OverlaySortingOrder;
+            canvas.enabled = false;
 
             var cursorObject = new GameObject("Artel Virtual Cursor", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             cursorObject.transform.SetParent(canvasObject.transform, false);
