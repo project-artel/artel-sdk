@@ -297,6 +297,8 @@ namespace Artel
             loggedErrors?.Dispose();
             loggedErrors = new LoggedErrors();
             loggedErrors.Listen();
+            // attachment 와 달리 release 빌드에도 꽂는다. 덮인 버튼을 누르지 않는 것은 어느 빌드에서나 같은 문제다(ARTEL-1435).
+            Affordances.Live.LiveState.Visibility = new Tracking.PulseVisibility();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             Affordances.Live.LiveState.Attachment = new PulseAttachmentSet(
                 new GameFunctionPulse(gameFunctions),
@@ -409,6 +411,7 @@ namespace Artel
             if (instance == this)
             {
                 instance = null;
+                Affordances.Live.LiveState.Visibility = null;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 Affordances.Live.LiveState.Attachment = null;
 #endif

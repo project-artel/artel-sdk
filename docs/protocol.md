@@ -156,6 +156,19 @@ sequenceDiagram
 
 연속값은 셋째 자리에서 끊고(`value`·`fill`·`alpha`), `normalizedTime` 처럼 매 프레임 바뀌는 것은 싣지 않는다. `Selectable`·`Animator`·`AudioSource`·`ParticleSystem`·`UIDocument` 를 가진 객체는 holders 상한 안에서 순회에 든다. `Renderer` 만으로는 들지 않는다.
 
+### pulse 의 객체 항목에 실리는 `visible`
+
+포인터로 겨누는 객체가 지금 보이는지(ARTEL-1435). scan 블록의 `visible`(아래 「`onScreen=true` 는 보인다는 뜻이 아니다」)과 같은
+판정이다. 로딩 화면에 덮인 버튼은 `offers` 가 그대로라 그것만 본 쪽은 덮개를 누른다 — agent 의 macro `actionable()` 이 이 값으로
+덮인 대상을 거짓으로 읽는다.
+
+- 켜진 객체 중 `offers.clicks` 나 `offers.pointers` 가 있는 것에만 싣는다. 키만 받는 객체에는 없다 — 키는 화면 위치와 무관하다
+- 장부를 탄다. 바뀐 판독과 `whole` 에만 실리고, 안 실린 델타는 마지막 값 그대로다. 꺼졌다 다시 켜진 객체는 켜지는 판독에 다시 실린다
+- 키가 없으면 "모른다" 다. 이 필드 전의 SDK, 겨누는 객체가 아님, 판정이 던짐이 모두 그렇다
+- release 빌드에도 실린다(`functions` 등 attachment 와 다르다)
+- 비용: 판독(기본 0.1 초)마다 해당 객체 수만큼 사각형을 재고 부모를 걷는다. `Selectable` 이면 `EventSystem.RaycastAll` 을 한 번 더
+  쏜다. 버튼 20 개 화면이면 초당 raycast 200 번이다
+
 watch list 의 셋째 출처: 게임 코드가 필드·프로퍼티에 `[ArtelObserve]` 를 붙이면 `WatchList.All()` 이 게임 어셈블리를 한 번 훑어 `asked` 로 더한다. 프로퍼티는 getter 가 판독마다 돈다. 컴포넌트가 아닌 타입의 인스턴스는 `watch` 와 같은 걷기로 찾는다.
 
 ### scan_evidence 의 returnValue
