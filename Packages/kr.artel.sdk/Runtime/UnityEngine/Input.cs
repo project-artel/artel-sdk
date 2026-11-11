@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using global::UnityEngine;
 
 namespace Artel
@@ -159,6 +160,7 @@ namespace Artel
         /// </summary>
         public static float GetAxis(string axisName)
         {
+            InputReadManifest.SawAxis(axisName);
             if (VirtualAxes.TryGetValue(axisName, Time.frameCount, out var value))
             {
                 return value;
@@ -178,6 +180,7 @@ namespace Artel
         /// </remarks>
         public static float GetAxisRaw(string axisName)
         {
+            InputReadManifest.SawAxis(axisName);
             if (VirtualAxes.TryGetValue(axisName, Time.frameCount, out var value))
             {
                 return value;
@@ -188,18 +191,21 @@ namespace Artel
 
         public static bool GetButton(string axisName)
         {
+            InputReadManifest.SawAxis(axisName);
             return LegacyInput.GetButton(axisName) ||
                    VirtualAxes.GetButton(axisName, Time.frameCount);
         }
 
         public static bool GetButtonDown(string axisName)
         {
+            InputReadManifest.SawAxis(axisName);
             return LegacyInput.GetButtonDown(axisName) ||
                    VirtualAxes.GetButtonDown(axisName, Time.frameCount);
         }
 
         public static bool GetButtonUp(string axisName)
         {
+            InputReadManifest.SawAxis(axisName);
             return LegacyInput.GetButtonUp(axisName) ||
                    VirtualAxes.GetButtonUp(axisName, Time.frameCount);
         }
@@ -217,11 +223,19 @@ namespace Artel
         internal static void ClickKey(KeyCode key, float durationSeconds)
         {
             VirtualKeyboard.Click(key, durationSeconds, Time.frameCount);
+            NewInputKeyboard.Activate();
         }
 
         internal static void PressKey(KeyCode key)
         {
             VirtualKeyboard.Press(key, Time.frameCount);
+            NewInputKeyboard.Activate();
+        }
+
+        /// <summary>이 frame 에 쥐고 있는 가상 키. Input System 키보드 adapter 가 읽는다.</summary>
+        internal static void ReadVirtualKeys(List<KeyCode> into)
+        {
+            VirtualKeyboard.ReadHeldKeys(Time.frameCount, Time.unscaledTime, into);
         }
 
         internal static void ReleaseKey(KeyCode key)
@@ -292,6 +306,7 @@ namespace Artel
             VirtualMouse.ReleaseAll(Time.frameCount);
             VirtualMouse.ReleasePointer();
             NewInputMouse.Release();
+            NewInputKeyboard.Release();
             VirtualAxes.ReleaseAll(Time.frameCount);
             MouseMessenger.Clear();
             CancelGuiPress();
@@ -334,6 +349,7 @@ namespace Artel
         internal static void ResetVirtualKeyboard()
         {
             NewInputMouse.Dispose();
+            NewInputKeyboard.Dispose();
             VirtualKeyboard.Clear();
             VirtualMouse.Clear();
             VirtualAxes.Clear();

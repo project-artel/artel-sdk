@@ -42,6 +42,11 @@ namespace Artel.Affordances.Live
         internal static IPulseAttachment Attachment { get; set; }
 
         /// <summary>
+        /// 겨누는 객체가 보이는지 판정하는 다른 어셈블리. 없으면 null 이고, 그때 객체 항목에 <c>visible</c> 이 없다.
+        /// </summary>
+        internal static IPulseVisibility Visibility { get; set; }
+
+        /// <summary>
         /// 감시 대상 멤버를 전부 읽고 문서 하나를 쓴다.
         /// </summary>
         /// <remarks>
@@ -141,6 +146,7 @@ namespace Artel.Affordances.Live
 
             // Camera.main 은 태그로 하는 씬 전체 조회다. 객체마다 한 번이면 순회를 잡아먹으므로 판독 전체에 대해 한 번 푼다.
             ScreenArea.Begin();
+            Visibility?.Begin();
 
             var truncated = Objects(
                 persistent, active.IsValid() ? active.name : null, byOwner, ledger, showing, hidden);
@@ -754,6 +760,8 @@ namespace Artel.Affordances.Live
 
             moved |= Offered(text, transform, ledger, identity);
 
+            moved |= Shown(text, transform, ledger, identity, live);
+
             // 컴포넌트별로 묶어 낸다. `on` 을 멤버마다 되풀이하지 않는다(ARTEL-540).
             text.Append(",\"by\":[");
 
@@ -1363,6 +1371,11 @@ namespace Artel.Affordances.Live
 
         private static readonly Dictionary<int, string> Offers = new Dictionary<int, string>();
 
+        /// <summary>
+        /// <see cref="Offers"/> 중 포인터로 겨누는 것(클릭 배선이나 포인터 핸들러)을 내놓는 객체. <see cref="Shown"/> 이 읽는다.
+        /// </summary>
+        private static readonly HashSet<int> Aimed = new HashSet<int>();
+
         /// <returns>이 객체가 내놓는 것이 판독에 들어갈 때 참.</returns>
         private static bool Offered(
             StringBuilder text, Transform transform, Ledger ledger, string identity)
@@ -1388,6 +1401,7 @@ namespace Artel.Affordances.Live
             if (Offers.Count >= MaxRemembered)
             {
                 Offers.Clear();
+                Aimed.Clear();
             }
 
             var said = new StringBuilder(128);
@@ -1430,6 +1444,11 @@ namespace Artel.Affordances.Live
                 return false;
             }
 
+            if (calls.Count > 0 || pointers.Count > 0)
+            {
+                Aimed.Add(id);
+            }
+
             said.Append(",\"offers\":{");
             var written = 0;
 
@@ -1466,6 +1485,53 @@ namespace Artel.Affordances.Live
             Offers[id] = rendered;
 
             if (!ledger.Keep(identity + "|offers", rendered))
+            {
+                return false;
+            }
+
+            text.Append(rendered);
+            return true;
+        }
+
+        /// <summary>
+        /// 포인터로 겨누는 객체가 지금 보이는지(ARTEL-1435).
+        /// </summary>
+        /// <remarks>
+        /// <c>offers</c> 는 누를 거리가 있다는 것만 말한다. 로딩 화면이 버튼을 덮고 있어도 버튼의 배선은 그대로라, 그것만 본 독자는
+        /// 덮인 버튼을 누르고 클릭은 덮개에 떨어진다. 판정은 scan 블록의 <c>visible</c> 과 같은 규칙이다(<see cref="Visibility"/>).
+        ///
+        /// 클릭 배선이나 포인터 핸들러를 내놓는 켜진 객체에만 싣는다. 키 입력은 화면 위치와 무관해서, 키만 받는 객체에 실으면
+        /// 화면 밖에 있는 매니저가 누를 수 없는 것으로 읽힌다. 꺼진 객체는 장부에 말하지 않는다 — 다시 켜지는 판독에 다시 실려야
+        /// 하고, 장부에 없는 키는 그때 새것으로 실린다.
+        ///
+        /// 비용: 판독(기본 0.1 초)마다 여기 해당하는 객체 수만큼 사각형을 재고 위로 부모를 걷는다. <c>Selectable</c> 이 있으면
+        /// <c>EventSystem.RaycastAll</c> 을 한 번 더 쏜다. 보내는 것은 바뀔 때뿐이다.
+        /// </remarks>
+        private static bool Shown(
+            StringBuilder text, Transform transform, Ledger ledger, string identity, bool live)
+        {
+            var visibility = Visibility;
+
+            if (visibility == null || !live || !Aimed.Contains(ObjectIds.KeyOf(transform.gameObject)))
+            {
+                return false;
+            }
+
+            bool visible;
+
+            try
+            {
+                visible = visibility.IsVisible(transform);
+            }
+            catch (Exception)
+            {
+                // 판정이 던지면 모르는 것이다. false 로 쓰면 보이는 버튼을 덮였다고 말하게 된다.
+                return false;
+            }
+
+            var rendered = visible ? ",\"visible\":true" : ",\"visible\":false";
+
+            if (!ledger.Keep(identity + "|visible", rendered))
             {
                 return false;
             }

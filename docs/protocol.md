@@ -6,6 +6,33 @@
 
 ## Actions
 
+### QA run 입력 모드 선택 추가
+
+QA run 시작 요청의 `inputMode`는 `virtual`(기본값) 또는 `os`다. CLI는 `qa run --input-mode os`, MCP는 run 시작의 `input_mode="os"`로 선택한다. 빌드 설정은 없다. backend가 run 설정을 저장하며 실행 중 모드는 바뀌지 않는다.
+
+`ACTION` 메시지의 최상위 `inputMode`로 선택한 모드를 SDK에 전달한다. 필드가 없거나 null이면 기존 `virtual` 입력을 사용한다. 다른 문자열은 입력 없이 실패한다.
+
+```json
+{"type":"ACTION","id":12,"inputMode":"os","actions":[{"id":1,"method":"move_mouse","params":[120,80]}]}
+```
+
+OS run을 시작하기 전에 backend는 `configure_input` 액션의 `params: [{"mode":"os"}]`를 보내고 실제 `ACTION_RESULT` 성공을 기다린다. 이 액션은 환경, 권한, 게임 창 포커스를 확인한다. 지원하지 않는 구 SDK, 권한 부족, 포커스 상실, timeout은 OS run 시작 실패로 처리한다. 재연결 후에도 backend는 새 SDK session을 다시 확인한다. `virtual` run은 구 SDK 호환성을 위해 이 확인을 생략한다.
+
+| 환경 | OS 입력 경로 | 조건 |
+| --- | --- | --- |
+| Windows | `SendInput` | 잠금 해제된 interactive desktop과 대상 Unity 창의 포커스가 필요하다. |
+| macOS | CoreGraphics | 실행 중인 Unity 앱의 Accessibility 권한과 게임 창의 포커스가 필요하다. |
+| Linux X11 | XTest | `libX11.so.6`, `libXtst.so.6`, `DISPLAY`, X server 접근 권한과 게임 창의 포커스가 필요하다. |
+| Linux native Wayland | 미지원 | portal/libei backend가 없으므로 preflight에서 실패한다. X11 session 또는 `virtual`을 사용한다. |
+
+OS 모드는 `key_down`, `key_up`, `key_click`, `mouse_down`, `mouse_up`, `move_mouse`를 실제 OS 입력으로 전달한다. `Mouse0`·`Mouse1`·`Mouse2`는 마우스 버튼으로 처리한다. `set_axis`, `set_button`, `button_click`, `enter_text`는 Unity 직접 조작을 섞지 않도록 실패하며 키·마우스 액션을 사용해야 한다.
+
+`move_mouse`의 좌표·selector 계약은 그대로다. SDK가 좌상단 원점 게임 화면 좌표를 대상 창의 client rectangle과 배율로 변환해 실제 커서를 움직인다. 데스크톱 좌표를 직접 받지 않는다. 커서가 잠긴 게임에서는 절대 좌표 이동을 거절한다. 마우스 누름은 실제 커서가 보이는 게임 영역을 가리킬 때만 전송한다. Unity Editor는 정확한 Game view 경계를 구할 수 없어 OS 키보드 입력만 지원한다. 다른 앱으로 포커스가 옮겨지면 새 down·move는 실패하고 SDK가 누른 입력은 해제한다. 게임 창을 자동으로 포커스하지 않는다.
+
+같은 데스크톱에서 다른 앱을 사용하면서 게임에 QA를 실행하려면 `virtual`을 선택한다. 작업 화면과 OS 입력을 분리하려면 별도 데스크톱 session 또는 VM 안에서 게임을 포커스한 상태로 실행한다.
+
+성공 응답은 OS API에 이벤트를 제출했다는 뜻이며 게임의 수신·처리를 확인한 결과는 아니다. OS 전송 실패, run 종료, 연결 해제, reset, 포커스 해제, 포인터 회수 시 SDK가 누른 키·버튼을 해제한다. 권한 실패를 가상 입력으로 자동 전환하지 않는다.
+
 - `ACTION` 메시지 하나가 `actions` 배열을 나름
 - 배열은 한 큐에서 직렬로 돎
 - 항목 하나의 모양은 `{ "id": <int>, "method": <string>, "params": [...] }`
@@ -50,6 +77,7 @@ sequenceDiagram
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
 | `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
+| `list_inputs` | `[]` | 이 빌드가 읽는 키와 Input Manager 이름, 지금 켜진 Input System action 의 키를 답한다. 읽기만 한다. 아래 「list_inputs 의 returnValue」 |
 | `wait_until` | `[condition]` · `[condition, timeoutSeconds]` | 조건이 참이 될 때까지 매 프레임 기다린다. 아래. 기본 5초, 최대 60초 |
 | `flush` | `[]` | 지금 한 번 읽어 움직인 것이 있으면 바로 `PULSE` 로 보낸다. 아무것도 안 움직였으면 `PULSE` 는 없고 `ACTION_RESULT.frame` 이 "이 frame 까지 변화 없음" 의 증거다. 돌고 있지 않으면 실패 |
 | `resync_readings` | `[]` | 다음 `PULSE` 를 `whole` 로 보낸다(ARTEL-1299). 받는 쪽이 `seq` 의 빈자리로 누락을 알아챘을 때 청한다. 돌고 있지 않으면 실패 |
@@ -88,6 +116,21 @@ sequenceDiagram
 | `delivery` | 1 | 바닥에 걸려 남은 것을 늦어도 이만큼 안에 보내는 상한 |
 
 `interval > 0`, `minDelivery >= 0`, `delivery >= interval` 이 아니면 거절. 모르는 키는 무시.
+
+### list_inputs 의 returnValue
+
+`{keys, otherKeys, axes, actions}` (ARTEL-1431). 서버의 Planner 가 런 중에 매크로를 쓸 때 어떤 키를 `key_click` 으로 누르고 어떤
+이름을 `set_axis`·`set_button` 에 넘길지 정하는 데 쓴다.
+
+- `keys`: 게임 코드가 `Input.GetKey*` 에 리터럴로 넘기는 키의 KeyCode 이름. 위버가 빌드 때 모은다
+- `otherKeys`: 키를 변수로 읽거나 `anyKey` 를 읽는다. 그러면 `keys` 밖의 키도 게임에 닿을 수 있다
+- `axes`: 게임이 `GetAxis*`·`GetButton*` 으로 읽는 Input Manager 이름. 빌드 때 모은 리터럴에 이 런에서 읽힌 이름을 더한다.
+  가상 키는 여기에 닿지 않는다
+- `actions`: 지금 켜진 Input System action 마다 `{name: "<map>/<action>", keys: [KeyCode 이름]}`, 이름 순으로 한 번씩. 씬이
+  바뀌면 달라진다. composite 의 부분 키도 평평하게 싣는다 — `2DVector` 의 `[W, S, A, D]` 는 하나씩 누르는 키지만, `OneModifier`
+  (ctrl+s)의 `[LeftControl, S]` 는 함께 눌러야 한다. Input System 키보드 adapter 가 없으면 빈 배열이다
+
+위빙되지 않은 빌드(WebGL)는 `keys`·`axes` 가 비어 있다. 비어 있는 것은 "읽지 않는다"가 아니라 "모른다"다.
 
 ### watch · read_member 의 이름과 returnValue
 
@@ -128,6 +171,19 @@ sequenceDiagram
 | `engine` | 엔진 컴포넌트 | `anim`{`stateHash`, `state`?}(Animator, layer 0) · `audio`{`playing`, `clip`}(AudioSource) · `particles`{`playing`}(ParticleSystem) · `sprite`{`alpha`, `enabled`}(SpriteRenderer. 스프라이트 이름은 싣지 않는다 — 프레임 애니메이션이 매 tick 바꾼다) · `renderer`{`enabled`} |
 
 연속값은 셋째 자리에서 끊고(`value`·`fill`·`alpha`), `normalizedTime` 처럼 매 프레임 바뀌는 것은 싣지 않는다. `Selectable`·`Animator`·`AudioSource`·`ParticleSystem`·`UIDocument` 를 가진 객체는 holders 상한 안에서 순회에 든다. `Renderer` 만으로는 들지 않는다.
+
+### pulse 의 객체 항목에 실리는 `visible`
+
+포인터로 겨누는 객체가 지금 보이는지(ARTEL-1435). scan 블록의 `visible`(아래 「`onScreen=true` 는 보인다는 뜻이 아니다」)과 같은
+판정이다. 로딩 화면에 덮인 버튼은 `offers` 가 그대로라 그것만 본 쪽은 덮개를 누른다 — agent 의 macro `actionable()` 이 이 값으로
+덮인 대상을 거짓으로 읽는다.
+
+- 켜진 객체 중 `offers.clicks` 나 `offers.pointers` 가 있는 것에만 싣는다. 키만 받는 객체에는 없다 — 키는 화면 위치와 무관하다
+- 장부를 탄다. 바뀐 판독과 `whole` 에만 실리고, 안 실린 델타는 마지막 값 그대로다. 꺼졌다 다시 켜진 객체는 켜지는 판독에 다시 실린다
+- 키가 없으면 "모른다" 다. 이 필드 전의 SDK, 겨누는 객체가 아님, 판정이 던짐이 모두 그렇다
+- release 빌드에도 실린다(`functions` 등 attachment 와 다르다)
+- 비용: 판독(기본 0.1 초)마다 해당 객체 수만큼 사각형을 재고 부모를 걷는다. `Selectable` 이면 `EventSystem.RaycastAll` 을 한 번 더
+  쏜다. 버튼 20 개 화면이면 초당 raycast 200 번이다
 
 watch list 의 셋째 출처: 게임 코드가 필드·프로퍼티에 `[ArtelObserve]` 를 붙이면 `WatchList.All()` 이 게임 어셈블리를 한 번 훑어 `asked` 로 더한다. 프로퍼티는 getter 가 판독마다 돈다. 컴포넌트가 아닌 타입의 인스턴스는 `watch` 와 같은 걷기로 찾는다.
 

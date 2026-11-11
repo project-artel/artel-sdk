@@ -21,6 +21,9 @@ namespace Artel.Protocol.Dto
         [JsonProperty("method")]
         public string Method { get; set; }
 
+        [JsonProperty("inputMode")]
+        public string InputMode { get; set; } = "virtual";
+
         [JsonProperty("actions")]
         public List<ActionRequestDto> Actions { get; set; } = new List<ActionRequestDto>();
 

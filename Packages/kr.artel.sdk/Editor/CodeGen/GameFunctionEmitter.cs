@@ -31,9 +31,6 @@ namespace Artel.CodeGen
         private const string CallStubPrefix = "__artel_call_";
         private const string ConditionStubPrefix = "__artel_when_";
 
-        /// <summary><c>UnityEngine.RuntimeInitializeLoadType.BeforeSceneLoad</c>.</summary>
-        private const int BeforeSceneLoad = 1;
-
         private readonly ModuleDefinition module;
         private readonly MethodReference begin;
         private readonly MethodReference param;
@@ -65,14 +62,12 @@ namespace Artel.CodeGen
                 coreModule.GetType("System.Type").Methods.First(method =>
                     method.Name == "GetTypeFromHandle" && method.Parameters.Count == 1));
 
-            // UnityEngine.CoreModule 은 Artel.Runtime 이 참조하므로 그 참조로 찾는다. 게임 어셈블리가 static cheat 만 들고
-            // 있으면 그 어셈블리 자신은 UnityEngine 을 참조하지 않을 수도 있다.
-            var unityReference = runtimeModule.AssemblyReferences.First(reference => reference.Name == "UnityEngine.CoreModule");
-            var unityModule = module.AssemblyResolver.Resolve(unityReference).MainModule;
-            var attribute = unityModule.GetType("UnityEngine.RuntimeInitializeOnLoadMethodAttribute");
-            runtimeInitializeConstructor = module.ImportReference(
-                attribute.Methods.First(method => method.IsConstructor && method.Parameters.Count == 1));
-            loadType = module.ImportReference(unityModule.GetType("UnityEngine.RuntimeInitializeLoadType"));
+            // 게임 어셈블리가 static cheat 만 들고 있으면 그 어셈블리 자신은 UnityEngine 을 참조하지 않을 수도 있다.
+            if (!RuntimeInitializeReferences.TryImport(module, runtimeModule, out runtimeInitializeConstructor, out loadType))
+            {
+                throw new System.InvalidOperationException(
+                    "UnityEngine.CoreModule 의 RuntimeInitializeOnLoadMethodAttribute 를 찾지 못해 cheat 등록을 만들 수 없다.");
+            }
             objectArray = new ArrayType(module.TypeSystem.Object);
         }
 
@@ -91,7 +86,7 @@ namespace Artel.CodeGen
                 MethodAttributes.Assembly | MethodAttributes.Static | MethodAttributes.HideBySig,
                 module.TypeSystem.Void);
             var initialize = new CustomAttribute(runtimeInitializeConstructor);
-            initialize.ConstructorArguments.Add(new CustomAttributeArgument(loadType, BeforeSceneLoad));
+            initialize.ConstructorArguments.Add(new CustomAttributeArgument(loadType, RuntimeInitializeReferences.BeforeSceneLoad));
             register.CustomAttributes.Add(initialize);
             registration.Methods.Add(register);
 

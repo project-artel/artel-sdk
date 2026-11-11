@@ -18,6 +18,9 @@ namespace Artel
         private readonly CursorController cursorController;
         private readonly PointerEventDispatcher pointerEvents;
         private readonly IScreenCapturer capturer;
+        private readonly OsInputSession osInput;
+        private readonly VirtualQaInputActions virtualInput;
+        private string inputMode = "virtual";
 
         /// <summary>
         /// 세션이 그렇게 말할 때 라이브 판독을 켜고 끄는 것.
@@ -53,7 +56,6 @@ namespace Artel
         private readonly GameFunctionActions gameFunctions;
 
         private readonly Action<Vector2> cursorMoved;
-        private readonly Action<Vector2> pointerMoved;
 
         /// <summary>서버와 맞춘 액션 이름. 결과에도 이 이름을 그대로 실어 서버가 짝을 맞춘다.</summary>
         private const string ScanEvidence = "scan_evidence";
@@ -77,8 +79,11 @@ namespace Artel
             IEvidenceScan evidenceScan = null,
             IEvidenceUploader evidenceUploader = null,
             GameFunctionActions gameFunctions = null,
-            IEvidenceScanProgress scanProgress = null)
+            IEvidenceScanProgress scanProgress = null,
+            OsInputSession osInput = null)
         {
+            this.osInput = osInput ?? new OsInputSession();
+            virtualInput = new VirtualQaInputActions(cursorController, pointerEvents);
             this.gameFunctions = gameFunctions ?? new GameFunctionActions();
             this.readings = readings;
             this.scanner = scanner;
@@ -99,11 +104,6 @@ namespace Artel
             // silent move: firing hover events out of button_click would change what an existing
             // caller does to the game. Only move_mouse claims the pointer outright.
             cursorMoved = ArtelInput.MoveMouse;
-            pointerMoved = position =>
-            {
-                ArtelInput.MoveMouse(position);
-                if (!NewInputMouse.UsesNativeUi) pointerEvents.MoveTo(position);
-            };
         }
 
         /// <summary>Sends captures somewhere other than orchestration until <see cref="RestoreCaptureUploader"/>.</summary>
@@ -123,51 +123,123 @@ namespace Artel
             string method,
             List<object> parameters,
             Action<ActionResultDto> completed,
-            bool glideMouse = true)
+            bool glideMouse = true,
+            string inputMode = "virtual")
         {
-            var mouseAction = method == "move_mouse" || method == "mouse_down" || method == "mouse_up" ||
-                ((method == "key_down" || method == "key_up" || method == "key_click") &&
-                 parameters != null && parameters.Count > 0 && TryReadKeyCode(parameters[0], out var key) &&
-                 MouseButtonKeyCode.TryGetButton(key, out _));
-            var error = mouseAction ? NewInputMouse.ValidationError : null;
-            if (error != null)
+            var modeError = ValidateInputMode(inputMode);
+            if (modeError != null)
             {
-                // Input update가 멈춰도 기존 hold는 해제한다. 동작을 처리했다는 성공 응답은 보내지 않는다.
-                if (method == "mouse_up" || (mouseAction && method == "key_up"))
-                    ArtelInput.ReleaseAllVirtualInput();
-                completed(ActionResultDto.Failure(actionId, error));
+                completed(ActionResultDto.Failure(actionId, modeError));
                 yield break;
             }
-
-            ActionResultDto result = null;
-            yield return ExecuteCore(actionId, method, parameters, value => result = value, glideMouse);
-            if (mouseAction && result != null && result.IsSuccess && NewInputMouse.IsActive)
+            if (method == "configure_input")
             {
-                var targetFrame = Time.frameCount + 1;
-                var deadline = Time.realtimeSinceStartup + 2f;
-                while (!NewInputMouse.HasProcessed(targetFrame))
+                if (!ConfigureInputRequest.TryParse(parameters, out var configuration))
+                    completed(ActionResultDto.Failure(actionId, "configure_input requires params [{mode: virtual|os}]."));
+                else
                 {
-                    if (Time.realtimeSinceStartup >= deadline || !NewInputMouse.IsActive)
-                    {
-                        ArtelInput.ReleaseAllVirtualInput();
-                        completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse action."));
-                        yield break;
-                    }
-                    yield return null;
+                    var validationError = configuration.Mode == "os" ? osInput.Validate() : null;
+                    completed(validationError == null ? ActionResultDto.Success(actionId) :
+                        ActionResultDto.Failure(actionId, validationError));
                 }
-                // 클릭 결과와 일반 QA는 EventSystem.Update까지 기다린다.
-                if (method != "move_mouse" || glideMouse) yield return null;
-                if (method == "mouse_down") result.ReturnValue = PressOutcome(pointerEvents.LastPressReceiver);
+                yield break;
             }
-            completed(result);
+            if (IsInputMethod(method))
+            {
+                modeError = PrepareInputMode(inputMode);
+                if (modeError != null)
+                {
+                    completed(ActionResultDto.Failure(actionId, modeError));
+                    yield break;
+                }
+                if (inputMode == "os" && !IsDeviceInputMethod(method))
+                {
+                    completed(ActionResultDto.Failure(actionId, method + " is not available in OS input mode. Use key and mouse actions."));
+                    yield break;
+                }
+            }
+            IQaInputActions input = inputMode == "os" ? (IQaInputActions)osInput : virtualInput;
+            yield return IsDeviceInputMethod(method)
+                ? ExecuteDeviceInput(input, actionId, method, parameters, completed, glideMouse)
+                : ExecuteCore(actionId, method, parameters, completed);
+        }
+
+        internal static string ValidateInputMode(string mode) => mode == null || mode == "virtual" || mode == "os"
+            ? null : "inputMode must be virtual or os.";
+
+        private string PrepareInputMode(string requestedMode)
+        {
+            requestedMode = requestedMode ?? "virtual";
+            if (inputMode == requestedMode) return null;
+            var releaseError = osInput.ReleaseAll();
+            if (releaseError != null) return releaseError;
+            virtualInput.ReleaseAll();
+            if (requestedMode == "os") cursorController?.Hide();
+            inputMode = requestedMode;
+            return null;
+        }
+
+        internal string ReleaseOsInput() => osInput.ReleaseAll();
+
+        private static bool IsInputMethod(string method) => IsDeviceInputMethod(method) ||
+            method == "set_axis" || method == "set_button" || method == "button_click" || method == "enter_text";
+
+        private static bool IsDeviceInputMethod(string method) => method == "move_mouse" ||
+            method == "mouse_down" || method == "mouse_up" || method == "key_down" ||
+            method == "key_up" || method == "key_click";
+
+        private IEnumerator ExecuteDeviceInput(IQaInputActions input, int actionId, string method,
+            List<object> parameters, Action<ActionResultDto> completed, bool glideMouse)
+        {
+            switch (method)
+            {
+                case "move_mouse":
+                    if (!PointerAimParser.TryParse(parameters, out var aim, out var error) ||
+                        !aim.TryResolve(scanner, out var position, out error))
+                        return RejectInput(actionId, error, completed);
+                    return input.MoveMouse(actionId, position, glideMouse, completed);
+
+                case "mouse_down":
+                case "mouse_up":
+                    var releasing = method == "mouse_up";
+                    if (!TryReadMouseButton(parameters, out var button))
+                    {
+                        // 업데이트가 중단된 경우에는 잘못된 mouse_up도 기존 가상 hold를 해제한다.
+                        var validationError = (input as VirtualQaInputActions)?.ValidateMouse(releasing);
+                        return RejectInput(actionId, validationError ??
+                            method + " requires params [] or [button], where button is 0, 1, or 2.", completed);
+                    }
+                    return input.ChangeMouseButton(actionId, button, !releasing, completed);
+
+                case "key_down":
+                case "key_up":
+                    if (parameters == null || parameters.Count == 0 || !TryReadKeyCode(parameters[0], out var key))
+                        return RejectInput(actionId, method + " requires params [keyCode].", completed);
+                    return input.ChangeKey(actionId, key, method == "key_down", completed);
+
+                case "key_click":
+                    if (parameters == null || parameters.Count < 2 ||
+                        !TryReadKeyCode(parameters[0], out var clickedKey) ||
+                        !TryReadDuration(parameters[1], out var durationSeconds))
+                        return RejectInput(actionId, "key_click requires params [keyCode, positiveDurationSeconds].", completed);
+                    return input.ClickKey(actionId, clickedKey, durationSeconds, completed);
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(method), method, null);
+            }
+        }
+
+        private static IEnumerator RejectInput(int actionId, string error, Action<ActionResultDto> completed)
+        {
+            completed(ActionResultDto.Failure(actionId, error));
+            yield break;
         }
 
         private IEnumerator ExecuteCore(
             int actionId,
             string method,
             List<object> parameters,
-            Action<ActionResultDto> completed,
-            bool glideMouse)
+            Action<ActionResultDto> completed)
         {
             switch (method)
             {
@@ -177,30 +249,6 @@ namespace Artel
 
                 case "enter_text":
                     yield return ExecuteEnterText(actionId, parameters, completed);
-                    yield break;
-
-                case "move_mouse":
-                    yield return ExecuteMoveMouse(actionId, parameters, completed, glideMouse);
-                    yield break;
-
-                case "mouse_down":
-                    yield return ExecuteMousePress(actionId, method, parameters, completed);
-                    yield break;
-
-                case "mouse_up":
-                    completed(ExecuteMouseButton(actionId, method, parameters, false));
-                    yield break;
-
-                case "key_click":
-                    yield return ExecuteKeyClick(actionId, parameters, completed);
-                    yield break;
-
-                case "key_down":
-                    completed(ExecuteKeyHold(actionId, method, parameters, true));
-                    yield break;
-
-                case "key_up":
-                    completed(ExecuteKeyHold(actionId, method, parameters, false));
                     yield break;
 
                 case "set_axis":
@@ -249,6 +297,10 @@ namespace Artel
 
                 case "read_member":
                     completed(ExecuteReadMember(actionId, parameters));
+                    yield break;
+
+                case "list_inputs":
+                    completed(ExecuteListInputs(actionId));
                     yield break;
 
                 case "capture_screen":
@@ -366,195 +418,6 @@ namespace Artel
         }
 
         /// <summary>
-        /// Walks the pointer to a screen position, reporting every step on the way. A held button
-        /// turns those steps into a drag, which is why this cannot simply jump to the destination.
-        /// </summary>
-        /// <remarks>
-        /// The params name that position in exactly one of three ways, and <see cref="PointerAimParser"/>
-        /// is the only place that tells them apart: the coordinates <c>[x, y]</c>, a Unity instance id
-        /// <c>[id]</c> of the same kind <c>button_click</c> takes, or a selector <c>[selector]</c> as
-        /// <c>Artel.Affordances.Scan.ScenePath.SelectorOf</c> writes it.
-        /// <para>
-        /// Whichever form it was, the position that comes back is the one a scan reports: pixels from
-        /// the top left. Unity's screen space counts up from the bottom instead, and that flip lives
-        /// here — once, out of sight — rather than in every caller that read a block's rect and wants
-        /// to aim at it, or in any implementation of <see cref="IPointerAim"/>.
-        /// </para>
-        /// </remarks>
-        private IEnumerator ExecuteMoveMouse(
-            int actionId,
-            List<object> parameters,
-            Action<ActionResultDto> completed,
-            bool glide)
-        {
-            if (!PointerAimParser.TryParse(parameters, out var aim, out var parseError))
-            {
-                completed(ActionResultDto.Failure(actionId, parseError));
-                yield break;
-            }
-
-            if (!aim.TryResolve(scanner, out var reportedPosition, out var resolveError))
-            {
-                completed(ActionResultDto.Failure(actionId, resolveError));
-                yield break;
-            }
-
-            yield return cursorController.MoveTo(
-                new Vector2(reportedPosition.x, Screen.height - reportedPosition.y),
-                pointerMoved,
-                glide: glide,
-                immediate: !glide);
-            completed(ActionResultDto.Success(actionId));
-        }
-
-        /// <summary>
-        /// 누르고, 한 프레임 뒤에 **무엇이 받았는지** 말한다.
-        /// </summary>
-        /// <remarks>
-        /// 상태를 미는 것과 <c>OnMouseDown</c> 이 나가는 것은 같은 순간이 아니다. 미는 것은
-        /// 여기서, 보내는 것은 그 뒤 <c>Input.AdvanceFrame</c> 에서 메신저가 한다. 그래서 결과를
-        /// 바로 만들면 아직 아무것도 모르는 채로 <c>ok</c> 만 적게 된다.
-        /// <para>
-        /// 그 <c>ok</c> 때문에 세 가지가 구분되지 않았다 — 겨냥이 빗나간 것, 닿았는데 게임이
-        /// 입력을 막고 있던 것, 사람이 포인터를 도로 가져가 메신저가 아예 안 돈 것. 에이전트는
-        /// 셋 다 성공으로 읽고 다음 단계로 갔다(ARTEL-769).
-        /// </para>
-        /// <para>
-        /// 닿은 것이 없어도 실패로 만들지 않는다. 빈 곳을 누르는 것은 정당한 조작이고, 그것이
-        /// 무엇이었는지는 부르는 쪽이 판단할 일이다.
-        /// </para>
-        /// </remarks>
-        private IEnumerator ExecuteMousePress(
-            int actionId, string method, List<object> parameters, Action<ActionResultDto> completed)
-        {
-            if (!TryReadMouseButton(parameters, out var button))
-            {
-                completed(ActionResultDto.Failure(
-                    actionId,
-                    method + " requires params [] or [button], where button is 0, 1, or 2."));
-                yield break;
-            }
-
-            ArtelInput.ForgetLastPress();
-            pointerEvents.ForgetLastPress();
-            SetButton(button, true);
-            var eventReceiver = pointerEvents.LastPressReceiver;
-
-            yield return null;
-
-            // OnGUI는 Update 뒤에 실행되므로 수신 결과를 읽기 전에 Repaint를 기다린다.
-            if (button == 0 && string.IsNullOrEmpty(eventReceiver) && ArtelInput.HasRecentGuiButtons)
-                yield return null;
-            completed(ActionResultDto.Success(actionId, PressOutcome(eventReceiver)));
-        }
-
-        /// <summary>
-        /// 누름이 무엇에 닿았나. **문장이 아니라 데이터로 싣는다.**
-        /// </summary>
-        /// <remarks>
-        /// 처음에는 사람이 읽을 한국어 문장을 실었다. 두 가지가 잘못이었다 — 받는 쪽 계약이
-        /// <c>returnValue</c> 를 객체로 타이핑해 두어 문자열이 파싱을 깨뜨렸고(프레임 하나가
-        /// 통째로 버려졌다), 표현은 프로토콜이 아니라 읽는 쪽이 정할 일이다(ARTEL-777).
-        /// <para>
-        /// <c>reached</c> 가 닿은 것의 경로다. 아무것도 없었으면 null 이고, 그때
-        /// <c>pointerHeldByPerson</c> 이 "빈 곳이었다"와 "사람이 포인터를 도로 가져가 메신저가
-        /// 아예 안 돌았다"를 가른다.
-        /// </para>
-        /// <para>
-        /// 누름은 uGUI(<see cref="PointerEventDispatcher"/>)와 collider(<c>OnMouse*</c>) 두 길로
-        /// 함께 나간다. 처음에는 collider 쪽만 적어서 Canvas 버튼을 누르면 늘 null 이었고, 받는
-        /// 쪽은 씬을 바꾼 클릭을 빈 곳으로 읽었다(ARTEL-1175). uGUI 가 받은 것을 먼저 적는다 —
-        /// 화면 위에 그려지는 것이 UI 이고, 사람이 누른다고 보는 것도 그것이다.
-        /// </para>
-        /// </remarks>
-        private static Dictionary<string, object> PressOutcome(string eventReceiver)
-        {
-            // native UI의 후속 raycast는 실제 수신 증거가 아니다.
-            var nativeUi = NewInputMouse.UsesNativeUi;
-            var reached = nativeUi ? ArtelInput.LastGuiPressReceiver :
-                (string.IsNullOrEmpty(eventReceiver)
-                    ? ArtelInput.LastGuiPressReceiver ?? ArtelInput.LastPressReceiver
-                    : eventReceiver);
-            return new Dictionary<string, object>
-            {
-                { "reached", string.IsNullOrEmpty(reached) ? null : reached },
-                { "pointerHeldByPerson", string.IsNullOrEmpty(reached) &&
-                    (nativeUi ? !ArtelInput.OwnsVirtualPointer : !ArtelInput.SawPress) }
-            };
-        }
-
-        private ActionResultDto ExecuteMouseButton(
-            int actionId, string method, List<object> parameters, bool press)
-        {
-            if (!TryReadMouseButton(parameters, out var button))
-            {
-                return ActionResultDto.Failure(
-                    actionId,
-                    method + " requires params [] or [button], where button is 0, 1, or 2.");
-            }
-
-            SetButton(button, press);
-            return ActionResultDto.Success(actionId);
-        }
-
-        /// <summary>
-        /// 가상 마우스 상태와 uGUI 이벤트를 한 번에 민다.
-        /// </summary>
-        /// <remarks>
-        /// <c>mouse_down</c> 과 <c>KeyCode.Mouse0</c> 을 실은 <c>key_down</c> 이 같은 버튼을
-        /// 가리킨다. 두 경로가 각자 밀면 언젠가 한쪽만 절반을 밀어 "폴링에는 잡히는데 버튼은
-        /// 안 눌리는" 상태가 되므로, 미는 일은 여기 한 자리에만 둔다.
-        /// </remarks>
-        private void SetButton(int button, bool press)
-        {
-            if (press)
-            {
-                ArtelInput.PressMouseButton(button);
-                if (!NewInputMouse.UsesNativeUi)
-                {
-                    pointerEvents.Press(button);
-                    if (button == 0 && !string.IsNullOrEmpty(pointerEvents.LastPressReceiver))
-                        ArtelInput.GuiPressHandledByEventSystem = true;
-                }
-            }
-            else
-            {
-                ArtelInput.ReleaseMouseButton(button);
-                if (!NewInputMouse.UsesNativeUi) pointerEvents.Release(button);
-            }
-        }
-
-        private ActionResultDto ExecuteKeyHold(
-            int actionId, string method, List<object> parameters, bool press)
-        {
-            if (parameters == null || parameters.Count == 0 ||
-                !TryReadKeyCode(parameters[0], out var key))
-            {
-                return ActionResultDto.Failure(actionId, method + " requires params [keyCode].");
-            }
-
-            // KeyCode.Mouse0 은 마우스 왼쪽 버튼 그 자체다. 가상 키보드에만 넣으면 GetKey 로
-            // 폴링하는 게임에만 닿고, 포인터 아래 오브젝트의 OnMouseDown 도 uGUI 핸들러도
-            // 부르지 못한다 — 액션은 성공으로 보고되는데 게임은 아무 일도 없는 그 형태가 된다.
-            if (MouseButtonKeyCode.TryGetButton(key, out var button))
-            {
-                SetButton(button, press);
-                return ActionResultDto.Success(actionId);
-            }
-
-            if (press)
-            {
-                ArtelInput.PressKey(key);
-            }
-            else
-            {
-                ArtelInput.ReleaseKey(key);
-            }
-
-            return ActionResultDto.Success(actionId);
-        }
-
-        /// <summary>
         /// Freezes game time, leaving the SDK itself running.
         /// </summary>
         /// <remarks>
@@ -651,11 +514,17 @@ namespace Artel
             // behavior 는 리로드보다 먼저 끝낸다. 그래야 그 finally 가 아직 살아 있는 씬 위에서 돈다.
             gameFunctions.EndRun("reset_game");
 
+            var inputReleaseError = ReleaseOsInput();
+            if (inputReleaseError != null)
+            {
+                completed(ActionResultDto.Failure(actionId, inputReleaseError));
+                yield break;
+            }
+
             // A pause and a held button belong to the run, not to the game. Carried across the
             // reload they would hand the fresh scene a frozen clock and a press it never saw begin.
             RestoreTimeScale();
-            pointerEvents.ReleaseAll();
-            ArtelInput.ReleaseAllVirtualInput();
+            virtualInput.ReleaseAll();
 
             DoomPersistentObjects();
             if (request.ResetStatics)
@@ -1231,61 +1100,14 @@ namespace Artel
         }
 
         /// <summary>
-        /// 키를 그 시간만큼 눌렀다 놓는다. 마우스 버튼이면 놓는 일을 여기서 기다렸다 직접 한다.
+        /// 이 빌드가 읽는 키, Input Manager 이름, 지금 켜진 Input System action 의 키를 답한다(ARTEL-1431). 읽기만 한다.
         /// </summary>
-        /// <remarks>
-        /// 가상 키보드는 만료를 스스로 안다. 가상 마우스는 그러지 않고, 만료를 그쪽 상태에 넣어도
-        /// 놓이는 순간을 아무도 몰라 <c>pointerUp</c> 과 <c>OnMouseUp</c> 이 빠진다. 그래서
-        /// 마우스만 코루틴으로 갈라, 누름과 놓음 양쪽 모두가 이벤트를 내게 한다.
-        ///
-        /// 기다림은 scaled time 이 아니다. <c>pause_time</c> 이 걸린 게임에서 scaled 로 재면
-        /// 영영 끝나지 않는다 — 가상 키보드도 같은 이유로 <c>unscaledTime</c> 으로 잰다.
-        ///
-        /// 기다리는 사이에 연결이 끊겨도 따로 정리할 것이 없다.
-        /// <c>ReleaseAllVirtualInput</c> 과 <c>pointerEvents.ReleaseAll</c> 이 이미 버튼을
-        /// 놓았고, 뒤늦은 놓음은 양쪽 모두에서 아무 일도 하지 않는다.
-        /// </remarks>
-        private IEnumerator ExecuteKeyClick(
-            int actionId, List<object> parameters, Action<ActionResultDto> completed)
+        private static ActionResultDto ExecuteListInputs(int actionId)
         {
-            if (parameters == null || parameters.Count < 2 ||
-                !TryReadKeyCode(parameters[0], out var key) ||
-                !TryReadDuration(parameters[1], out var durationSeconds))
-            {
-                completed(ActionResultDto.Failure(
-                    actionId,
-                    "key_click requires params [keyCode, positiveDurationSeconds]."));
-                yield break;
-            }
-
-            if (!MouseButtonKeyCode.TryGetButton(key, out var button))
-            {
-                ArtelInput.ClickKey(key, durationSeconds);
-                completed(ActionResultDto.Success(actionId));
-                yield break;
-            }
-
-            SetButton(button, true);
-            if (NewInputMouse.IsActive)
-            {
-                // 짧은 click도 FixedUpdate가 press를 처리하고 UI가 읽은 뒤에 놓는다.
-                var targetFrame = Time.frameCount + 1;
-                var deadline = Time.realtimeSinceStartup + 2f;
-                while (!NewInputMouse.HasProcessed(targetFrame))
-                {
-                    if (Time.realtimeSinceStartup >= deadline || !NewInputMouse.IsActive)
-                    {
-                        ArtelInput.ReleaseAllVirtualInput();
-                        completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse press."));
-                        yield break;
-                    }
-                    yield return null;
-                }
-                yield return null;
-            }
-            yield return new WaitForSecondsRealtime(durationSeconds);
-            SetButton(button, false);
-            completed(ActionResultDto.Success(actionId));
+            var inputs = new InputListDto();
+            InputReadManifest.Describe(inputs);
+            inputs.Actions = NewInputKeyboard.EnabledActionKeys();
+            return ActionResultDto.Success(actionId, inputs);
         }
 
         /// <summary>
