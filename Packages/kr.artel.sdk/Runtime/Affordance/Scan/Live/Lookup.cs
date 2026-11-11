@@ -239,7 +239,16 @@ namespace Artel.Affordances.Live
                 return;
             }
 
-            var found = Find(wanted, new Walk(), DefaultBudgetMilliseconds);
+            var walk = new Walk();
+            var found = Find(wanted, walk, DefaultBudgetMilliseconds);
+            foreach (var type in wanted)
+            {
+                if (type.FullName == "Artel.Tests.ObserveProgress")
+                {
+                    var root = Roots().Find(field => field.FieldType == type);
+                    Debug.Log($"Lookup diagnostic: found={found[type].Count}, visited={walk.Visited}, exhausted={walk.Exhausted}, ms={walk.Milliseconds}, root={root}, rootValue={root?.GetValue(null)}");
+                }
+            }
 
             foreach (var member in plain)
             {
