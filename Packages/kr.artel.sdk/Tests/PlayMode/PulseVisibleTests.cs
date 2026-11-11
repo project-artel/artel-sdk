@@ -148,7 +148,8 @@ namespace Artel.Tests
         {
             if (EventSystem.current == null)
             {
-                Track(new GameObject("artel pulse visible event system", typeof(EventSystem), typeof(StandaloneInputModule)));
+                // RaycastAll은 입력 모듈 없이 동작하며, legacy 모듈은 New Input System 전용 환경에서 예외를 낸다.
+                Track(new GameObject("artel pulse visible event system", typeof(EventSystem)));
             }
 
             var canvas = Track(new GameObject("artel pulse visible canvas", typeof(Canvas))).GetComponent<Canvas>();
