@@ -211,7 +211,7 @@ namespace Artel
             canvasObject.AddComponent<Instrument>();
 
             canvas = canvasObject.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            ArtelOverlayPresentation.Attach(canvas);
             canvas.sortingOrder = OverlaySortingOrder;
 
             var scaler = canvasObject.GetComponent<CanvasScaler>();
