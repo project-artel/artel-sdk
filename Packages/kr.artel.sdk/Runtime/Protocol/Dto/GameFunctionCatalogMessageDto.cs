@@ -31,6 +31,9 @@ namespace Artel.Protocol.Dto
         [JsonProperty("description")]
         public string Description { get; set; }
 
+        [JsonProperty("readOnly", DefaultValueHandling = DefaultValueHandling.Ignore)]
+        public bool ReadOnly { get; set; }
+
         [JsonProperty("params")]
         public List<GameFunctionParamDto> Params { get; set; } = new List<GameFunctionParamDto>();
 

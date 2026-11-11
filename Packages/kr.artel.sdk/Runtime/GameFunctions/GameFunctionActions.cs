@@ -268,6 +268,7 @@ namespace Artel
             {
                 Name = function.Name,
                 Description = function.Description,
+                ReadOnly = function.ReadOnly,
                 Params = function.Params.Select(ToParam).ToList(),
                 Target = function.IsStatic ? null : new GameFunctionTargetDto { Component = function.Component.Name },
                 Group = function.Group
@@ -304,6 +305,13 @@ namespace Artel
             if (!Registry.TryGet(kind, name, out var function))
             {
                 error = "unknown " + GameFunctionRegistry.KindWord(kind) + ": " + name;
+                return false;
+            }
+
+            if (fields.TryGetValue("requireReadOnly", out var requirement) &&
+                (!(requirement is bool readOnly) || (readOnly && !function.ReadOnly)))
+            {
+                error = "unavailable: " + name + " is not a read-only game function";
                 return false;
             }
 

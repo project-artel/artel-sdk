@@ -39,13 +39,16 @@ namespace Artel.Tests.GameFunctions
 
         private static string HasWallet() => WalletMissingReason;
 
+        [ArtelGameFunction("Reads the wallet.", ArtelGameFunctionMode.ReadOnly, when: nameof(HasWallet))]
+        private static string GetGold() => "gold=" + Gold;
+
         [ArtelCheat("Throws.")]
         private static void Explode()
         {
             throw new InvalidOperationException("boom");
         }
 
-        [ArtelCheat("Waits a frame, then says where it went.")]
+        [ArtelGameFunction("Waits a frame, then says where it went.", ArtelGameFunctionMode.Setup)]
         private static IEnumerator Travel(FixtureSpawn to = FixtureSpawn.Boss)
         {
             yield return null;
@@ -78,7 +81,7 @@ namespace Artel.Tests.GameFunctions
             }
         }
 
-        [ArtelBehavior("Waits for the given game seconds, then completes.")]
+        [ArtelGameFunction("Waits for the given game seconds, then completes.", ArtelGameFunctionMode.Behavior)]
         private static IEnumerator Linger(float seconds)
         {
             yield return new WaitForSeconds(seconds);

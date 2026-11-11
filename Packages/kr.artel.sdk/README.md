@@ -714,13 +714,19 @@ Current limits:
 
 ## Cheats and behaviors for the QA agent
 
-Mark a method with `[ArtelCheat]` to let the QA agent call it through `invoke_cheat`, or with
-`[ArtelBehavior]` to let it start a routine that runs every frame until it is stopped:
+새 메서드는 `[ArtelGameFunction]`으로 등록합니다. `ReadOnly`는 게임 상태를
+바꾸지 않고 `string`을 반환하고, `Setup`은 테스트 사전조건을 준비합니다.
+`Behavior`는 `IEnumerator`로 동작을 계속 실행합니다. QA Agent는 세 종류를
+`call_game_function`으로 호출하며, `Behavior`는 중지와 연장에 쓸 실행 ID를 반환합니다.
+기존 `[ArtelCheat]`와 `[ArtelBehavior]` 등록도 지원합니다.
 
 ```csharp
 public static class DebugCheats
 {
-    [ArtelCheat("Adds gold to the player's wallet.", when: nameof(HasWallet))]
+    [ArtelGameFunction("Reads current gold.", ArtelGameFunctionMode.ReadOnly, when: nameof(HasWallet))]
+    static string GetGold() => $"gold={Wallet.Gold}";
+
+    [ArtelGameFunction("Adds gold to the player's wallet.", ArtelGameFunctionMode.Setup, when: nameof(HasWallet))]
     static string GiveGold([CheatRange(1, 1_000_000)] int amount)
     {
         Wallet.Add(amount);
@@ -733,7 +739,7 @@ public static class DebugCheats
 
 public class PlayerController : MonoBehaviour
 {
-    [ArtelBehavior("Attacks the nearest enemy until none are in range.", group: "combat")]
+    [ArtelGameFunction("Attacks the nearest enemy until none are in range.", ArtelGameFunctionMode.Behavior, group: "combat")]
     IEnumerator AutoAttack([CheatRange(1, 20)] float range, ArtelBehaviorContext context)
     {
         try

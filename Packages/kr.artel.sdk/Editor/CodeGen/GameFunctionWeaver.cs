@@ -28,6 +28,7 @@ namespace Artel.CodeGen
         internal const string RuntimeAssemblyName = "Artel.Runtime";
         internal const string CheatAttributeName = "Artel.ArtelCheatAttribute";
         internal const string BehaviorAttributeName = "Artel.ArtelBehaviorAttribute";
+        internal const string FunctionAttributeName = "Artel.ArtelGameFunctionAttribute";
         internal const string RangeAttributeName = "Artel.CheatRangeAttribute";
         internal const string ContextTypeName = "Artel.ArtelBehaviorContext";
         internal const string RegistrationNamespace = "Artel.Generated";
@@ -116,15 +117,22 @@ namespace Artel.CodeGen
             {
                 foreach (var method in type.Methods)
                 {
-                    var attribute = method.CustomAttributes.FirstOrDefault(item =>
+                    var attributes = method.CustomAttributes.Where(item =>
                         item.AttributeType.FullName == CheatAttributeName ||
-                        item.AttributeType.FullName == BehaviorAttributeName);
-                    if (attribute == null)
+                        item.AttributeType.FullName == BehaviorAttributeName ||
+                        item.AttributeType.FullName == FunctionAttributeName).ToArray();
+                    if (attributes.Length == 0)
                     {
                         continue;
                     }
 
-                    var candidate = Read(method, attribute);
+                    if (attributes.Length > 1)
+                    {
+                        AddError(method, "must have only one game function attribute");
+                        continue;
+                    }
+
+                    var candidate = Read(method, attributes[0]);
                     if (candidate == null)
                     {
                         continue;
@@ -147,16 +155,26 @@ namespace Artel.CodeGen
 
         private GameFunctionCandidate Read(MethodDefinition method, CustomAttribute attribute)
         {
-            var isBehavior = attribute.AttributeType.FullName == BehaviorAttributeName;
             var arguments = attribute.ConstructorArguments;
+            var unified = attribute.AttributeType.FullName == FunctionAttributeName;
+            var mode = unified ? (ArtelGameFunctionMode)(int)arguments[1].Value : ArtelGameFunctionMode.Setup;
+            if (!Enum.IsDefined(typeof(ArtelGameFunctionMode), mode))
+            {
+                AddError(method, "has an unknown ArtelGameFunctionMode");
+                return null;
+            }
+
+            var isBehavior = attribute.AttributeType.FullName == BehaviorAttributeName ||
+                mode == ArtelGameFunctionMode.Behavior;
             var candidate = new GameFunctionCandidate
             {
                 Method = method,
                 Kind = isBehavior ? GameFunctionKind.Behavior : GameFunctionKind.Cheat,
+                ReadOnly = mode == ArtelGameFunctionMode.ReadOnly,
                 Description = ArgumentAt(arguments, 0),
-                Group = isBehavior ? ArgumentAt(arguments, 1) : null,
-                Name = ArgumentAt(arguments, isBehavior ? 2 : 1),
-                WhenName = ArgumentAt(arguments, isBehavior ? 3 : 2)
+                Group = unified ? ArgumentAt(arguments, 4) : isBehavior ? ArgumentAt(arguments, 1) : null,
+                Name = ArgumentAt(arguments, unified || isBehavior ? 2 : 1),
+                WhenName = ArgumentAt(arguments, unified || isBehavior ? 3 : 2)
             };
 
             var errorsBefore = Errors.Count;
@@ -171,6 +189,14 @@ namespace Artel.CodeGen
             }
 
             CheckShape(method, isBehavior);
+            if (candidate.ReadOnly && method.ReturnType.FullName != "System.String")
+            {
+                AddError(method, "is read-only, so it must return a string");
+            }
+            if (!isBehavior && candidate.Group != null)
+            {
+                AddError(method, "may set group only for a behavior");
+            }
             ReadParameters(candidate, isBehavior);
             ReadCondition(candidate);
             return Errors.Count == errorsBefore ? candidate : null;
@@ -487,6 +513,7 @@ namespace Artel.CodeGen
     {
         public MethodDefinition Method;
         public GameFunctionKind Kind;
+        public bool ReadOnly;
         public string Name;
         public string Description;
         public string Group;
