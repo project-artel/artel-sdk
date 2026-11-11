@@ -63,6 +63,16 @@ namespace Artel.Tests
 
             var catalog = JObject.Parse(transport.Sent[deviceContext + 1]);
             Assert.That(catalog["cheats"].Select(entry => (string)entry["name"]), Does.Contain("give_gold"));
+            var readOnly = catalog["cheats"].Single(entry => (string)entry["name"] == "get_gold");
+            Assert.That((bool)readOnly["readOnly"], Is.True);
+
+            FixtureCheats.Gold = 12;
+            transport.Receive("{\"type\":\"ACTION\",\"id\":9,\"actions\":[{\"id\":1,\"method\":\"invoke_cheat\",\"params\":[{\"name\":\"get_gold\",\"requireReadOnly\":true}]}]}");
+            yield return null;
+            yield return null;
+            var result = transport.Sent.Single(message => Type(message) == "ACTION_RESULT");
+            Assert.That(result, Does.Contain("\"message\":\"gold=12\""));
+            Assert.That(FixtureCheats.Gold, Is.EqualTo(12));
         }
 
         [UnityTest]

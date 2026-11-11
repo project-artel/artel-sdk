@@ -3,7 +3,7 @@ using global::UnityEngine;
 
 namespace Artel
 {
-    public static class ArtelInput
+    public static partial class ArtelInput
     {
         private static readonly VirtualKeyboardState VirtualKeyboard = new VirtualKeyboardState();
         private static readonly VirtualMouseState VirtualMouse = new VirtualMouseState();
@@ -249,6 +249,8 @@ namespace Artel
 
         internal static void PressMouseButton(int button)
         {
+            if (button == 0 && !VirtualMouse.GetButton(button, Time.frameCount))
+                CancelGuiPress();
             VirtualMouse.Press(button, Time.frameCount);
             NewInputMouse.Activate();
         }
@@ -292,6 +294,7 @@ namespace Artel
             NewInputMouse.Release();
             VirtualAxes.ReleaseAll(Time.frameCount);
             MouseMessenger.Clear();
+            CancelGuiPress();
         }
 
         /// <summary>
@@ -306,6 +309,7 @@ namespace Artel
         internal static void ForgetLastPress()
         {
             MouseMessenger.ForgetLastPress();
+            LastGuiPressReceiver = null;
         }
 
         internal static void AdvanceFrame()
@@ -334,6 +338,8 @@ namespace Artel
             VirtualMouse.Clear();
             VirtualAxes.Clear();
             MouseMessenger.Clear();
+            CancelGuiPress();
+            guiRepaintFrame = -1;
         }
 
         private static bool TryParseKeyCode(string value, out KeyCode key)
