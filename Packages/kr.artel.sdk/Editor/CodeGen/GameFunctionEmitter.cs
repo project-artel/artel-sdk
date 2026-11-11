@@ -37,6 +37,7 @@ namespace Artel.CodeGen
         private readonly ModuleDefinition module;
         private readonly MethodReference begin;
         private readonly MethodReference param;
+        private readonly MethodReference markReadOnly;
         private readonly MethodReference end;
         private readonly MethodReference callConstructor;
         private readonly MethodReference conditionConstructor;
@@ -52,6 +53,7 @@ namespace Artel.CodeGen
             var table = runtimeModule.GetType("Artel.GameFunctionTable");
             begin = module.ImportReference(table.Methods.First(method => method.Name == "Begin"));
             param = module.ImportReference(table.Methods.First(method => method.Name == "Param"));
+            markReadOnly = module.ImportReference(table.Methods.First(method => method.Name == "MarkReadOnly"));
             end = module.ImportReference(table.Methods.First(method => method.Name == "End"));
             callConstructor = module.ImportReference(
                 runtimeModule.GetType("Artel.GameFunctionCall").Methods.First(method => method.IsConstructor));
@@ -208,6 +210,11 @@ namespace Artel.CodeGen
             EmitString(il, candidate.WhenName);
             il.Emit(candidate.TakesContext ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
             il.Emit(OpCodes.Call, begin);
+            if (candidate.ReadOnly)
+            {
+                il.Emit(OpCodes.Dup);
+                il.Emit(OpCodes.Call, markReadOnly);
+            }
 
             foreach (var parameter in candidate.Parameters)
             {

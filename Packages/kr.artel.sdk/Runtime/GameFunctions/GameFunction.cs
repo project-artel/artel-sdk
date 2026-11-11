@@ -12,6 +12,7 @@ namespace Artel
     internal sealed class GameFunction
     {
         public GameFunctionKind Kind;
+        public bool ReadOnly;
         public string Name;
         public string Description;
 

@@ -57,6 +57,11 @@ namespace Artel
             });
         }
 
+        public static void MarkReadOnly(GameFunctionDraft draft)
+        {
+            draft.Function.ReadOnly = true;
+        }
+
         public static void Param(
             GameFunctionDraft draft, string name, CheatParamType type, Type enumType,
             bool hasRange, double min, double max, bool isOptional, string defaultText)
