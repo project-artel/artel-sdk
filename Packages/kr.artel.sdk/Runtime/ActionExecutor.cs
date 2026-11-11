@@ -442,6 +442,9 @@ namespace Artel
 
             yield return null;
 
+            // OnGUI는 Update 뒤에 실행되므로 수신 결과를 읽기 전에 Repaint를 기다린다.
+            if (button == 0 && string.IsNullOrEmpty(eventReceiver) && ArtelInput.HasRecentGuiButtons)
+                yield return null;
             completed(ActionResultDto.Success(actionId, PressOutcome(eventReceiver)));
         }
 
@@ -468,13 +471,15 @@ namespace Artel
         {
             // native UI의 후속 raycast는 실제 수신 증거가 아니다.
             var nativeUi = NewInputMouse.UsesNativeUi;
-            var reached = nativeUi ? null : string.IsNullOrEmpty(eventReceiver)
-                ? ArtelInput.LastPressReceiver : eventReceiver;
+            var reached = nativeUi ? ArtelInput.LastGuiPressReceiver :
+                (string.IsNullOrEmpty(eventReceiver)
+                    ? ArtelInput.LastGuiPressReceiver ?? ArtelInput.LastPressReceiver
+                    : eventReceiver);
             return new Dictionary<string, object>
             {
                 { "reached", string.IsNullOrEmpty(reached) ? null : reached },
-                { "pointerHeldByPerson", nativeUi ? !ArtelInput.OwnsVirtualPointer :
-                    string.IsNullOrEmpty(eventReceiver) && !ArtelInput.SawPress }
+                { "pointerHeldByPerson", string.IsNullOrEmpty(reached) &&
+                    (nativeUi ? !ArtelInput.OwnsVirtualPointer : !ArtelInput.SawPress) }
             };
         }
 
@@ -505,7 +510,12 @@ namespace Artel
             if (press)
             {
                 ArtelInput.PressMouseButton(button);
-                if (!NewInputMouse.UsesNativeUi) pointerEvents.Press(button);
+                if (!NewInputMouse.UsesNativeUi)
+                {
+                    pointerEvents.Press(button);
+                    if (button == 0 && !string.IsNullOrEmpty(pointerEvents.LastPressReceiver))
+                        ArtelInput.GuiPressHandledByEventSystem = true;
+                }
             }
             else
             {
