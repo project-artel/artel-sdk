@@ -478,13 +478,10 @@ namespace Artel.Affordances.Live
                 found[type] = new List<object>();
             }
 
-            // 처음 한 번 수집하는 static 필드 메타데이터는 인스턴스 탐색 예산과 별도로 처리한다.
-            var roots = Roots();
-            var clock = Stopwatch.StartNew();
             var visited = new HashSet<object>(Identity.Instance);
             var pending = new Stack<KeyValuePair<object, int>>();
 
-            foreach (var root in roots)
+            foreach (var root in Roots())
             {
                 object held;
 
@@ -512,6 +509,8 @@ namespace Artel.Affordances.Live
                 }
             }
 
+            // 시작점 수집이 끝난 뒤부터 객체 그래프를 탐색하는 시간을 잰다.
+            var clock = Stopwatch.StartNew();
             while (pending.Count > 0)
             {
                 if (clock.ElapsedMilliseconds >= budgetMilliseconds)
