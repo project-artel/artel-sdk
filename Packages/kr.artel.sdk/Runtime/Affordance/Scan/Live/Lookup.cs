@@ -246,7 +246,7 @@ namespace Artel.Affordances.Live
                 if (type.FullName == "Artel.Tests.ObserveProgress")
                 {
                     var root = Roots().Find(field => field.FieldType == type);
-                    Debug.Log($"Lookup diagnostic: found={found[type].Count}, visited={walk.Visited}, exhausted={walk.Exhausted}, ms={walk.Milliseconds}, root={root}, rootValue={root?.GetValue(null)}");
+                    UnityEngine.Debug.Log($"Lookup diagnostic: found={found[type].Count}, visited={walk.Visited}, exhausted={walk.Exhausted}, ms={walk.Milliseconds}, root={root}, rootValue={root?.GetValue(null)}");
                 }
             }
 
