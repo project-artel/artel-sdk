@@ -123,6 +123,11 @@ namespace Artel
             PlaceCursor(screenPosition, moved);
         }
 
+        internal void Hide()
+        {
+            if (cursorTransform != null) cursorTransform.gameObject.SetActive(false);
+        }
+
         private void PlaceCursor(Vector2 screenPosition, Action<Vector2> moved)
         {
             cursorTransform.position = screenPosition;

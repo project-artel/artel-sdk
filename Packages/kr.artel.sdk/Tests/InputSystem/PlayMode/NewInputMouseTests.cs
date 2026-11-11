@@ -256,6 +256,12 @@ namespace Artel.Tests
         }
 
         [UnityTest]
+        public IEnumerator 가상_입력_업데이트_중단_시_잘못된_mouse_up도_hold_해제()
+        {
+            yield return VerifyPausedRelease("mouse_up", 9);
+        }
+
+        [UnityTest]
         public IEnumerator PausedFixedUpdate_MouseKeyReleaseClearsExistingHold()
         {
             yield return VerifyPausedRelease("key_up", "Mouse0");

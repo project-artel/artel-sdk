@@ -6,6 +6,33 @@
 
 ## Actions
 
+### QA run 입력 모드 선택 추가
+
+QA run 시작 요청의 `inputMode`는 `virtual`(기본값) 또는 `os`다. CLI는 `qa run --input-mode os`, MCP는 run 시작의 `input_mode="os"`로 선택한다. 빌드 설정은 없다. backend가 run 설정을 저장하며 실행 중 모드는 바뀌지 않는다.
+
+`ACTION` 메시지의 최상위 `inputMode`로 선택한 모드를 SDK에 전달한다. 필드가 없거나 null이면 기존 `virtual` 입력을 사용한다. 다른 문자열은 입력 없이 실패한다.
+
+```json
+{"type":"ACTION","id":12,"inputMode":"os","actions":[{"id":1,"method":"move_mouse","params":[120,80]}]}
+```
+
+OS run을 시작하기 전에 backend는 `configure_input` 액션의 `params: [{"mode":"os"}]`를 보내고 실제 `ACTION_RESULT` 성공을 기다린다. 이 액션은 환경, 권한, 게임 창 포커스를 확인한다. 지원하지 않는 구 SDK, 권한 부족, 포커스 상실, timeout은 OS run 시작 실패로 처리한다. 재연결 후에도 backend는 새 SDK session을 다시 확인한다. `virtual` run은 구 SDK 호환성을 위해 이 확인을 생략한다.
+
+| 환경 | OS 입력 경로 | 조건 |
+| --- | --- | --- |
+| Windows | `SendInput` | 잠금 해제된 interactive desktop과 대상 Unity 창의 포커스가 필요하다. |
+| macOS | CoreGraphics | 실행 중인 Unity 앱의 Accessibility 권한과 게임 창의 포커스가 필요하다. |
+| Linux X11 | XTest | `libX11.so.6`, `libXtst.so.6`, `DISPLAY`, X server 접근 권한과 게임 창의 포커스가 필요하다. |
+| Linux native Wayland | 미지원 | portal/libei backend가 없으므로 preflight에서 실패한다. X11 session 또는 `virtual`을 사용한다. |
+
+OS 모드는 `key_down`, `key_up`, `key_click`, `mouse_down`, `mouse_up`, `move_mouse`를 실제 OS 입력으로 전달한다. `Mouse0`·`Mouse1`·`Mouse2`는 마우스 버튼으로 처리한다. `set_axis`, `set_button`, `button_click`, `enter_text`는 Unity 직접 조작을 섞지 않도록 실패하며 키·마우스 액션을 사용해야 한다.
+
+`move_mouse`의 좌표·selector 계약은 그대로다. SDK가 좌상단 원점 게임 화면 좌표를 대상 창의 client rectangle과 배율로 변환해 실제 커서를 움직인다. 데스크톱 좌표를 직접 받지 않는다. 커서가 잠긴 게임에서는 절대 좌표 이동을 거절한다. 마우스 누름은 실제 커서가 보이는 게임 영역을 가리킬 때만 전송한다. Unity Editor는 정확한 Game view 경계를 구할 수 없어 OS 키보드 입력만 지원한다. 다른 앱으로 포커스가 옮겨지면 새 down·move는 실패하고 SDK가 누른 입력은 해제한다. 게임 창을 자동으로 포커스하지 않는다.
+
+같은 데스크톱에서 다른 앱을 사용하면서 게임에 QA를 실행하려면 `virtual`을 선택한다. 작업 화면과 OS 입력을 분리하려면 별도 데스크톱 session 또는 VM 안에서 게임을 포커스한 상태로 실행한다.
+
+성공 응답은 OS API에 이벤트를 제출했다는 뜻이며 게임의 수신·처리를 확인한 결과는 아니다. OS 전송 실패, run 종료, 연결 해제, reset, 포커스 해제, 포인터 회수 시 SDK가 누른 키·버튼을 해제한다. 권한 실패를 가상 입력으로 자동 전환하지 않는다.
+
 - `ACTION` 메시지 하나가 `actions` 배열을 나름
 - 배열은 한 큐에서 직렬로 돎
 - 항목 하나의 모양은 `{ "id": <int>, "method": <string>, "params": [...] }`

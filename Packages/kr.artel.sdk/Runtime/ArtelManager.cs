@@ -736,9 +736,21 @@ namespace Artel
             }
             finally
             {
+                ReleaseOsAgentInput();
                 ArtelInput.ReleaseAllVirtualInput();
                 ArtelInput.PointerHeldForRun = false;
             }
+        }
+
+        private void OnApplicationFocus(bool focused)
+        {
+            if (!focused) ReleaseOsAgentInput();
+        }
+
+        private void ReleaseOsAgentInput()
+        {
+            var releaseError = actionExecutor?.ReleaseOsInput();
+            if (releaseError != null) Debug.LogWarning("[Artel] " + releaseError);
         }
 
         private void ObserveConnection()
@@ -1234,6 +1246,7 @@ namespace Artel
         private IEnumerator ExecuteActionRequest(ArtelRequestDto request)
         {
             var results = new List<ActionResultDto>();
+            var inputModeError = ActionExecutor.ValidateInputMode(request.InputMode);
 
             // 배치를 꺼낸 frame. 이 frame 부터 찍힌 예외를 답에 붙인다(ARTEL-1218).
             var startFrame = Time.frameCount;
@@ -1243,6 +1256,12 @@ namespace Artel
                 if (action == null)
                 {
                     results.Add(ActionResultDto.Failure(0, "Action item must be an object."));
+                    continue;
+                }
+
+                if (inputModeError != null)
+                {
+                    results.Add(ActionResultDto.Failure(action.Id, inputModeError));
                     continue;
                 }
 
@@ -1278,7 +1297,8 @@ namespace Artel
                     action.Id,
                     action.Method,
                     action.Parameters,
-                    result => results.Add(result));
+                    result => results.Add(result),
+                    inputMode: request.InputMode);
             }
 
             // 입력을 받은 게임의 Update와 예외 관측이 끝난 다음 결과를 보낸다.
