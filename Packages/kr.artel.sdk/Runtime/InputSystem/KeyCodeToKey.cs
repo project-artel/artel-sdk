@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 using KeyCode = UnityEngine.KeyCode;
 
 namespace Artel
@@ -28,6 +29,46 @@ namespace Artel
 
         // 이름이 Key 에도 있지만 같은 키가 아닌 것. Key.None 은 키가 아니다.
         private static readonly HashSet<string> NotKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "None" };
+
+        private static Dictionary<Key, string> keyCodeNames;
+
+        /// <summary>
+        /// Input System 키보드 binding 경로(`<Keyboard>/upArrow`)가 가리키는 키의 KeyCode 이름. 키보드 키가 아니면 false 다.
+        /// </summary>
+        /// <remarks>
+        /// 키보드 장치가 있으면 그 장치에서 control 을 찾아 `KeyControl.keyCode` 를 읽는다. 배열에 따라 바뀌는 경로(`#(a)`)도
+        /// 이렇게 풀린다. 장치가 없으면(CI, headless) 경로 끝 이름을 `Key` 로 읽는다. 숫자 키의 control 이름은 `1` 이라
+        /// `Digit1` 로 읽는다.
+        /// </remarks>
+        internal static bool TryKeyCodeNameOfPath(string path, Keyboard keyboard, out string keyCodeName)
+        {
+            keyCodeName = null;
+            if (string.IsNullOrEmpty(path) || !path.StartsWith("<Keyboard>", StringComparison.OrdinalIgnoreCase))
+                return false;
+            var key = Key.None;
+            if (keyboard != null && InputControlPath.TryFindControl(keyboard, path) is KeyControl control)
+            {
+                key = control.keyCode;
+            }
+            else
+            {
+                var name = path.Substring(path.LastIndexOf('/') + 1);
+                if (name.Length == 1 && char.IsDigit(name[0])) name = "Digit" + name;
+                if (!Enum.TryParse(name, true, out key)) return false;
+            }
+            return KeyCodeNames().TryGetValue(key, out keyCodeName);
+        }
+
+        // Key → 그 Key 로 옮겨지는 첫 KeyCode 의 이름. Enter 는 Return, Digit1 은 Alpha1 이 된다.
+        private static Dictionary<Key, string> KeyCodeNames()
+        {
+            if (keyCodeNames != null) return keyCodeNames;
+            var names = new Dictionary<Key, string>();
+            foreach (KeyCode keyCode in Enum.GetValues(typeof(KeyCode)))
+                if (TryConvert(keyCode, out var key) && !names.ContainsKey(key))
+                    names[key] = keyCode.ToString();
+            return keyCodeNames = names;
+        }
 
         internal static bool TryConvert(KeyCode keyCode, out Key key)
         {

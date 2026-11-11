@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using Artel.Protocol.Dto;
 using global::UnityEngine;
 
 namespace Artel
@@ -100,6 +101,24 @@ namespace Artel
                 : "whose names the game computes at run time";
             return "The game never reads " + key + " through Input.GetKey; it reads Input Manager axes " + named +
                    ". Key commands do not reach axes. Send set_button [\"<axis>\", true] or set_axis [\"<axis>\", <value>] instead.";
+        }
+
+        /// <summary>
+        /// `list_inputs` 의 키와 축 부분을 채운다. 키는 빌드 기록만, 축 이름은 빌드 기록에 런 중 본 이름을 더한다.
+        /// </summary>
+        internal static void Describe(InputListDto into)
+        {
+            var keys = new SortedSet<string>(StringComparer.Ordinal);
+            var axes = new SortedSet<string>(SeenAxes, StringComparer.Ordinal);
+            foreach (var reads in Declared.Values)
+            {
+                foreach (var key in reads.Keys) keys.Add(key.ToString());
+                axes.UnionWith(reads.Axes);
+                into.OtherKeys |= reads.ReadsUnknownKeys;
+            }
+
+            into.Keys = new List<string>(keys);
+            into.Axes = new List<string>(axes);
         }
 
         /// <summary>테스트가 위빙된 assembly 의 기록과 섞이지 않게 비운다.</summary>

@@ -299,6 +299,10 @@ namespace Artel
                     completed(ExecuteReadMember(actionId, parameters));
                     yield break;
 
+                case "list_inputs":
+                    completed(ExecuteListInputs(actionId));
+                    yield break;
+
                 case "capture_screen":
                     yield return ExecuteCaptureScreen(actionId, parameters, completed);
                     yield break;
@@ -1093,6 +1097,17 @@ namespace Artel
         private static string NotInteractable(int targetId)
         {
             return "Target is not interactable: " + targetId;
+        }
+
+        /// <summary>
+        /// 이 빌드가 읽는 키, Input Manager 이름, 지금 켜진 Input System action 의 키를 답한다(ARTEL-1431). 읽기만 한다.
+        /// </summary>
+        private static ActionResultDto ExecuteListInputs(int actionId)
+        {
+            var inputs = new InputListDto();
+            InputReadManifest.Describe(inputs);
+            inputs.Actions = NewInputKeyboard.EnabledActionKeys();
+            return ActionResultDto.Success(actionId, inputs);
         }
 
         /// <summary>

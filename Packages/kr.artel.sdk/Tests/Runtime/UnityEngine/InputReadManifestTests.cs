@@ -118,6 +118,34 @@ namespace Artel.Tests.Input
             Assert.That(InputReadManifest.KeyCommandError(KeyCode.Mouse0, false), Is.Null);
         }
 
+        /// <summary>`list_inputs` 의 키와 축 부분. 키는 빌드 기록, 축은 빌드 기록에 런 중 본 이름을 더한다.</summary>
+        [Test]
+        public void Describe_ListsDeclaredKeysAndAxesWithTheOnesSeenAtRunTime()
+        {
+            InputReadManifest.Declare("Assembly-CSharp", ((int)KeyCode.UpArrow) + "," + (int)KeyCode.Space, "escape", false, "Roll", false);
+            InputReadManifest.Declare("Assembly-CSharp-firstpass", "", "", false, "", true);
+            InputReadManifest.SawAxis("Jump");
+
+            var inputs = new Artel.Protocol.Dto.InputListDto();
+            InputReadManifest.Describe(inputs);
+
+            Assert.That(inputs.Keys, Is.EqualTo(new[] { "Escape", "Space", "UpArrow" }));
+            Assert.That(inputs.Axes, Is.EqualTo(new[] { "Jump", "Roll" }));
+            Assert.That(inputs.OtherKeys, Is.False);
+        }
+
+        [Test]
+        public void Describe_SaysOtherKeysMayBeRead_WhenAKeyIsReadByValue()
+        {
+            InputReadManifest.Declare("Assembly-CSharp", "", "", true, "", false);
+
+            var inputs = new Artel.Protocol.Dto.InputListDto();
+            InputReadManifest.Describe(inputs);
+
+            Assert.That(inputs.OtherKeys, Is.True);
+            Assert.That(inputs.Keys, Is.Empty);
+        }
+
         /// <summary>Domain Reload 를 끈 재진입은 같은 assembly 를 다시 알린다. 앞의 기록을 덮어야 한다.</summary>
         [Test]
         public void DeclaringTheSameAssemblyAgain_ReplacesIt()

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Artel.Protocol.Dto;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
@@ -61,6 +62,32 @@ namespace Artel
             if (InputSystem.settings.updateMode == InputSettings.UpdateMode.ProcessEventsInFixedUpdate && Time.timeScale == 0f)
                 return "QA key actions cannot run while Fixed Update input is paused.";
             return KeyboardUserCount() > 1 ? "QA key actions require at most one keyboard InputUser." : null;
+        }
+
+        public List<InputActionKeysDto> EnabledActionKeys()
+        {
+            var actions = new List<InputActionKeysDto>();
+            Keyboard device = null;
+            foreach (var candidate in InputSystem.devices)
+                if (candidate is Keyboard found) { device = found; break; }
+            foreach (var action in InputSystem.ListEnabledActions())
+            {
+                var keys = new List<string>();
+                foreach (var binding in action.bindings)
+                {
+                    if (binding.isComposite) continue;
+                    if (KeyCodeToKey.TryKeyCodeNameOfPath(binding.effectivePath, device, out var name) && !keys.Contains(name))
+                        keys.Add(name);
+                }
+                if (keys.Count == 0) continue;
+                var map = action.actionMap?.name;
+                actions.Add(new InputActionKeysDto
+                {
+                    Name = string.IsNullOrEmpty(map) ? action.name : map + "/" + action.name,
+                    Keys = keys
+                });
+            }
+            return actions;
         }
 
         public void Activate()
