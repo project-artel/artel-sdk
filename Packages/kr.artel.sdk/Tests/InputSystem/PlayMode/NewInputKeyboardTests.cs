@@ -291,10 +291,13 @@ namespace Artel.Tests
                 move.AddCompositeBinding("2DVector")
                     .With("Up", "<Keyboard>/w").With("Down", "<Keyboard>/s")
                     .With("Left", "<Keyboard>/a").With("Right", "<Keyboard>/d");
+                var sprint = map.AddAction("Sprint", InputActionType.Button);
+                sprint.AddBinding("<Keyboard>/shift");
                 map.AddAction("Disabled").AddBinding("<Keyboard>/space");
                 undo.Enable();
                 confirm.Enable();
                 move.Enable();
+                sprint.Enable();
 
                 ActionResultDto result = null;
                 yield return executor.Execute(1, "list_inputs", new List<object>(), value => result = value);
@@ -305,7 +308,9 @@ namespace Artel.Tests
                 Assert.That(byName["Player/Undo"], Is.EqualTo(new[] { "U" }));
                 Assert.That(byName["Player/Confirm"], Is.EqualTo(new[] { "Return", "Alpha1" }));
                 Assert.That(byName["Player/Move"], Is.EqualTo(new[] { "W", "S", "A", "D" }));
+                Assert.That(byName["Player/Sprint"], Is.EqualTo(new[] { "LeftShift" }), "양쪽 Shift 를 묶은 control 은 왼쪽 키로 읽는다.");
                 Assert.That(byName.ContainsKey("Player/Disabled"), Is.False, "꺼진 action 은 지금 누를 수 없다.");
+                Assert.That(inputs.Actions.Select(action => action.Name), Is.Ordered.Using((System.Collections.Generic.IComparer<string>)System.StringComparer.Ordinal));
             }
             finally
             {
@@ -324,6 +329,10 @@ namespace Artel.Tests
             Assert.That(digit, Is.EqualTo("Alpha1"));
             Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/enter", null, out var enter), Is.True);
             Assert.That(enter, Is.EqualTo("Return"));
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/shift", null, out var shift), Is.True);
+            Assert.That(shift, Is.EqualTo("LeftShift"));
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/ctrl", null, out var ctrl), Is.True);
+            Assert.That(ctrl, Is.EqualTo("LeftControl"));
             Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Gamepad>/buttonSouth", null, out _), Is.False);
             Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/anyKey", null, out _), Is.False);
         }

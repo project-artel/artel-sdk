@@ -7,8 +7,8 @@ namespace Artel.Protocol.Dto
     /// The `returnValue` of `list_inputs`: what this build reads from the keyboard and the Input Manager (ARTEL-1431).
     /// </summary>
     /// <remarks>
-    /// 서버의 Planner 는 런 중에 매크로를 쓰면서 게임 코드를 보지 못한다. 그래서 어떤 키를 `press_key` 로 누르고 어떤 이름을
-    /// `set_input_axis`·`set_input_button` 에 넘겨야 하는지를 SDK 가 직접 답한다.
+    /// 서버의 Planner 는 런 중에 매크로를 쓰면서 게임 코드를 보지 못한다. 그래서 어떤 키를 `key_click`·`key_down` 으로 누르고
+    /// 어떤 이름을 `set_axis`·`set_button` 에 넘겨야 하는지를 SDK 가 직접 답한다.
     /// </remarks>
     internal sealed class InputListDto
     {
@@ -38,7 +38,7 @@ namespace Artel.Protocol.Dto
         [JsonProperty("name")]
         public string Name { get; set; }
 
-        /// <summary>그 action 에 묶인 키의 KeyCode 이름. `press_key` 에 그대로 넘긴다.</summary>
+        /// <summary>그 action 에 묶인 키의 KeyCode 이름. `key_click` 에 그대로 넘긴다. composite 의 부분 키도 평평하게 싣는다.</summary>
         [JsonProperty("keys")]
         public List<string> Keys { get; set; } = new List<string>();
     }

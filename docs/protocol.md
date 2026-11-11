@@ -126,8 +126,9 @@ sequenceDiagram
 - `otherKeys`: 키를 변수로 읽거나 `anyKey` 를 읽는다. 그러면 `keys` 밖의 키도 게임에 닿을 수 있다
 - `axes`: 게임이 `GetAxis*`·`GetButton*` 으로 읽는 Input Manager 이름. 빌드 때 모은 리터럴에 이 런에서 읽힌 이름을 더한다.
   가상 키는 여기에 닿지 않는다
-- `actions`: 지금 켜진 Input System action 마다 `{name: "<map>/<action>", keys: [KeyCode 이름]}`. 씬이 바뀌면 달라진다.
-  Input System 키보드 adapter 가 없으면 빈 배열이다
+- `actions`: 지금 켜진 Input System action 마다 `{name: "<map>/<action>", keys: [KeyCode 이름]}`, 이름 순으로 한 번씩. 씬이
+  바뀌면 달라진다. composite 의 부분 키도 평평하게 싣는다 — `2DVector` 의 `[W, S, A, D]` 는 하나씩 누르는 키지만, `OneModifier`
+  (ctrl+s)의 `[LeftControl, S]` 는 함께 눌러야 한다. Input System 키보드 adapter 가 없으면 빈 배열이다
 
 위빙되지 않은 빌드(WebGL)는 `keys`·`axes` 가 비어 있다. 비어 있는 것은 "읽지 않는다"가 아니라 "모른다"다.
 
