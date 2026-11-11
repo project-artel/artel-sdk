@@ -10,7 +10,10 @@
   "overrideReferences": false,
   "precompiledReferences": [],
   "autoReferenced": false,
-  "defineConstraints": ["UNITY_EDITOR || !UNITY_WEBGL"],
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS",
+    "UNITY_EDITOR || !UNITY_WEBGL"
+  ],
   "versionDefines": [],
   "noEngineReferences": false
 }

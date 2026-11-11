@@ -244,7 +244,23 @@ What that cannot undo:
 - Dynamic Update와 Fixed Update를 지원한다. Manual Update, `timeScale=0`인 Fixed Update는 QA 마우스 명령을 거절한다. Dynamic Update는 일시 정지 중에도 동작한다.
 - Mouse를 소유한 `InputUser`가 하나이면 가상 Mouse도 pairing한다. 복수 Mouse 사용자 환경은 거절한다. 특정 장치 ID에 고정한 binding이나 게임이 직접 제한한 action device 목록은 자동 수정하지 않는다.
 - QA 마우스가 활성화된 동안 원본 asset을 변경하지 않고 Input Settings 복사본에서 focus와 background 입력을 허용하며 종료 시 원래 설정을 복원한다. QA가 포인터를 소유하는 동안 실제 마우스 이벤트를 차단한다. run 종료, reset, 연결 해제, Ctrl+Shift+M 제어권 반환 때 버튼을 놓고 장치를 정리한다. 기존 release와 마찬가지로 같은 UI 대상에서 놓으면 click이 발생할 수 있다.
-- New Input System 키보드/gamepad 주입은 지원하지 않는다. 키보드 QA는 아래 Legacy proxy 경로를 사용한다.
+- gamepad 주입은 지원하지 않는다.
+
+키보드 QA 명령(`key_click`, `key_down`, `key_up`)도 같은 조건에서 가상 `Keyboard` 에 전달한다. 키 이름은 그대로
+`UnityEngine.KeyCode` 이름이고, adapter 가 Input System `Key` 로 옮긴다(`Return`→`Enter`, `Alpha1`→`Digit1`,
+`Keypad*`→`Numpad*`). `Keyboard.current`, `InputAction`, `PlayerInput`(키보드를 가진 `InputUser` 하나에 pairing),
+`InputSystemUIInputModule` 이 받는다.
+
+- New 전용 프로젝트에서는 Input System 키가 없는 KeyCode(Shift 기호, `Joystick*` 등), Manual Update, `timeScale=0` 인 Fixed
+  Update, 복수 키보드 사용자를 거절한다. Both 는 legacy proxy 가 받으므로 거절하지 않는다.
+- Input System 경로의 `key_click` 은 누름이 처리된 뒤 지속 시간을 재고, 놓은 다음 응답한다.
+- QA 키를 쥔 동안만 가상 Keyboard 가 `Keyboard.current` 다. 실제 키보드 이벤트는 막지 않는다. Ctrl+Shift+M 은 실제 키보드에서만 읽는다.
+- 마우스와 같은 Input Settings 복사본을 함께 쓰고, 둘 다 놓은 뒤에만 원래 설정을 복원한다.
+
+Input Manager 축(`GetAxis`, `GetButton*`)은 가상 키를 보지 않는다. 축은 `set_axis`·`set_button` 으로 조작한다. IL
+post-processor 가 게임 assembly 의 `Input.GetKey*`·`anyKey*`·`GetAxis*`·`GetButton*` 호출에서 리터럴 키와 축 이름을 모아 두고,
+legacy 전용 프로젝트에서 게임이 어디서도 `GetKey*` 로 읽지 않는 키를 키 명령으로 보내면, 게임이 읽는 축 이름과 함께 실패로
+응답한다. 키를 변수로 읽거나 `anyKey` 를 읽는 게임에서는 판단하지 않는다.
 
 Keep using `UnityEngine.Input` for keyboard polling. Artel's IL post-processor
 rewrites supported calls to the `ArtelInput` proxy during compilation:

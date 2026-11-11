@@ -356,6 +356,14 @@ namespace Artel.Tests
             yield return RunBatch(manager, NewAction(1, "key_click", Params("Space", 0.05d)));
             yield return null;
 
+            if (NewInputKeyboard.IsRegistered)
+            {
+                // Input System 키보드가 있으면 마우스 click 처럼 누름이 처리된 뒤 시간을 재고, 놓은 다음 응답한다(ARTEL-1412).
+                Assert.That(ArtelInput.GetKey(KeyCode.Space), Is.False);
+                Assert.That(ArtelInput.GetMouseButton(0), Is.False, "a keyboard key must not press a button");
+                yield break;
+            }
+
             Assert.That(ArtelInput.GetKey(KeyCode.Space), Is.True);
             Assert.That(ArtelInput.GetMouseButton(0), Is.False, "a keyboard key must not press a button");
 

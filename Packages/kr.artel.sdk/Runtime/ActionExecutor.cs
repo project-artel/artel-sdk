@@ -125,11 +125,19 @@ namespace Artel
             Action<ActionResultDto> completed,
             bool glideMouse = true)
         {
+            var keyMethod = method == "key_down" || method == "key_up" || method == "key_click";
+            var key = KeyCode.None;
+            var hasKey = keyMethod && parameters != null && parameters.Count > 0 && TryReadKeyCode(parameters[0], out key);
             var mouseAction = method == "move_mouse" || method == "mouse_down" || method == "mouse_up" ||
-                ((method == "key_down" || method == "key_up" || method == "key_click") &&
-                 parameters != null && parameters.Count > 0 && TryReadKeyCode(parameters[0], out var key) &&
-                 MouseButtonKeyCode.TryGetButton(key, out _));
+                (hasKey && MouseButtonKeyCode.TryGetButton(key, out _));
+            var keyboardAction = hasKey && !mouseAction;
             var error = mouseAction ? NewInputMouse.ValidationError : null;
+            // 놓기(key_up)는 늘 받는다. 쥔 키를 놓지 못하게 막으면 게임에 키가 눌린 채 남는다.
+            if (keyboardAction && method != "key_up")
+            {
+                error = NewInputKeyboard.ValidationError(key) ??
+                        InputReadManifest.KeyCommandError(key, NewInputKeyboard.IsRegistered);
+            }
             if (error != null)
             {
                 // Input update가 멈춰도 기존 hold는 해제한다. 동작을 처리했다는 성공 응답은 보내지 않는다.
@@ -143,23 +151,52 @@ namespace Artel
             yield return ExecuteCore(actionId, method, parameters, value => result = value, glideMouse);
             if (mouseAction && result != null && result.IsSuccess && NewInputMouse.IsActive)
             {
-                var targetFrame = Time.frameCount + 1;
-                var deadline = Time.realtimeSinceStartup + 2f;
-                while (!NewInputMouse.HasProcessed(targetFrame))
+                var processed = false;
+                yield return WaitForInputSystem(NewInputMouse.HasProcessed, () => NewInputMouse.IsActive, value => processed = value);
+                if (!processed)
                 {
-                    if (Time.realtimeSinceStartup >= deadline || !NewInputMouse.IsActive)
-                    {
-                        ArtelInput.ReleaseAllVirtualInput();
-                        completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse action."));
-                        yield break;
-                    }
-                    yield return null;
+                    completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse action."));
+                    yield break;
                 }
                 // 클릭 결과와 일반 QA는 EventSystem.Update까지 기다린다.
                 if (method != "move_mouse" || glideMouse) yield return null;
                 if (method == "mouse_down") result.ReturnValue = PressOutcome(pointerEvents.LastPressReceiver);
             }
+            // key_down 의 누름, key_click 의 놓음은 다음 input update 에 들어간다. 그 update 가 처리된 뒤에 응답해야 성공이
+            // "게임이 받았다"는 뜻이 된다. key_up 은 기다리지 않는다. 놓기는 늘 받는다.
+            if (keyboardAction && method != "key_up" && result != null && result.IsSuccess &&
+                NewInputKeyboard.DeliversThroughInputSystem(key) && NewInputKeyboard.IsActive)
+            {
+                var processed = false;
+                yield return WaitForInputSystem(NewInputKeyboard.HasProcessed, () => NewInputKeyboard.IsActive, value => processed = value);
+                if (!processed)
+                {
+                    completed(ActionResultDto.Failure(actionId, "Input System did not process the QA key action."));
+                    yield break;
+                }
+            }
             completed(result);
+        }
+
+        /// <summary>
+        /// 가상 장치에 넣은 상태가 다음 input update 에서 처리될 때까지 기다린다. 2초 안에 처리되지 않거나 장치가 사라지면 쥔 입력을
+        /// 모두 놓고 <paramref name="finished"/> 에 false 를 준다.
+        /// </summary>
+        private static IEnumerator WaitForInputSystem(Func<int, bool> processed, Func<bool> active, Action<bool> finished)
+        {
+            var targetFrame = Time.frameCount + 1;
+            var deadline = Time.realtimeSinceStartup + 2f;
+            while (!processed(targetFrame))
+            {
+                if (Time.realtimeSinceStartup >= deadline || !active())
+                {
+                    ArtelInput.ReleaseAllVirtualInput();
+                    finished(false);
+                    yield break;
+                }
+                yield return null;
+            }
+            finished(true);
         }
 
         private IEnumerator ExecuteCore(
@@ -1260,7 +1297,26 @@ namespace Artel
 
             if (!MouseButtonKeyCode.TryGetButton(key, out var button))
             {
-                ArtelInput.ClickKey(key, durationSeconds);
+                // Both 에서 Input System 쪽이 멈춰 있으면(일시 정지한 Fixed Update 등) legacy proxy 만으로 보낸다.
+                if (!NewInputKeyboard.DeliversThroughInputSystem(key))
+                {
+                    ArtelInput.ClickKey(key, durationSeconds);
+                    completed(ActionResultDto.Success(actionId));
+                    yield break;
+                }
+
+                // Input System 장치에는 마우스처럼 누름이 처리된 뒤에 시간을 잰다. 처음 읽힌 때부터 시간을 재면, FixedUpdate 가
+                // 없는 frame 이 끼었을 때 짧은 누름이 어느 input update 에도 실리기 전에 끝난다.
+                ArtelInput.PressKey(key);
+                var pressed = false;
+                yield return WaitForInputSystem(NewInputKeyboard.HasProcessed, () => NewInputKeyboard.IsActive, value => pressed = value);
+                if (!pressed)
+                {
+                    completed(ActionResultDto.Failure(actionId, "Input System did not process the QA key press."));
+                    yield break;
+                }
+                yield return new WaitForSecondsRealtime(durationSeconds);
+                ArtelInput.ReleaseKey(key);
                 completed(ActionResultDto.Success(actionId));
                 yield break;
             }
@@ -1269,17 +1325,12 @@ namespace Artel
             if (NewInputMouse.IsActive)
             {
                 // 짧은 click도 FixedUpdate가 press를 처리하고 UI가 읽은 뒤에 놓는다.
-                var targetFrame = Time.frameCount + 1;
-                var deadline = Time.realtimeSinceStartup + 2f;
-                while (!NewInputMouse.HasProcessed(targetFrame))
+                var pressed = false;
+                yield return WaitForInputSystem(NewInputMouse.HasProcessed, () => NewInputMouse.IsActive, value => pressed = value);
+                if (!pressed)
                 {
-                    if (Time.realtimeSinceStartup >= deadline || !NewInputMouse.IsActive)
-                    {
-                        ArtelInput.ReleaseAllVirtualInput();
-                        completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse press."));
-                        yield break;
-                    }
-                    yield return null;
+                    completed(ActionResultDto.Failure(actionId, "Input System did not process the QA mouse press."));
+                    yield break;
                 }
                 yield return null;
             }

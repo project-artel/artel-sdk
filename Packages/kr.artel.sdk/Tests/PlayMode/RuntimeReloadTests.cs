@@ -95,7 +95,8 @@ namespace Artel.Tests
         // 재활성화와 재초기화가 같은 경고를 다시 남기면 Expect 하나가 소비하지 못해 실패한다.
         private static void ExpectLegacyInputWarningOnce()
         {
-            if (LegacyInput.IsAvailable) return;
+            // Input System 키보드 adapter 가 있으면 키 명령도 닿으므로 경고하지 않는다(ARTEL-1412).
+            if (LegacyInput.IsAvailable || NewInputKeyboard.IsRegistered) return;
             LogAssert.Expect(LogType.Warning, new Regex("This project uses only the Input System package"));
         }
 

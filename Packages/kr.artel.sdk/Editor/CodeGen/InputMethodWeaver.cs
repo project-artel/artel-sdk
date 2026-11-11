@@ -41,8 +41,14 @@ namespace Artel.CodeGen
             "IsPointerOverGameObject"
         };
 
+        private const string ManifestTypeName = "Artel.InputReadManifest";
+        internal const string RegistrationNamespace = "Artel.Generated";
+        internal const string RegistrationTypeName = "InputReadRegistration";
+
         private readonly ModuleDefinition module;
         private readonly Dictionary<string, MethodReference> proxyMethods;
+        private readonly RegistrationReferences registrationReferences;
+        private readonly InputReads reads = new InputReads();
 
         /// <summary>
         /// 대상 어셈블리가 바꿀 호출을 들고 있을 때만 위버를 만든다.
@@ -81,7 +87,7 @@ namespace Artel.CodeGen
                     "이 어셈블리에서 Agent의 가상 입력이 동작하지 않는다.");
             }
 
-            var proxyMethods = ReadProxyMethods(module, runtimePath);
+            var proxyMethods = ReadProxyMethods(module, runtimePath, out var registrationReferences);
 
             if (proxyMethods == null)
             {
@@ -90,7 +96,11 @@ namespace Artel.CodeGen
                     " 을 정의하지 않아 입력 위빙을 건너뛴다.");
             }
 
-            return Attempt.Ready(new InputMethodWeaver(module, proxyMethods));
+            var weaver = new InputMethodWeaver(module, proxyMethods, registrationReferences);
+            return registrationReferences == null
+                ? Attempt.Ready(weaver, RuntimeAssemblyName + " 의 InputReadManifest 나 UnityEngine.CoreModule 을 찾지 못해 " +
+                                        "이 어셈블리가 읽는 키를 기록하지 않는다. 키 명령의 축 안내 판정이 이 어셈블리를 모른다.")
+                : Attempt.Ready(weaver);
         }
 
         private static bool IsStaticInputType(TypeReference type)
@@ -114,12 +124,13 @@ namespace Artel.CodeGen
         /// </remarks>
         internal sealed class Attempt
         {
-            internal static readonly Attempt NothingToDo = new Attempt(null, null);
+            internal static readonly Attempt NothingToDo = new Attempt(null, null, null);
 
-            private Attempt(InputMethodWeaver weaver, string refusal)
+            private Attempt(InputMethodWeaver weaver, string refusal, string warning)
             {
                 Weaver = weaver;
                 Refusal = refusal;
+                Warning = warning;
             }
 
             /// <summary>만들었으면 위버, 아니면 null.</summary>
@@ -128,9 +139,12 @@ namespace Artel.CodeGen
             /// <summary>사람에게 알려야 할 사유. 알릴 것이 없으면 null.</summary>
             internal string Refusal { get; }
 
-            internal static Attempt Ready(InputMethodWeaver weaver) => new Attempt(weaver, null);
+            /// <summary>위빙은 하지만 사람에게 알릴 것이 있다. 없으면 null.</summary>
+            internal string Warning { get; }
 
-            internal static Attempt Refused(string refusal) => new Attempt(null, refusal);
+            internal static Attempt Ready(InputMethodWeaver weaver, string warning = null) => new Attempt(weaver, null, warning);
+
+            internal static Attempt Refused(string refusal) => new Attempt(null, refusal, null);
         }
 
         /// <summary>
@@ -142,8 +156,10 @@ namespace Artel.CodeGen
         /// </remarks>
         private static Dictionary<string, MethodReference> ReadProxyMethods(
             ModuleDefinition module,
-            string runtimePath)
+            string runtimePath,
+            out RegistrationReferences registrationReferences)
         {
+            registrationReferences = null;
             using (var runtime = AssemblyDefinition.ReadAssembly(
                        runtimePath,
                        new ReaderParameters(ReadingMode.Deferred)
@@ -158,6 +174,7 @@ namespace Artel.CodeGen
                     return null;
                 }
 
+                registrationReferences = RegistrationReferences.Read(module, runtime.MainModule);
                 return proxyType.Methods
                     .Where(method => SupportedMethodNames.Contains(method.Name) ||
                                      EventSystemMethodNames.Contains(method.Name))
@@ -217,11 +234,18 @@ namespace Artel.CodeGen
             return null;
         }
 
-        private InputMethodWeaver(ModuleDefinition module, Dictionary<string, MethodReference> proxyMethods)
+        private InputMethodWeaver(
+            ModuleDefinition module,
+            Dictionary<string, MethodReference> proxyMethods,
+            RegistrationReferences registrationReferences)
         {
             this.module = module;
             this.proxyMethods = proxyMethods;
+            this.registrationReferences = registrationReferences;
         }
+
+        /// <summary>이 assembly 가 읽는 키와 축. <see cref="Process"/> 뒤에 채워진다.</summary>
+        internal InputReads Reads => reads;
 
         public bool Process()
         {
@@ -231,6 +255,7 @@ namespace Artel.CodeGen
                          .SelectMany(type => type.Methods)
                          .Where(method => method.HasBody))
             {
+                HashSet<Instruction> jumpTargets = null;
                 foreach (var instruction in method.Body.Instructions)
                 {
                     if (!(instruction.Operand is MethodReference calledMethod))
@@ -241,6 +266,8 @@ namespace Artel.CodeGen
                     if (IsStaticInputType(calledMethod.DeclaringType) &&
                         proxyMethods.TryGetValue(GetSignature(calledMethod), out var proxyMethod))
                     {
+                        jumpTargets = jumpTargets ?? JumpTargets(method.Body);
+                        reads.Record(calledMethod, instruction, jumpTargets);
                         instruction.Operand = proxyMethod;
                         changed = true;
                         continue;
@@ -257,7 +284,204 @@ namespace Artel.CodeGen
                 }
             }
 
+            if (changed)
+            {
+                EmitRegistration();
+            }
+
             return changed;
+        }
+
+        /// <summary>
+        /// 이 assembly 가 읽는 키와 축을 <c>InputReadManifest.Declare</c> 로 알리는 등록 메서드를 만든다(ARTEL-1412).
+        /// </summary>
+        /// <remarks>
+        /// <c>GameFunctionEmitter</c> 처럼 <c>[RuntimeInitializeOnLoadMethod(BeforeSceneLoad)]</c> static 메서드다. 인자는
+        /// 문자열과 bool 만 넘긴다. 배열을 IL 로 만드는 것보다 짧고, 런타임이 한 번만 풀면 된다.
+        ///
+        /// 테스트 assembly(NUnit 참조)에는 만들지 않는다. 위빙이 실제로 일어났는지 보는 테스트가 <c>Input</c> 을 부르는데, 그
+        /// 기록이 실행 중 판정에 섞이면 키 명령 테스트가 테스트 코드가 읽는 키에 따라 달라진다. 출시 빌드에는 테스트 assembly 가
+        /// 들어가지 않는다.
+        /// </remarks>
+        private void EmitRegistration()
+        {
+            if (registrationReferences == null ||
+                module.AssemblyReferences.Any(reference =>
+                    string.Equals(reference.Name, "nunit.framework", StringComparison.OrdinalIgnoreCase)) ||
+                module.GetType(RegistrationNamespace + "." + RegistrationTypeName) != null)
+            {
+                return;
+            }
+
+            var registration = new TypeDefinition(
+                RegistrationNamespace,
+                RegistrationTypeName,
+                TypeAttributes.NotPublic | TypeAttributes.Abstract | TypeAttributes.Sealed |
+                TypeAttributes.BeforeFieldInit | TypeAttributes.Class,
+                module.TypeSystem.Object);
+            module.Types.Add(registration);
+
+            var register = new MethodDefinition(
+                "Register",
+                MethodAttributes.Assembly | MethodAttributes.Static | MethodAttributes.HideBySig,
+                module.TypeSystem.Void);
+            var initialize = new CustomAttribute(registrationReferences.RuntimeInitializeConstructor);
+            initialize.ConstructorArguments.Add(
+                new CustomAttributeArgument(registrationReferences.LoadType, RuntimeInitializeReferences.BeforeSceneLoad));
+            register.CustomAttributes.Add(initialize);
+            registration.Methods.Add(register);
+
+            var il = register.Body.GetILProcessor();
+            il.Emit(OpCodes.Ldstr, module.Assembly?.Name?.Name ?? module.Name);
+            il.Emit(OpCodes.Ldstr, string.Join(",", reads.KeyCodes));
+            il.Emit(OpCodes.Ldstr, string.Join("\n", reads.KeyNames));
+            il.Emit(reads.ReadsUnknownKeys ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
+            il.Emit(OpCodes.Ldstr, string.Join("\n", reads.AxisNames));
+            il.Emit(reads.ReadsUnknownAxes ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
+            il.Emit(OpCodes.Call, registrationReferences.Declare);
+            il.Emit(OpCodes.Ret);
+        }
+
+        /// <summary>분기가 닿는 instruction. 인자 바로 앞이 여기면 다른 길로 온 값이 있을 수 있다.</summary>
+        private static HashSet<Instruction> JumpTargets(MethodBody body)
+        {
+            var targets = new HashSet<Instruction>();
+            foreach (var instruction in body.Instructions)
+            {
+                if (instruction.Operand is Instruction target)
+                {
+                    targets.Add(target);
+                }
+                else if (instruction.Operand is Instruction[] cases)
+                {
+                    targets.UnionWith(cases);
+                }
+            }
+
+            foreach (var handler in body.ExceptionHandlers)
+            {
+                if (handler.HandlerStart != null) targets.Add(handler.HandlerStart);
+                if (handler.FilterStart != null) targets.Add(handler.FilterStart);
+            }
+
+            return targets;
+        }
+
+        /// <summary>
+        /// 호출 지점에서 모은 키와 축. 인자가 리터럴이 아니면 "모른다"로 남긴다. 모르는 것은 실행 중 판정을 거두게 한다.
+        /// </summary>
+        internal sealed class InputReads
+        {
+            internal readonly SortedSet<int> KeyCodes = new SortedSet<int>();
+            internal readonly SortedSet<string> KeyNames = new SortedSet<string>(StringComparer.Ordinal);
+            internal readonly SortedSet<string> AxisNames = new SortedSet<string>(StringComparer.Ordinal);
+            internal bool ReadsUnknownKeys;
+            internal bool ReadsUnknownAxes;
+
+            internal void Record(MethodReference called, Instruction call, HashSet<Instruction> jumpTargets)
+            {
+                switch (called.Name)
+                {
+                    case "get_anyKey":
+                    case "get_anyKeyDown":
+                        ReadsUnknownKeys = true;
+                        return;
+                    case "GetKey":
+                    case "GetKeyDown":
+                    case "GetKeyUp":
+                        RecordKey(called, call, jumpTargets);
+                        return;
+                    case "GetAxis":
+                    case "GetAxisRaw":
+                    case "GetButton":
+                    case "GetButtonDown":
+                    case "GetButtonUp":
+                        if (TryReadString(call, jumpTargets, out var axis)) AxisNames.Add(axis);
+                        else ReadsUnknownAxes = true;
+                        return;
+                }
+            }
+
+            private void RecordKey(MethodReference called, Instruction call, HashSet<Instruction> jumpTargets)
+            {
+                var isString = called.Parameters.Count == 1 &&
+                               called.Parameters[0].ParameterType.FullName == "System.String";
+                if (isString)
+                {
+                    if (TryReadString(call, jumpTargets, out var name)) KeyNames.Add(name);
+                    else ReadsUnknownKeys = true;
+                    return;
+                }
+
+                if (TryReadInt(call, jumpTargets, out var value)) KeyCodes.Add(value);
+                else ReadsUnknownKeys = true;
+            }
+
+            private static bool TryReadString(Instruction call, HashSet<Instruction> jumpTargets, out string value)
+            {
+                value = null;
+                var argument = call.Previous;
+                if (argument == null || jumpTargets.Contains(call) || jumpTargets.Contains(argument) ||
+                    argument.OpCode.Code != Code.Ldstr)
+                {
+                    return false;
+                }
+
+                value = argument.Operand as string;
+                return !string.IsNullOrEmpty(value);
+            }
+
+            private static bool TryReadInt(Instruction call, HashSet<Instruction> jumpTargets, out int value)
+            {
+                value = 0;
+                var argument = call.Previous;
+                if (argument == null || jumpTargets.Contains(call) || jumpTargets.Contains(argument))
+                {
+                    return false;
+                }
+
+                switch (argument.OpCode.Code)
+                {
+                    case Code.Ldc_I4_M1: value = -1; return true;
+                    case Code.Ldc_I4_0: value = 0; return true;
+                    case Code.Ldc_I4_1: value = 1; return true;
+                    case Code.Ldc_I4_2: value = 2; return true;
+                    case Code.Ldc_I4_3: value = 3; return true;
+                    case Code.Ldc_I4_4: value = 4; return true;
+                    case Code.Ldc_I4_5: value = 5; return true;
+                    case Code.Ldc_I4_6: value = 6; return true;
+                    case Code.Ldc_I4_7: value = 7; return true;
+                    case Code.Ldc_I4_8: value = 8; return true;
+                    case Code.Ldc_I4_S: value = (sbyte)argument.Operand; return true;
+                    case Code.Ldc_I4: value = (int)argument.Operand; return true;
+                    default: return false;
+                }
+            }
+        }
+
+        /// <summary>등록 메서드를 만드는 데 필요한 참조. 런타임 어셈블리가 열려 있는 동안 가져온다.</summary>
+        private sealed class RegistrationReferences
+        {
+            internal MethodReference Declare;
+            internal MethodReference RuntimeInitializeConstructor;
+            internal TypeReference LoadType;
+
+            internal static RegistrationReferences Read(ModuleDefinition module, ModuleDefinition runtimeModule)
+            {
+                var declare = runtimeModule.GetType(ManifestTypeName)?.Methods.FirstOrDefault(method => method.Name == "Declare");
+                if (declare == null ||
+                    !RuntimeInitializeReferences.TryImport(module, runtimeModule, out var constructor, out var loadType))
+                {
+                    return null;
+                }
+
+                return new RegistrationReferences
+                {
+                    Declare = module.ImportReference(declare),
+                    RuntimeInitializeConstructor = constructor,
+                    LoadType = loadType
+                };
+            }
         }
 
         private static string GetSignature(MethodReference method)
