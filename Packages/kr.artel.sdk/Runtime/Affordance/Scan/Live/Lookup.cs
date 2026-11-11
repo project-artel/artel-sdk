@@ -239,16 +239,7 @@ namespace Artel.Affordances.Live
                 return;
             }
 
-            var walk = new Walk();
-            var found = Find(wanted, walk, DefaultBudgetMilliseconds);
-            foreach (var type in wanted)
-            {
-                if (type.FullName == "Artel.Tests.ObserveProgress")
-                {
-                    var root = Roots().Find(field => field.FieldType == type);
-                    UnityEngine.Debug.Log($"Lookup diagnostic: found={found[type].Count}, visited={walk.Visited}, exhausted={walk.Exhausted}, ms={walk.Milliseconds}, root={root}, rootValue={root?.GetValue(null)}");
-                }
-            }
+            var found = Find(wanted, new Walk(), DefaultBudgetMilliseconds);
 
             foreach (var member in plain)
             {
@@ -489,6 +480,7 @@ namespace Artel.Affordances.Live
 
             var visited = new HashSet<object>(Identity.Instance);
             var pending = new Stack<KeyValuePair<object, int>>();
+            var matchingRoots = new List<KeyValuePair<object, int>>();
 
             foreach (var root in Roots())
             {
@@ -506,7 +498,15 @@ namespace Artel.Affordances.Live
 
                 if (held != null)
                 {
-                    pending.Push(new KeyValuePair<object, int>(held, 0));
+                    var node = new KeyValuePair<object, int>(held, 0);
+                    if (wanted.Contains(root.FieldType))
+                    {
+                        matchingRoots.Add(node);
+                    }
+                    else
+                    {
+                        pending.Push(node);
+                    }
                 }
             }
 
@@ -516,6 +516,12 @@ namespace Artel.Affordances.Live
                 {
                     pending.Push(new KeyValuePair<object, int>(behaviour, 0));
                 }
+            }
+
+            // 요청한 타입으로 선언된 static 필드부터 탐색해 관련 없는 참조가 예산을 먼저 소진하는 일을 줄인다.
+            foreach (var root in matchingRoots)
+            {
+                pending.Push(root);
             }
 
             // 시작점 수집이 끝난 뒤부터 객체 그래프를 탐색하는 시간을 잰다.
