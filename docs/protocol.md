@@ -77,6 +77,7 @@ sequenceDiagram
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
 | `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
+| `list_inputs` | `[]` | 이 빌드가 읽는 키와 Input Manager 이름, 지금 켜진 Input System action 의 키를 답한다. 읽기만 한다. 아래 「list_inputs 의 returnValue」 |
 | `wait_until` | `[condition]` · `[condition, timeoutSeconds]` | 조건이 참이 될 때까지 매 프레임 기다린다. 아래. 기본 5초, 최대 60초 |
 | `flush` | `[]` | 지금 한 번 읽어 움직인 것이 있으면 바로 `PULSE` 로 보낸다. 아무것도 안 움직였으면 `PULSE` 는 없고 `ACTION_RESULT.frame` 이 "이 frame 까지 변화 없음" 의 증거다. 돌고 있지 않으면 실패 |
 | `resync_readings` | `[]` | 다음 `PULSE` 를 `whole` 로 보낸다(ARTEL-1299). 받는 쪽이 `seq` 의 빈자리로 누락을 알아챘을 때 청한다. 돌고 있지 않으면 실패 |
@@ -115,6 +116,21 @@ sequenceDiagram
 | `delivery` | 1 | 바닥에 걸려 남은 것을 늦어도 이만큼 안에 보내는 상한 |
 
 `interval > 0`, `minDelivery >= 0`, `delivery >= interval` 이 아니면 거절. 모르는 키는 무시.
+
+### list_inputs 의 returnValue
+
+`{keys, otherKeys, axes, actions}` (ARTEL-1431). 서버의 Planner 가 런 중에 매크로를 쓸 때 어떤 키를 `key_click` 으로 누르고 어떤
+이름을 `set_axis`·`set_button` 에 넘길지 정하는 데 쓴다.
+
+- `keys`: 게임 코드가 `Input.GetKey*` 에 리터럴로 넘기는 키의 KeyCode 이름. 위버가 빌드 때 모은다
+- `otherKeys`: 키를 변수로 읽거나 `anyKey` 를 읽는다. 그러면 `keys` 밖의 키도 게임에 닿을 수 있다
+- `axes`: 게임이 `GetAxis*`·`GetButton*` 으로 읽는 Input Manager 이름. 빌드 때 모은 리터럴에 이 런에서 읽힌 이름을 더한다.
+  가상 키는 여기에 닿지 않는다
+- `actions`: 지금 켜진 Input System action 마다 `{name: "<map>/<action>", keys: [KeyCode 이름]}`, 이름 순으로 한 번씩. 씬이
+  바뀌면 달라진다. composite 의 부분 키도 평평하게 싣는다 — `2DVector` 의 `[W, S, A, D]` 는 하나씩 누르는 키지만, `OneModifier`
+  (ctrl+s)의 `[LeftControl, S]` 는 함께 눌러야 한다. Input System 키보드 adapter 가 없으면 빈 배열이다
+
+위빙되지 않은 빌드(WebGL)는 `keys`·`axes` 가 비어 있다. 비어 있는 것은 "읽지 않는다"가 아니라 "모른다"다.
 
 ### watch · read_member 의 이름과 returnValue
 

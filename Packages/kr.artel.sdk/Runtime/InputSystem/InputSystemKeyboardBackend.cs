@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Artel.Protocol.Dto;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
@@ -61,6 +62,30 @@ namespace Artel
             if (InputSystem.settings.updateMode == InputSettings.UpdateMode.ProcessEventsInFixedUpdate && Time.timeScale == 0f)
                 return "QA key actions cannot run while Fixed Update input is paused.";
             return KeyboardUserCount() > 1 ? "QA key actions require at most one keyboard InputUser." : null;
+        }
+
+        public List<InputActionKeysDto> EnabledActionKeys()
+        {
+            // 이름 순으로 한 번씩. `PlayerInput` 이 asset 을 복제하면 같은 `Player/Move` 가 여럿 켜지고, 켜진 순서는 런마다 다르다.
+            var byName = new SortedDictionary<string, List<string>>(System.StringComparer.Ordinal);
+            foreach (var action in InputSystem.ListEnabledActions())
+            {
+                var map = action.actionMap?.name;
+                var actionName = string.IsNullOrEmpty(map) ? action.name : map + "/" + action.name;
+                if (!byName.TryGetValue(actionName, out var keys)) keys = new List<string>();
+                foreach (var binding in action.bindings)
+                {
+                    if (binding.isComposite) continue;
+                    // 키를 넣는 가상 장치로 푼다. 사람의 키보드 배열로 풀면 SDK 가 누를 키와 달라진다.
+                    if (KeyCodeToKey.TryKeyCodeNameOfPath(binding.effectivePath, VirtualDevice, out var name) && !keys.Contains(name))
+                        keys.Add(name);
+                }
+                if (keys.Count > 0) byName[actionName] = keys;
+            }
+            var actions = new List<InputActionKeysDto>();
+            foreach (var entry in byName)
+                actions.Add(new InputActionKeysDto { Name = entry.Key, Keys = entry.Value });
+            return actions;
         }
 
         public void Activate()

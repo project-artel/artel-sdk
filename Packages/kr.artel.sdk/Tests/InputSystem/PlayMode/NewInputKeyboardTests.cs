@@ -273,6 +273,70 @@ namespace Artel.Tests
             Assert.That(result.IsSuccess, Is.True, result.Error);
         }
 
+        /// <summary>`list_inputs` 가 지금 켜진 action 의 키보드 키를 KeyCode 이름으로 답한다(ARTEL-1431).</summary>
+        [UnityTest]
+        public IEnumerator ListInputs_NamesTheKeysOfEnabledActions()
+        {
+            var actions = ScriptableObject.CreateInstance<InputActionAsset>();
+            try
+            {
+                var map = actions.AddActionMap("Player");
+                var undo = map.AddAction("Undo", InputActionType.Button);
+                undo.AddBinding("<Keyboard>/u");
+                undo.AddBinding("<Gamepad>/buttonWest");
+                var confirm = map.AddAction("Confirm", InputActionType.Button);
+                confirm.AddBinding("<Keyboard>/enter");
+                confirm.AddBinding("<Keyboard>/1");
+                var move = map.AddAction("Move");
+                move.AddCompositeBinding("2DVector")
+                    .With("Up", "<Keyboard>/w").With("Down", "<Keyboard>/s")
+                    .With("Left", "<Keyboard>/a").With("Right", "<Keyboard>/d");
+                var sprint = map.AddAction("Sprint", InputActionType.Button);
+                sprint.AddBinding("<Keyboard>/shift");
+                map.AddAction("Disabled").AddBinding("<Keyboard>/space");
+                undo.Enable();
+                confirm.Enable();
+                move.Enable();
+                sprint.Enable();
+
+                ActionResultDto result = null;
+                yield return executor.Execute(1, "list_inputs", new List<object>(), value => result = value);
+
+                Assert.That(result.IsSuccess, Is.True, result.Error);
+                var inputs = (Artel.Protocol.Dto.InputListDto)result.ReturnValue;
+                var byName = inputs.Actions.ToDictionary(action => action.Name, action => action.Keys);
+                Assert.That(byName["Player/Undo"], Is.EqualTo(new[] { "U" }));
+                Assert.That(byName["Player/Confirm"], Is.EqualTo(new[] { "Return", "Alpha1" }));
+                Assert.That(byName["Player/Move"], Is.EqualTo(new[] { "W", "S", "A", "D" }));
+                Assert.That(byName["Player/Sprint"], Is.EqualTo(new[] { "LeftShift" }), "양쪽 Shift 를 묶은 control 은 왼쪽 키로 읽는다.");
+                Assert.That(byName.ContainsKey("Player/Disabled"), Is.False, "꺼진 action 은 지금 누를 수 없다.");
+                Assert.That(inputs.Actions.Select(action => action.Name), Is.Ordered.Using((System.Collections.Generic.IComparer<string>)System.StringComparer.Ordinal));
+            }
+            finally
+            {
+                actions.Disable();
+                UnityEngine.Object.DestroyImmediate(actions);
+            }
+        }
+
+        /// <summary>키보드 장치가 없을 때(CI, headless)는 경로 끝 이름으로 읽는다.</summary>
+        [Test]
+        public void KeyCodeNameOfPath_ReadsTheControlNameWithoutADevice()
+        {
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/upArrow", null, out var up), Is.True);
+            Assert.That(up, Is.EqualTo("UpArrow"));
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/1", null, out var digit), Is.True);
+            Assert.That(digit, Is.EqualTo("Alpha1"));
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/enter", null, out var enter), Is.True);
+            Assert.That(enter, Is.EqualTo("Return"));
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/shift", null, out var shift), Is.True);
+            Assert.That(shift, Is.EqualTo("LeftShift"));
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/ctrl", null, out var ctrl), Is.True);
+            Assert.That(ctrl, Is.EqualTo("LeftControl"));
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Gamepad>/buttonSouth", null, out _), Is.False);
+            Assert.That(KeyCodeToKey.TryKeyCodeNameOfPath("<Keyboard>/anyKey", null, out _), Is.False);
+        }
+
         [Test]
         public void KeyCodeToKey_MapsRenamedKeysAndRefusesNonKeys()
         {

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using Artel.Protocol.Dto;
 using UnityEngine;
 
 namespace Artel
@@ -41,6 +43,10 @@ namespace Artel
         internal static bool DeliversThroughInputSystem(KeyCode key) =>
             backend != null && Application.isPlaying && backend.ValidationError(key) == null;
 
+        /// <summary>지금 켜진 Input System action 과 그 키보드 키. adapter 가 없으면 빈 목록이다.</summary>
+        internal static List<InputActionKeysDto> EnabledActionKeys() =>
+            backend?.EnabledActionKeys() ?? new List<InputActionKeysDto>();
+
         internal static void Activate() => backend?.Activate();
         internal static bool HasProcessed(int frame) => backend?.HasProcessed(frame) ?? true;
         internal static void Release() => backend?.Release();
@@ -52,6 +58,7 @@ namespace Artel
     {
         bool IsActive { get; }
         string ValidationError(KeyCode key);
+        List<InputActionKeysDto> EnabledActionKeys();
         void Activate();
         bool HasProcessed(int frame);
         void Release();
