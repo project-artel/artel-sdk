@@ -81,7 +81,8 @@ namespace Artel
                     continue;
                 }
 
-                var id = source.GetInstanceID();
+                // 이 pulse 안에서만 쓰는 열쇠라 `ObjectIds.KeyOf` 다. GetInstanceID 는 6000.5 에서 하드 오류다(ARTEL-1411).
+                var id = ObjectIds.KeyOf(source);
                 nowTimes[id] = time;
 
                 if (seeding || !StartedSince(source, id, time))

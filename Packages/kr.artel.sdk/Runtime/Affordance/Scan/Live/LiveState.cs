@@ -109,7 +109,9 @@ namespace Artel.Affordances.Live
 
                 text.Append("{\"name\":");
                 Json.String(text, loaded.name);
-                text.Append(",\"handle\":").Append(loaded.handle).Append('}');
+                // `SceneScanner` 가 내는 씬 id 와 같은 수다. 6000.4 부터 handle 은 SceneHandle 이라 int 로 붙이면 6000.5 에서
+                // 하드 오류고, GetHashCode 는 2022.3 의 int 에서도 값 자신을 돌려준다(ARTEL-1411).
+                text.Append(",\"handle\":").Append(loaded.handle.GetHashCode()).Append('}');
             }
 
             text.Append(']');

@@ -478,9 +478,9 @@ namespace Artel.Affordances.Live
                 found[type] = new List<object>();
             }
 
-            var clock = Stopwatch.StartNew();
             var visited = new HashSet<object>(Identity.Instance);
             var pending = new Stack<KeyValuePair<object, int>>();
+            var matchingRoots = new List<KeyValuePair<object, int>>();
 
             foreach (var root in Roots())
             {
@@ -498,7 +498,15 @@ namespace Artel.Affordances.Live
 
                 if (held != null)
                 {
-                    pending.Push(new KeyValuePair<object, int>(held, 0));
+                    var node = new KeyValuePair<object, int>(held, 0);
+                    if (wanted.Contains(root.FieldType))
+                    {
+                        matchingRoots.Add(node);
+                    }
+                    else
+                    {
+                        pending.Push(node);
+                    }
                 }
             }
 
@@ -510,6 +518,14 @@ namespace Artel.Affordances.Live
                 }
             }
 
+            // 요청한 타입으로 선언된 static 필드부터 탐색해 관련 없는 참조가 예산을 먼저 소진하는 일을 줄인다.
+            foreach (var root in matchingRoots)
+            {
+                pending.Push(root);
+            }
+
+            // 시작점 수집이 끝난 뒤부터 객체 그래프를 탐색하는 시간을 잰다.
+            var clock = Stopwatch.StartNew();
             while (pending.Count > 0)
             {
                 if (clock.ElapsedMilliseconds >= budgetMilliseconds)

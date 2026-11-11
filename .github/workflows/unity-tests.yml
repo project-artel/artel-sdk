@@ -212,3 +212,89 @@ jobs:
           name: unity-editor-log-${{ matrix.inputPackage }}-${{ matrix.inputHandling }}-${{ matrix.testMode }}
           path: artifacts/unity-log-${{ matrix.testMode }}
           if-no-files-found: ignore
+
+  # Unity 6.5 에서도 컴파일되는지 본다(ARTEL-1411). 위 test job 은 2022.3 만 돌려서, 6000.5 에서 하드 오류가 되는
+  # 옛 id API(GetInstanceID · SceneHandle 의 int 변환)를 새 코드가 다시 써도 초록이었다 — #128 이 고친 것을
+  # #155 · #189 가 그렇게 되돌렸다. EditMode 를 돌리는 것은 그것이 테스트까지 포함해 모든 어셈블리를 컴파일하는
+  # 가장 짧은 길이라서다. 입력은 두 갈래만 본다: 패키지 없음(Old) 과 있음(New). Input System 은 6000.5 가 묶어
+  # 내는 1.20.0 이다 — 2022.3 job 의 1.7.0 은 6000.5 에서 패키지 자체가 컴파일되지 않는다.
+  unity6:
+    name: Unity 6.5 (editmode, package ${{ matrix.inputPackage }})
+    needs: preflight
+    if: needs.preflight.outputs.run-tests == 'true'
+    runs-on: ubuntu-latest
+    env:
+      UNITY6_VERSION: 6000.5.6f1
+      UNITY6_INPUT_SYSTEM: 1.20.0
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - inputPackage: absent
+            inputHandling: 0
+          - inputPackage: present
+            inputHandling: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Assemble Unity test project
+        run: .github/scripts/setup-unity-test-project.sh "${TEST_PROJECT_PATH}" "${{ matrix.inputHandling }}" "${{ matrix.inputPackage }}" "${UNITY6_VERSION}" "${UNITY6_INPUT_SYSTEM}"
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TEST_PROJECT_PATH }}/Library
+          key: UnityLibrary-6000.5-${{ matrix.inputPackage }}-${{ hashFiles('.github/unity-test-project/Packages/manifest.json', 'Packages/kr.artel.sdk/package.json') }}
+          restore-keys: |
+            UnityLibrary-6000.5-${{ matrix.inputPackage }}-
+
+      - name: Run editmode tests on Unity 6.5
+        uses: game-ci/unity-test-runner@fa6ced25861c16ef56187828c43f76d00df43a23  # v4.3.2
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: ${{ env.UNITY6_VERSION }}
+          projectPath: ${{ env.TEST_PROJECT_PATH }}
+          testMode: editmode
+          artifactsPath: artifacts/unity6
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity 6.5 editmode Package ${{ matrix.inputPackage }} Test Results
+
+      - name: Make Unity output readable by the runner
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" artifacts "${TEST_PROJECT_PATH}" 2>/dev/null || true
+
+      - name: Report test results
+        if: always()
+        run: |
+          set -euo pipefail
+          results="$(find artifacts/unity6 -name '*.xml' -print -quit 2>/dev/null || true)"
+          python3 .github/scripts/summarize-test-results.py \
+            "${results:-artifacts/unity6/missing-results.xml}" \
+            "editmode"
+
+      - name: Scrub credentials from Unity log
+        if: failure()
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/scrub-unity-log.py \
+            "${TEST_PROJECT_PATH}/Logs" \
+            "artifacts/unity6-log"
+
+      - name: Upload Unity log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity6-editor-log-${{ matrix.inputPackage }}
+          path: artifacts/unity6-log
+          if-no-files-found: ignore
