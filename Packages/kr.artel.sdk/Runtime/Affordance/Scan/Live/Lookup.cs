@@ -478,11 +478,13 @@ namespace Artel.Affordances.Live
                 found[type] = new List<object>();
             }
 
+            // 처음 한 번 수집하는 static 필드 메타데이터는 인스턴스 탐색 예산과 별도로 처리한다.
+            var roots = Roots();
             var clock = Stopwatch.StartNew();
             var visited = new HashSet<object>(Identity.Instance);
             var pending = new Stack<KeyValuePair<object, int>>();
 
-            foreach (var root in Roots())
+            foreach (var root in roots)
             {
                 object held;
 
