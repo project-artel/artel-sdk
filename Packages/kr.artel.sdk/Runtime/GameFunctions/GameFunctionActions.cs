@@ -99,10 +99,21 @@ namespace Artel
                 yield break;
             }
 
+            yield return InvokePreparedCheat(actionId, call.Function, call.Target, call.Values, completed);
+#else
+            completed(NotInThisBuild(actionId, InvokeCheatMethod));
+            yield break;
+#endif
+        }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private IEnumerator InvokePreparedCheat(
+            int actionId, GameFunction function, Component target, object[] values, Action<ActionResultDto> completed)
+        {
             object result;
             try
             {
-                result = call.Function.Call(call.Target, call.Values);
+                result = Registry.ResolveCheatCall(function)(target, values);
             }
             catch (Exception exception)
             {
@@ -118,15 +129,12 @@ namespace Artel
 
             // 결과는 상자에 담아 돌려받는다. iterator 안에서는 out 도 ref 도 쓸 수 없다.
             var outcome = new CheatOutcome();
-            yield return DriveCheat(call.Function.Name, routine, outcome);
+            yield return DriveCheat(function.Name, routine, outcome);
             completed(outcome.Error == null
                 ? Succeed(actionId, InvokeCheatMethod, new CheatInvokedDto { Message = outcome.Message })
                 : Fail(actionId, InvokeCheatMethod, outcome.Error));
-#else
-            completed(NotInThisBuild(actionId, InvokeCheatMethod));
-            yield break;
-#endif
         }
+#endif
 
         public ActionResultDto StartBehavior(int actionId, List<object> parameters)
         {

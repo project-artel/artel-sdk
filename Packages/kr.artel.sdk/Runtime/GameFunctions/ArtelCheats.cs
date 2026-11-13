@@ -28,6 +28,12 @@ namespace Artel
             string name, string description, IReadOnlyList<CheatParam> parameters, Func<CheatArgs, object> handler)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (BuiltInCheats.TryGetParameters(name, out _))
+            {
+                Debug.LogWarning($"[Artel] Override {name} with [ArtelOverrideCheat].");
+                return false;
+            }
+
             if (handler == null)
             {
                 throw new ArgumentNullException(nameof(handler));
