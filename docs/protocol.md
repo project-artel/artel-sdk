@@ -72,8 +72,8 @@ sequenceDiagram
 | `set_button` | `[axisName, pressed]` | 놓으면 실제 입력에 축을 돌려준다 |
 | `pause_time` | `[]` | `Time.timeScale = 0`. SDK 자신은 unscaled 로 돈다 |
 | `resume_time` | `[]` | `pause_time` 이 없었으면 실패 |
-| `start_readings` | `[]` 또는 `[{ "interval"?, "delivery"?, "minDelivery"? }]` | `pulse` 를 켠다. 여러 번 불러도 같음. 초 단위 속도 셋은 아래 |
-| `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
+| `subscribe_pulse` | `[]` 또는 `[{ "interval"?, "delivery"?, "minDelivery"?, "force"? }]` | `pulse`를 켠다. 기본 호출은 멱등이며 `force:true`는 현재 whole을 즉시 전송한다. 아래 옵션 참고 |
+| `unsubscribe_pulse` | `[]` | 돌고 있었든 아니든 성공 |
 | `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
 | `read_member` | `["Type::member"]` | 같은 해석으로 지금 값을 한 번 읽는다. 목록에는 더하지 않는다 |
 | `list_inputs` | `[]` | 이 빌드가 읽는 키와 Input Manager 이름, 지금 켜진 Input System action 의 키를 답한다. 읽기만 한다. 아래 「list_inputs 의 returnValue」 |
@@ -111,15 +111,24 @@ sequenceDiagram
 | 잘라내기 여백 | `DefaultPadding` | 8 px |
 | JPEG 품질 | `JpegQuality` | 70 |
 
-### start_readings 의 속도
+### subscribe_pulse 옵션
 
 | 키 | 기본 | 뜻 |
 | --- | --- | --- |
 | `interval` | 0.1 | 판독 사이의 초 |
 | `minDelivery` | 0.1 | 변화를 본 뒤 보내기까지의 최소 초. 변화는 이것만 지났으면 그 tick 에 나간다 |
 | `delivery` | 1 | 바닥에 걸려 남은 것을 늦어도 이만큼 안에 보내는 상한 |
+| `force` | false | 이미 관찰 중이어도 현재 whole `PULSE`를 즉시 전송한다 |
 
 `interval > 0`, `minDelivery >= 0`, `delivery >= interval` 이 아니면 거절. 모르는 키는 무시.
+
+`start_readings`와 `stop_readings`는 각각 `subscribe_pulse`와 `unsubscribe_pulse`의 호환용 별칭이다. 기존 C# `StartReadings`·`StopReadings`도 유지한다. 새 호출은 `SubscribePulse`·`UnsubscribePulse`를 사용한다.
+
+`force`는 boolean만 받으며 문자열 `"true"`, 숫자 `1`, `null`은 거절한다. 생략하거나 `false`이면 이미 실행 중인 관찰을 바꾸지 않는다.
+`[{"force":true}]`는 새 QA 시작 외에도 관찰 데이터를 다시 받아야 할 때 사용할 수 있다. 실행 중인 `stream`과 속도는 유지하고
+`seq`가 증가한 whole을 즉시 전송한다. 처음 시작할 때는 기존 첫 whole 하나만 전송한다. C#에서는
+씬의 `ArtelManager` 참조에서 `manager.SubscribePulse(Pulse.Pace.Default, true)`로 같은 동작을 요청한다.
+전송 시도 성공은 서버의 수신 확인을 뜻하지 않는다.
 
 ### list_inputs 의 returnValue
 
