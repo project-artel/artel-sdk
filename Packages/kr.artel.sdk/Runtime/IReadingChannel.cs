@@ -15,6 +15,11 @@ namespace Artel
         /// <summary>속도를 정해 시작한다. <c>start_readings</c> 의 params 가 여기로 온다.</summary>
         bool StartReadings(Affordances.Live.Pulse.Pace pace);
 
+        /// <summary><c>force</c>이면 이미 실행 중이어도 현재 whole을 즉시 전송한다.</summary>
+        bool SubscribePulse(Affordances.Live.Pulse.Pace pace, bool force);
+
+        void UnsubscribePulse();
+
         /// <summary>그것들을 끝낸다. 한 번도 시작하지 않았을 때도 안전하다.</summary>
         void StopReadings();
 

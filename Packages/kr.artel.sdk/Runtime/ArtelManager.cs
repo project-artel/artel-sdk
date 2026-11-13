@@ -645,9 +645,20 @@ namespace Artel
 
         public bool StartReadings(Affordances.Live.Pulse.Pace pace)
         {
+            return SubscribePulse(pace, false);
+        }
+
+        public bool SubscribePulse(bool force = false)
+        {
+            return SubscribePulse(Affordances.Live.Pulse.Pace.Default, force);
+        }
+
+        /// <summary>pulse를 구독하며 <c>force</c>이면 현재 whole을 즉시 재전송한다.</summary>
+        public bool SubscribePulse(Affordances.Live.Pulse.Pace pace, bool force = false)
+        {
             if (Affordances.Scan.AffordanceBootstrap.Watching)
             {
-                return true;
+                return !force || (ResyncReadings() && FlushReadings());
             }
 
             // 연결이 있으면 판독은 그 소켓으로 나간다. 없으면 sink 를 건네지 않아 예전대로
@@ -666,6 +677,11 @@ namespace Artel
 
         /// <summary>라이브 판독을 끝낸다. 한 번도 시작하지 않았을 때 불러도 안전하다.</summary>
         public void StopReadings()
+        {
+            UnsubscribePulse();
+        }
+
+        public void UnsubscribePulse()
         {
             resumeReadingsOnConnect = false;
             Affordances.Scan.AffordanceBootstrap.StopWatching();
