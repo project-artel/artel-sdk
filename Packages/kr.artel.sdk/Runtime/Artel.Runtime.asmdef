@@ -3,17 +3,20 @@
   "rootNamespace": "Artel",
   "references": [
     "Unity.TextMeshPro",
-    "UnityEngine.UI"
+    "UnityEngine.UI",
+    "UnityEngine.UnityWebRequestModule",
+    "Artel.Affordances.Scan"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,
   "overrideReferences": true,
   "precompiledReferences": [
+    "Newtonsoft.Json.dll",
     "websocket-sharp.dll"
   ],
   "autoReferenced": true,
-  "defineConstraints": [],
+  "defineConstraints": ["UNITY_EDITOR || !UNITY_WEBGL"],
   "versionDefines": [],
   "noEngineReferences": false
 }

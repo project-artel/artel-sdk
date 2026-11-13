@@ -1,18 +1,843 @@
 # Artel SDK
 
+## WebGL player 제외
+
+WebGL player에서는 `Artel.Runtime`을 컴파일하지 않는다. SDK의 native WebSocket·입력 경로는
+WebGL에서 지원하지 않는다. 영상 전송은 WebSocket JPEG를 사용하며 `Unity.WebRTC` 의존성은 제거했다.
+입력 ILPostProcessor도 WebGL player에는 `ArtelInput` 참조를 추가하지 않는다.
+WebGL을 Build Target으로 선택한 Unity Editor에서는 기존 SDK 기능을 사용할 수 있다.
+별도 affordance 메타데이터·scan 어셈블리는 유지한다.
+
+게임 코드에서 `Artel.Runtime` 타입을 직접 참조한다면 해당 코드에도
+`#if UNITY_EDITOR || !UNITY_WEBGL` 조건이 필요하다. WebGL에서도 필요한 게임 로직은
+SDK 참조와 분리해야 한다.
+
+## Runtime connection
+
+Install the package. Nothing else is required — in the editor and in
+development builds `ArtelManager` spawns itself after the first scene loads, and
+it adds `ArtelOverlayController`, `CursorController` and `KeyboardStatusController`
+on its own. It ships pointing at the Artel servers.
+
+Release builds carry none of this. The spawn and the scan are compiled out
+(`#if UNITY_EDITOR || DEVELOPMENT_BUILD`), so a game shipped to players holds no
+subscription and no callback of ours.
+
+기본 서버는 `https://stage-orch.artel.kr`이며 주소 입력 없이 로그인한다.
+다른 서버를 사용하려면 로그인 화면의 **고급 설정**을 열고 **서버 주소**에
+`https://artel.example.com` 또는 `http://localhost:8080`을 입력한 뒤 **적용**을 누른다.
+**ARTEL 서버로 복원**으로 기본 서버를 다시 선택할 수 있다. 고급 메뉴의 **서버 변경**으로 다른 서버를 선택할 수 있다.
+Inspector에서는 `Server URL` 하나를 설정한다. 기존 씬의 `secure`·`host`·`port` 값은
+새 URL이 없을 때 읽으며, HTTP와 WebSocket 주소는 같은 URL에서 만든다.
+경로·query·fragment·사용자 정보가 붙은 URL은 지원하지 않는다.
+
+console 주소는 서버의 `ARTEL_HOME_URL`에서 관리한다. 로그인 버튼은
+`<server>/api/auth/sdk/login`을 열고 서버가 console의 `/sdk-login`으로 redirect한다.
+기존 loopback callback과 PKCE code 교환은 유지한다. SDK는 console 주소를 저장하지 않는다.
+
+인증 상태는 정규화된 서버 주소별로 분리된다. 다른 서버를 선택하면 그 서버의 토큰과
+프로젝트를 불러오며, 원래 서버로 돌아오면 저장된 로그인을 다시 쓸 수 있다.
+서버 정보가 없는 이전 버전의 로그인은 재사용하지 않으므로 한 번 다시 로그인해야 한다.
+
+The JWT says who you are, not which instance you are. Instance identity is
+carried by `sdkUuid`, the SDK's per-installation UUID. After login the person
+picks a project once, and from then on the server finds or creates the instance
+by `(projectId, sdkUuid)`:
+
+```
+POST /api/sdk/registrations
+Authorization: Bearer <sdk token>
+{ "projectId": "<id>", "sdkUuid": "<uuid>", "instanceName": "<name>", "gameVersion": "1.2.3" }
+```
+
+`gameVersion` is `Application.version` from Player Settings. The response
+carries `instanceId`, `projectId`, `instanceName`, `gameBuildId` and
+`gameVersion`. The SDK then connects to
+`/ws/sdk?token={SDK_TOKEN}&instanceId={INSTANCE_ID}`. Every later launch
+registers and connects with no interaction.
+
+The two tokens — access and refresh — live in the OS secret store
+(`ArtelSecretStore`; DPAPI on Windows, Keychain on macOS). Expiry, display name
+and project sit in `PlayerPrefs` under `Artel.*`, because none of them opens
+anything on its own. The per-installation UUID and the instance id of each
+server live in `Application.persistentDataPath/artel/identity.json`, so a game
+that calls `PlayerPrefs.DeleteAll()` keeps registering as the same instance.
+Values an older SDK left in `PlayerPrefs` (`Artel.SdkId`, `Artel.InstanceId.*`)
+move into that file the first time they are read.
+
+Close code `4001` on the socket means the token or the instance was refused.
+The SDK does not retry that one; the overlay's `연결` button registers again,
+which refreshes the token and the instance id.
+
 ## Local PoC
 
-Add `ArtelManager` to a scene to start the SDK WebSocket server:
+This is the one case that still wants an `ArtelManager` in the scene. The SDK
+spawns its own manager on a `GameObject` of its own, and `ArtelTestPageManager`
+looks for the manager on its own object — so put both on the same scene object,
+or assign the manager to the test page manager's field. The scene's manager
+keeps the spot and the spawn steps aside. The test page manager replaces the
+default client transport with its local WebSocket server and manages both test
+servers:
 
 - WebSocket URL: `ws://127.0.0.1:17311/ws`
 - Scan request: `{ "jsonrpc": "2.0", "id": 1, "method": "scan_scene", "params": [] }`
-- Action message: `ACTION` with `button_click` and `enter_text`
+- Action message: `ACTION` with `button_click`, `enter_text`, `key_click`, `key_down`,
+  `key_up`, `move_mouse`, `mouse_down`, `mouse_up`, `scan_scene`, and `scan_all_scenes`
 
-Add `ArtelTestPageServer` to a scene when you want the browser test page:
+## Ordering a scan against actions
+
+A top-level `scan_scene` answers as soon as the message arrives, so it can report
+the scene while a preceding `button_click` is still moving the cursor. Put
+`scan_scene` inside the `ACTION` batch instead and it runs on the same queue,
+after every action ahead of it has finished:
+
+```json
+{
+  "type": "ACTION",
+  "id": 9,
+  "actions": [
+    { "id": 1, "method": "button_click", "params": [12345] },
+    { "id": 2, "method": "scan_scene", "params": [] }
+  ]
+}
+```
+
+The batched scan sends its own `GAME_STATE` message and leaves
+`{ "id": 2, "success": true }` in the `ACTION_RESULT` that follows. The top-level
+request keeps working so existing clients can migrate at their own pace.
+
+`GAME_STATE` is answered on request and nothing else produces it. The SDK used
+to push one every second from a scene poller; ARTEL-400 removed that, so a run
+that never sends `scan_scene` never sees a `GAME_STATE`. What changes while the
+game runs is on the pulse channel — see `## State and action tracking`.
+
+## Scanning every scene in the build
+
+`scan_all_scenes` walks Build Settings from index 0 upward, scanning each scene,
+and answers with a single `ALL_SCENES` message. It is a batch method only —
+the walk spans many frames, so there is no top-level form.
+
+```json
+{ "type": "ACTION", "id": 10, "actions": [{ "id": 1, "method": "scan_all_scenes", "params": [] }] }
+```
+
+```json
+{
+  "type": "ALL_SCENES",
+  "id": 11,
+  "scenes": [
+    { "buildIndex": 0, "path": "Assets/Scenes/Lobby.unity", "scene": { "id": -1234, "type": "scene", "name": "Lobby", "children": [] } }
+  ]
+}
+```
+
+### Full mode
+
+`params: ["full"]` widens the same walk. It reads every field Unity would
+serialize on the MonoBehaviours the game itself wrote — public fields and
+`[SerializeField]` private ones — it walks into inactive objects, which come back
+as blocks with `"active": false`, and it reports what each button is wired to
+call. Everything else about the walk is unchanged.
+
+**This is the only mode that reads field values.** The default scan reads none,
+so its components carry no `states` key at all.
+
+```json
+{ "type": "ACTION", "id": 10, "actions": [{ "id": 1, "method": "scan_all_scenes", "params": ["full"] }] }
+```
+
+Omitting `params` keeps the original behaviour: no field values, active objects
+only. `GAME_STATE` is never affected by this mode.
+
+What full mode leaves out, on purpose:
+
+- Components shipped by Unity or by this SDK. Reading every field of `Image` or
+  `TMP_Text` buries the game's own data.
+- Properties. Unity does not serialize them, and a getter can have side effects.
+- References. A `UnityEngine.Object` field is reported as
+  `{ "instanceId", "name", "type" }`, never followed — one `GameObject` field
+  would otherwise drag the whole scene back into the payload.
+
+Values are lowered to plain JSON before they are sent, and the lowering is
+capped: 5 levels of nesting, 64 elements per array or list, 1024 characters per
+string, and a reference cycle is cut where it closes. Fields whose values a game
+stores in plain sight — tokens, keys — are sent as they are; nothing is masked.
+
+### What a button calls
+
+A button in a full scan carries its `onClick` wiring, since the scene it belongs
+to is unloaded before anyone can click it and see for themselves:
+
+```json
+{
+  "type": "button",
+  "name": "Start Button",
+  "onClick": [
+    { "target": "GameFlow", "targetType": "Game.Flow.GameFlowController", "method": "StartGame" }
+  ]
+}
+```
+
+`target` is the name of the object the call runs on, `targetType` its full type
+name, and `method` the method invoked. Only calls wired in the inspector are
+listed — Unity keeps `AddListener` registrations in a delegate it never exposes,
+so a button wired entirely in code reports nothing. `onClick` is absent when
+there is nothing to report, which is every button outside a full scan.
+
+Each `scene` is the same shape `GAME_STATE` sends. Scenes are loaded
+`Additive`, scanned, then unloaded; a scene the game already has open is scanned
+in place and left alone. The original active scene is restored and rescanned
+afterwards, so `button_click` and `enter_text` target ids keep working.
+
+The local test page drives this from its **Scan all scenes** and **Scan all
+scenes (full)** buttons. It lists every returned scene under its build index and
+path, drawn by the same renderer `GAME_STATE` uses. Controls belonging to a scene
+the walk unloaded are disabled, since clicking them would address nothing; the
+scene the game already had open stays clickable.
+
+The result is pinned in its own section, above the live scene, and stays there
+until **Clear** — a walk over every scene takes long enough that losing it to the
+next **Scan** would waste the wait.
+Each component lists its states and actions, open by default and foldable,
+buttons list their `onClick` calls, and inactive blocks are labelled and dimmed.
+The section also keeps the raw `ALL_SCENES` JSON behind a disclosure.
+
+This runs the game's other scenes, briefly. Their `Awake`, `OnEnable`, and
+`Start` execute — anything they do on load (audio, network calls, writing to
+`PlayerPrefs`) happens for real. Treat `scan_all_scenes` as a discovery step, not
+something to call during a run you care about. Block ids collected this way
+belong to objects that are destroyed when the scan finishes; only the returned
+structure is durable.
+
+A visited scene escapes its own unload two ways. `DontDestroyOnLoad` moves
+objects to a scene of their own, and anything its `Awake` or `Start`
+instantiates lands in whatever scene is active then — the game's, since a scene
+cannot be made active until it has finished loading. Both surface as new root
+objects.
+
+So before each load the walk records every root alive, and after scanning it
+hands the new ones to the scene it is about to unload with
+`MoveGameObjectToScene`. They are destroyed by that unload, `OnDestroy` and all.
+The comparison and the unload happen without yielding in between, so nothing
+spawned after the comparison slips past it.
+
+What that cannot undo:
+
+- `static` fields and event subscriptions a destroyed manager left behind.
+- Singletons that destroy the *duplicate* on `Awake` — the game's own instance
+  may be the one that died.
+- Side effects already committed: audio played, requests sent, prefs written.
+- Objects a visited scene parents under something the game owns. Only roots can
+  move between scenes, so those stay.
+- Work a scene defers past the settle window — a coroutine, an `Invoke`, a web
+  request callback. No fixed wait covers it.
+- Anything the game itself creates during the walk, which is a new root like any
+  other and goes with them.
+- Mutated `ScriptableObject` and other asset state, which no scene owns.
+
+## Agent keyboard input
+
+마우스 QA 명령(`move_mouse`, `mouse_down`, `mouse_up`, `Mouse0/1/2` 별칭)은 Legacy와 New Input System을 지원한다. Input System 패키지는 선택 사항이며 SDK 설치 시 자동으로 추가하지 않는다. 패키지가 없는 Legacy 프로젝트는 기존 입력 경로를 사용한다. `com.unity.inputsystem` 1.7.0 이상이 설치되어 있고 New 또는 Both 설정인 경우에만 별도 `Artel.InputSystem` assembly가 활성화되며, 가상 `Mouse`의 상태를 Input System 업데이트에 전달한다. 게임의 `InputAction`과 `Mouse.current`에서 읽을 수 있다. New/Both에서 패키지 버전이 1.7.0 미만이거나 adapter가 등록되지 않았다면 마우스 명령은 오류를 반환한다. Legacy 설정의 기존 입력 경로는 유지한다.
+
+`InputSystemUIInputModule`을 사용하는 UI는 native 입력으로 처리하므로 SDK의 직접 이벤트 전달과 중복되지 않는다. `StandaloneInputModule`은 기존 dispatcher를 사용한다. native UI 경로의 `mouse_down` 결과는 실제 수신 대상을 추측하지 않아 `reached=null`이며, `pointerHeldByPerson`은 포인터 소유권으로 판단한다.
+
+- Dynamic Update와 Fixed Update를 지원한다. Manual Update, `timeScale=0`인 Fixed Update는 QA 마우스 명령을 거절한다. Dynamic Update는 일시 정지 중에도 동작한다.
+- Mouse를 소유한 `InputUser`가 하나이면 가상 Mouse도 pairing한다. 복수 Mouse 사용자 환경은 거절한다. 특정 장치 ID에 고정한 binding이나 게임이 직접 제한한 action device 목록은 자동 수정하지 않는다.
+- QA 마우스가 활성화된 동안 원본 asset을 변경하지 않고 Input Settings 복사본에서 focus와 background 입력을 허용하며 종료 시 원래 설정을 복원한다. QA가 포인터를 소유하는 동안 실제 마우스 이벤트를 차단한다. run 종료, reset, 연결 해제, Ctrl+Shift+M 제어권 반환 때 버튼을 놓고 장치를 정리한다. 기존 release와 마찬가지로 같은 UI 대상에서 놓으면 click이 발생할 수 있다.
+- gamepad 주입은 지원하지 않는다.
+
+키보드 QA 명령(`key_click`, `key_down`, `key_up`)도 같은 조건에서 가상 `Keyboard` 에 전달한다. 키 이름은 그대로
+`UnityEngine.KeyCode` 이름이고, adapter 가 Input System `Key` 로 옮긴다(`Return`→`Enter`, `Alpha1`→`Digit1`,
+`Keypad*`→`Numpad*`). `Keyboard.current`, `InputAction`, `PlayerInput`(키보드를 가진 `InputUser` 하나에 pairing),
+`InputSystemUIInputModule` 이 받는다.
+
+- New 전용 프로젝트에서는 Input System 키가 없는 KeyCode(Shift 기호, `Joystick*` 등), Manual Update, `timeScale=0` 인 Fixed
+  Update, 복수 키보드 사용자를 거절한다. Both 는 legacy proxy 가 받으므로 거절하지 않는다.
+- Input System 경로의 `key_click` 은 누름이 처리된 뒤 지속 시간을 재고, 놓은 다음 응답한다.
+- QA 키를 쥔 동안만 가상 Keyboard 가 `Keyboard.current` 다. 실제 키보드 이벤트는 막지 않는다. Ctrl+Shift+M 은 실제 키보드에서만 읽는다.
+- 마우스와 같은 Input Settings 복사본을 함께 쓰고, 둘 다 놓은 뒤에만 원래 설정을 복원한다.
+
+Input Manager 축(`GetAxis`, `GetButton*`)은 가상 키를 보지 않는다. 축은 `set_axis`·`set_button` 으로 조작한다. IL
+post-processor 가 게임 assembly 의 `Input.GetKey*`·`anyKey*`·`GetAxis*`·`GetButton*` 호출에서 리터럴 키와 축 이름을 모아 두고,
+legacy 전용 프로젝트에서 게임이 어디서도 `GetKey*` 로 읽지 않는 키를 키 명령으로 보내면, 게임이 읽는 축 이름과 함께 실패로
+응답한다. 키를 변수로 읽거나 `anyKey` 를 읽는 게임에서는 판단하지 않는다.
+
+Keep using `UnityEngine.Input` for keyboard polling. Artel's IL post-processor
+rewrites supported calls to the `ArtelInput` proxy during compilation:
+
+```csharp
+using UnityEngine;
+
+public sealed class PlayerInput : MonoBehaviour
+{
+    private void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.Space))
+        {
+            Jump();
+        }
+    }
+
+    private void Jump()
+    {
+    }
+}
+```
+
+The proxy combines physical Unity input with virtual Agent input for
+`GetKeyDown`, `GetKey`, `GetKeyUp`, `anyKey`, and `anyKeyDown`. A `key_click`
+action accepts a `KeyCode` enum name or numeric value plus a positive duration
+in seconds:
+
+```json
+{
+  "type": "ACTION",
+  "id": 2,
+  "actions": [
+    {
+      "id": 2,
+      "jsonrpc": "2.0",
+      "method": "key_click",
+      "params": ["Space", 0.5]
+    }
+  ]
+}
+```
+
+Virtual input begins on the frame after the action is accepted. `GetKeyDown`
+is true for that frame, `GetKey` remains true for the requested duration, and
+`GetKeyUp` is true for one frame when the duration ends. These values are frame
+snapshots and can be read by multiple callers without being consumed.
+
+### Holding a key
+
+`key_click` decides in advance how long the key stays down. When the agent
+cannot know that yet — a charge that lasts until something on screen changes, a
+modifier held across several other actions — `key_down` and `key_up` split the
+press in two:
+
+```json
+{
+  "type": "ACTION",
+  "id": 3,
+  "actions": [
+    { "id": 1, "method": "key_down", "params": ["LeftShift"] },
+    { "id": 2, "method": "button_click", "params": [12345] },
+    { "id": 3, "method": "key_up", "params": ["LeftShift"] }
+  ]
+}
+```
+
+Both take a `KeyCode` enum name or numeric value. Nothing but `key_up` ends the
+hold, so a client that forgets one leaves the key down for the rest of the run.
+The SDK releases everything it is holding when the connection stops, which
+bounds the damage to that connection.
+
+## Agent pointer input
+
+`move_mouse` puts the pointer at a screen position, and `mouse_down` /
+`mouse_up` hold and release a button. The queue runs a batch in order, so drag
+and drop needs no action of its own — it is those three in sequence:
+
+```json
+{
+  "type": "ACTION",
+  "id": 4,
+  "actions": [
+    { "id": 1, "method": "move_mouse", "params": [420, 300] },
+    { "id": 2, "method": "mouse_down", "params": [] },
+    { "id": 3, "method": "move_mouse", "params": [880, 300] },
+    { "id": 4, "method": "mouse_up", "params": [] }
+  ]
+}
+```
+
+`move_mouse` accepts exactly one of three forms of `params`. A caller that
+composes a click or a drag out of `move_mouse` + `mouse_down` + `mouse_up`, the
+way the batch above does, gets aiming by id or by selector for free — nothing
+about the composition changes, only what `move_mouse` is told to aim at:
+
+- **A screen point**, `[x, y]` — the coordinates a scan already reported: pixels
+  from the top left of the screen, the same space as a block's `transform.rect`.
+  Aiming at something the agent just saw is therefore its `rect` numbers,
+  unchanged — the SDK flips them into Unity's bottom-left screen space itself,
+  so no caller has to know that space exists.
+
+  ```json
+  { "id": 1, "method": "move_mouse", "params": [420, 300] }
+  ```
+
+- **A Unity instance id**, `[id]` — the same kind of id `button_click` and
+  `enter_text` take, and the same kind a scan reports per block. The SDK reads
+  the object's own rect the way a scan would and aims at its centre, so this
+  lands on exactly the pixel the agent would have read off that block's `rect`.
+
+  ```json
+  { "id": 1, "method": "move_mouse", "params": [503402] }
+  ```
+
+- **A selector**, `[selector]` — a string written the way a scan's `selector`
+  field writes it: `name[index]` per level from the scene root down, joined by
+  `/`, e.g. `Root[0]/Canvas[1]/Card(Clone)[3]`. Useful when several objects on a
+  path share a name — spawned enemies, list rows — and the id from an earlier
+  scan is not the one on screen any more.
+
+  ```json
+  { "id": 1, "method": "move_mouse", "params": ["Root[0]/Canvas[1]/Card(Clone)[3]"] }
+  ```
+
+  A selector that a scan cut short with a leading `.../` cannot be resolved,
+  since it no longer reaches the scene root. Aiming by id or selector fails with
+  one of three distinct messages, so the agent can tell them apart: no object
+  has that instance id, nothing in the active scene matches that selector, or
+  the object exists but is off screen, behind the camera, or in a scene with no
+  camera to project it through.
+
+`mouse_down` and `mouse_up` stay positionless — they land wherever the pointer
+already is, which is what makes the composed click and drag above work. They
+take `[]` for the left button, or `[0]`, `[1]`, `[2]` for left, right, and
+middle.
+
+These reach the game two ways at once, because games take pointer input two
+ways:
+
+- **Polling.** `Input.mousePosition`, `Input.GetMouseButton`,
+  `GetMouseButtonDown`, and `GetMouseButtonUp` are rewritten to `ArtelInput` by
+  the same IL post-processor that handles the key calls. Button state follows the
+  frame rules the keys do. `mousePosition` reports the agent's pointer once
+  `move_mouse` has been used, and the real one until then — a position is a
+  single value, so it cannot combine the two the way a button can.
+
+  That claim is given up the moment the real mouse moves, and again when the
+  connection stops. Without both, a game goes on reading a pointer nobody is
+  driving: every `Input.mousePosition` in the project answers with wherever the
+  agent last left it, and the person at the machine cannot move anything until
+  play mode is restarted.
+
+  Two things keep the real mouse from taking the claim. While the agent holds a
+  mouse button, up to the frame the release lands on, the real mouse is not
+  compared, so a drag is not cut in half by a hand moving in another window.
+  While the server's `RUN_STATUS` says `RUNNING`, it is not compared at all.
+  Every other state gives the pointer back, and `FINISHED` also releases every
+  button and key the agent holds. A person who needs the pointer during a run
+  presses **Ctrl+Shift+M** in the game window. That releases the agent's input
+  and, until the next `RUNNING`, moving the real mouse more than 4 pixels takes
+  the pointer back again.
+- **uGUI.** The SDK dispatches `PointerEventData` through the scene's
+  `EventSystem`, so `IPointerDownHandler`, `IBeginDragHandler`, `IDragHandler`,
+  `IEndDragHandler`, `IDropHandler`, and `IPointerClickHandler` fire as they
+  would for a person. A drag begins only once the pointer has travelled past
+  `EventSystem.pixelDragThreshold`, and a press that never travels reports a
+  click instead.
+
+- **`OnMouse*` handlers.** `OnMouseEnter`, `OnMouseOver`, `OnMouseExit`,
+  `OnMouseDown`, `OnMouseDrag`, `OnMouseUp`, and `OnMouseUpAsButton` are called
+  on whatever collider the agent's pointer is over, for the left button, the way
+  the engine calls them for the real one.
+
+  These are not EventSystem events and no amount of input mocking reaches them:
+  the engine picks a collider from the OS cursor itself, and the legacy input
+  backend accepts no injected values. Most 2D Unity games are built on them, so
+  without this the agent cannot touch such a game at all. Picking follows the
+  engine's own rules: a ray from `Camera.main` filtered by `Camera.eventMask`,
+  the nearest hit of 2D and 3D, and one object rather than everything under the
+  pointer. `OnMouseDrag` keeps going to the object the press started on even
+  after the pointer leaves it.
+
+  Matching the engine is the point, including where it fails. A collider the
+  engine cannot pick is one a person cannot click, and an agent that reaches it
+  anyway would report a game working when it does not. Two gaps follow from
+  this: a scene that renders interactive objects through a camera other than
+  `Camera.main` is not covered, and overlapping sprites at the same depth are
+  resolved by ray distance, which is not the order they are drawn in.
+
+  They run only while the agent holds the pointer. The engine goes on sending its
+  own from the real cursor, and both at once would deliver everything twice.
+
+A scene with no `EventSystem` gets the polling and `OnMouse*` halves and nothing
+else, silently — a game that never used uGUI has nothing to miss.
+
+What this does not change: `button_click` still invokes the button's `onClick`
+directly rather than going through the EventSystem, and it moves the cursor
+without firing hover events. The two paths are separate on purpose, so adding
+pointer events does not alter what an existing `button_click` does to a game.
+
+**`button_click` is deprecated.** A `move_mouse` at the target followed by
+`mouse_down` / `mouse_up` replaces it: that path goes through
+`PointerEventDispatcher` and the scene's `EventSystem`, so it exercises the
+game's own click path — including whatever the game's own click path would
+refuse, such as another element occluding the target — instead of stepping
+past it by calling `onClick` directly. `button_click` keeps its params and its
+result unchanged and is not being removed; several places outside this
+repository still send it.
+
+A held button has the same forgetting problem a held key does, with a worse
+failure: the game stays mid-drag. Stopping the connection releases every button
+and ends any drag in progress, so the game's `IEndDragHandler` still runs.
+
+The on-screen status panel shows the agent's pointer position and any button it
+is holding, beneath the pressed keys.
+
+`GAME_STATE.scene` uses one block per active `GameObject`. Supported Unity UI
+components are listed separately, so one block can expose multiple capabilities:
+
+```json
+{
+  "id": 2,
+  "type": "block",
+  "name": "login panel",
+  "components": [
+    {
+      "type": "editText",
+      "name": "email edit text",
+      "placeholder": "example@artel.kr",
+      "interactable": true,
+      "states": [],
+      "actions": []
+    }
+  ],
+  "children": []
+}
+```
+
+`button` and `editText` carry `interactable`: whether a person could press or type
+into the target at scan time. It is false for a disabled component, a `Selectable`
+with `interactable` off, and one blocked by a parent `CanvasGroup`. `button_click`
+and `enter_text` on a target that is not interactable fail with
+`Target is not interactable: <id>` instead of invoking the handler. Blocks a full
+scan reveals with `"active": false` carry `"interactable": false` for the same
+reason: their UI cannot receive input while the object is off.
+
+### What is on screen
+
+A scan also reports what the player can merely see, so that the readable scene is
+not limited to whatever happens to be a button. `image` is a uGUI `Image`,
+`sprite` is a `SpriteRenderer`:
+
+```json
+{
+  "type": "sprite",
+  "name": "enemy_goblin",
+  "sprite": "goblin_idle",
+  "states": [],
+  "actions": []
+}
+```
+
+`sprite` is the sprite asset's name and is absent when none is assigned — a
+flat-colour panel or an invisible raycast catcher. Those are reported anyway:
+they are still on screen, and an invisible one is still what the pointer lands on
+first.
+
+These carry no interaction of their own, but they are not inert. Every block
+reports the area it covers, so the pointer actions can aim at one exactly as they
+would at a button — which is the only way to drag something that was never built
+as a control.
+
+A `SpriteRenderer` is not a `RectTransform`, and a plain `Transform` is a point
+with no extent. Their `transform.rect` therefore comes from the renderer's own
+bounds rather than from the object's origin, or nothing could be aimed at them.
+
+The scene `id` is its Unity scene handle, and each block `id` is the
+`GameObject` instance ID. Treat both as opaque identifiers valid only while
+their Unity objects remain alive in the current process. Do not persist them
+across scene reloads, object recreation, or Unity restarts.
+
+## Resetting the game
+
+`reset_game` reloads the scene the run started in, which drops every scene the
+game has opened since and rebuilds the first one from the data the launch used.
+
+```json
+{ "type": "ACTION", "id": 5, "actions": [{ "id": 1, "method": "invoke_cheat", "params": [{ "name": "reset_game" }] }] }
+```
+
+The built-in cheat clears the game's `PlayerPrefs` and resets its static state.
+A game can replace the full reset flow with `[ArtelOverrideCheat("reset_game", "...")]`
+on a parameterless static method.
+
+The SDK's own `Artel.*` entries are read out before the wipe and written back
+after it, so a reset does not log the game out of the server that ordered it.
+Everything else in the store goes — including the entries Unity itself keeps
+there, such as `Screenmanager Resolution Width` / `Height`,
+`Screenmanager Fullscreen mode`, and the `unity.*` analytics keys. A reset with
+this flag therefore also reverts the player's window size and fullscreen choice
+on the next launch. Those names are tied to the Unity version, so the SDK does
+not try to preserve them: a stale allowlist would claim a protection it no longer
+gives.
+
+A cleared store is all this promises, and not that the game is in a first-run
+state: a manager destroyed by the reload can write its keys back from
+`OnDestroy`.
+
+It is a batch method only — the reload spans frames. The result arrives once the
+new scene has loaded and settled, so a `scan_scene` after it in the same batch
+reads the fresh scene. Every target id from before is dead by then; a
+`button_click` queued behind a reset must come from a scan taken after it.
+
+A pause left by `pause_time` is lifted and every held key and mouse button is
+released before the load, so the new scene starts with the clock running and
+nothing pressed.
+
+The game's `DontDestroyOnLoad` objects go with it. A manager that survives scene
+loads is usually where the run's progress is kept, so leaving it would defeat the
+reset; the reloaded scene builds its own through the same singleton guard that
+let the old one live. The SDK is the one persistent object kept, since it is
+running the reset. A game whose managers are created by a bootstrap scene the run
+did not start in loses them for good — the SDK logs every object it drops, by
+name, for exactly that case.
+
+What no reload can reach: static fields and save files on disk. A game that keeps
+its progress in one of those comes back holding it, whether or not
+`clearPlayerPrefs` was set. The action fails, changing nothing — the store
+included — when the scene the game started in is not in Build Settings, or when
+the params are malformed; there is no index to return to, and a refused reset
+must leave the game exactly as it found it.
+
+## State and action tracking
+
+### State: the pulse channel
+
+**Reading state needs no change to the game.** There is no attribute to add and
+no member to mark. The SDK samples what the game holds ten times a second and
+sends a `PULSE` message on the same WebSocket on the tick a value moved, no
+sooner than 0.1 s after the previous one. The two actions `start_readings` and
+`stop_readings` turn it on and off, so a QA run reads only the part of the
+session it is actually driving; `start_readings` takes the three rates as
+options when a run wants to measure with different ones.
+
+A member the evidence did not name can still be asked for by name while the game
+runs: `watch [["Game.Player::hp", "Progress::stage"]]` resolves each name against
+the loaded assemblies and adds it to the watch list, and `read_member` reads one
+once. A field or auto-property is enough; a property whose getter runs code is
+refused unless the game marks it `[ArtelObserve]` — name the field instead. A
+member on a scene component is read where the walk meets it; a static is
+read directly; anything else — a ScriptableObject, a plain object behind a static
+or a container — is found by following references from static fields and scene
+components, four levels deep and within a time budget, and the action's result
+says which names resolved, where each is read from, and which did not and why.
+
+A game can also say so in its own code: `[ArtelObserve]` on a field or property
+puts that member on the watch list at startup, with no build step involved. A
+property's getter then runs on every reading, which is the one place the pulse
+runs game code, and only because the game asked for it.
+
+Two kinds of state no member holds ride each object entry as well: `ui` carries
+what uGUI accepts (`interactable`, `isOn`, slider and dropdown `value`, `fill`,
+`CanvasGroup` alpha and flags) and `engine` carries what the engine is doing
+(the current `Animator` state, whether an `AudioSource` or `ParticleSystem` is
+playing, whether a `SpriteRenderer` is enabled and how opaque). `flush` reads and sends one
+reading right now, for a check that cannot wait for the next tick. A UI Toolkit
+screen has no object per element, so the object carrying the `UIDocument` lists
+its named and textual elements under `uitk`.
+
+`wait_until` waits inside the game: `["Game.Player::hp <= 0", 5]` yields every
+frame until the condition holds or the seconds run out, and answers with
+`{held, waitedFrames, timedOut}`. Conditions are `exists(selector)`,
+`active(selector)`, `Type::member op literal`, `and`, `or` and parentheses; no
+expressions. A timeout is a value, not a failure — only an unreadable condition
+fails the action.
+
+What happened, as opposed to what is, rides `events` on the same reading: the
+engine calls the game made since the previous reading — a sound played, an
+animator trigger set, a prefab instantiated or destroyed, a scene load, a
+`PlayerPrefs` write. These are caught at the call site: the same IL
+post-processor that redirects `Input` redirects those calls to `ArtelEngine`,
+which makes the original call and records it. Repeats within one reading fold
+into a `count`, so an `Update` that sets an animator float every frame is one
+line, not sixty.
+
+What a pulse carries is decided by the evidence document baked at build time —
+the members the analysed conditions and effects name — plus the objects that
+carry text on screen. Each reading names the `instanceId` of the object it came
+from, which is the same number `button_click`, `move_mouse`, and the rest take,
+so a reader that sees a value change can act on the thing that changed it.
+
+`tools/watch-readings.py` reads the stream locally. The SDK also writes it to
+`artel-pulse.jsonl` under the player's `Application.persistentDataPath`.
+
+This replaced `[ArtelState]`, which required the game's own source to carry an
+attribute on every member worth reading, and was removed in ARTEL-400. Nothing
+in this SDK reads member values from a scan any more; `scan_all_scenes ["full"]`
+reads serialized fields, but that is a build-time discovery walk, not a live
+channel.
+
+### Actions: `[ArtelAction]`
+
+Action results are captured by IL post-processing without changing the source
+class:
+
+```csharp
+using Artel.Tracking;
+using UnityEngine;
+
+public sealed class PlayerStatus : MonoBehaviour
+{
+    [ArtelAction("attack")]
+    public int Attack(int damage)
+    {
+        return damage * 2;
+    }
+}
+```
+
+`[ArtelAction]` records method tag/name, success, return value, timestamp, and
+exception type/message on failure. The original exception is rethrown.
+
+Scan only snapshots pending actions. It does not consume them. After the
+WebSocket send succeeds, the SDK removes actions included in that snapshot.
+Actions recorded between scan and send remain for the next message. Failed
+sends leave the entire snapshot pending.
+
+Current limits:
+
+- `[ArtelAction]` supports synchronous instance methods on `Component` classes.
+- Async methods, iterators, and coroutines are rejected during compilation.
+- Method parameters are captured as `args`: boxed at entry, Unity objects by name,
+  anything Newtonsoft cannot serialize by type name; `ref`/`out` slots are null.
+- Return values must be serializable by Newtonsoft.Json.
+- Each component keeps at most 256 pending actions; overflow drops the oldest.
 
 - HTTP URL: `http://127.0.0.1:17310/`
-- The test page connects to the `ArtelManager` WebSocket server.
+- WebSocket URL: `ws://127.0.0.1:17311/ws`
+
+## Cheats and behaviors for the QA agent
+
+새 메서드는 `[ArtelGameFunction]`으로 등록합니다. `ReadOnly`는 게임 상태를
+바꾸지 않고 `string`을 반환하고, `Setup`은 테스트 사전조건을 준비합니다.
+`Behavior`는 `IEnumerator`로 동작을 계속 실행합니다. QA Agent는 세 종류를
+`call_game_function`으로 호출하며, `Behavior`는 중지와 연장에 쓸 실행 ID를 반환합니다.
+기존 `[ArtelCheat]`와 `[ArtelBehavior]` 등록도 지원합니다.
+
+```csharp
+public static class DebugCheats
+{
+    [ArtelGameFunction("Reads current gold.", ArtelGameFunctionMode.ReadOnly, when: nameof(HasWallet))]
+    static string GetGold() => $"gold={Wallet.Gold}";
+
+    [ArtelGameFunction("Adds gold to the player's wallet.", ArtelGameFunctionMode.Setup, when: nameof(HasWallet))]
+    static string GiveGold([CheatRange(1, 1_000_000)] int amount)
+    {
+        Wallet.Add(amount);
+        return $"gold={Wallet.Gold}";
+    }
+
+    // null means available; any other string is the reason it is not.
+    static string HasWallet() => Wallet.Instance != null ? null : "no wallet loaded";
+}
+
+public class PlayerController : MonoBehaviour
+{
+    [ArtelGameFunction("Attacks the nearest enemy until none are in range.", ArtelGameFunctionMode.Behavior, group: "combat")]
+    IEnumerator AutoAttack([CheatRange(1, 20)] float range, ArtelBehaviorContext context)
+    {
+        try
+        {
+            while (true)
+            {
+                var enemy = Enemies.Nearest(transform.position, range);
+                if (enemy == null)
+                {
+                    context.Complete("no enemy in range");
+                    yield break;
+                }
+
+                Attack(enemy);
+                context.Report($"target={enemy.name}");
+                yield return null;
+            }
+        }
+        finally
+        {
+            StopAttackAnimation(); // runs however the behavior ends
+        }
+    }
+}
+```
+
+- Parameters may be `int`, `float`, `bool`, `string` or an enum. A cheat returns `void`, `string` or
+  `IEnumerator`; a behavior returns `IEnumerator`. Anything else is a compile error.
+- Names are the method name in snake_case (`GiveGold` → `give_gold`) unless `name:` overrides it.
+- Instance methods must live on a `MonoBehaviour`; the agent picks the object with a `target`
+  selector when more than one is live.
+- Registration is generated at compile time in the editor and development builds. In a release
+  build the attributes do nothing and the actions are refused.
+- `ArtelCheats.Register` / `Unregister` add and remove cheats at runtime, for cheats built from data.
+
+### Keep the game compiling without the SDK: `ARTEL_GAME_FUNCTIONS`
+
+Wrap every file that uses `[ArtelCheat]`, `[ArtelBehavior]`, `[CheatRange]` or `ArtelBehaviorContext`
+in `#if ARTEL_GAME_FUNCTIONS`:
+
+```csharp
+#if ARTEL_GAME_FUNCTIONS
+using Artel;
+
+public static class DebugCheats
+{
+    // ...
+}
+#endif
+```
+
+That is the only step on the game side. The package owns the define:
+
+- Every time the editor loads scripts, `Artel.GameFunctions.Editor.ArtelDefineSync` adds
+  `ARTEL_GAME_FUNCTIONS` to the scripting define symbols of Standalone, the active build target,
+  and every other build target that already has defines. It writes Player Settings only when the
+  list changes.
+- When the package is removed or changes version through the Package Manager while the editor is
+  open, it removes every `ARTEL_` define before the change is applied, so the wrapped code drops
+  out and the next compile succeeds. The new version, if any, adds its own defines back.
+- An SDK without cheats, or a project without the SDK, never defines it, so the wrapped files are
+  skipped and the game builds.
+
+`ARTEL_` is reserved for this package. On every load it also removes `ARTEL_` defines that this
+version does not know, which a newer version may have left behind. Do not define your own
+`ARTEL_*` symbols; defines without the prefix are never touched.
+
+The define lives in `ProjectSettings/ProjectSettings.asset`, and Unity runs no package code while
+a script has compile errors. Two cases therefore need a manual fix: the SDK removed by editing
+`Packages/manifest.json` with the editor closed, and a committed `ARTEL_GAME_FUNCTIONS` reaching a
+machine whose SDK has no cheats. Delete `ARTEL_GAME_FUNCTIONS` once in **Project Settings > Player >
+Other Settings > Scripting Define Symbols**, or update the SDK.
+
+Games that put this code in their own assembly definition can use the asmdef's **Version
+Defines** (`kr.artel.sdk`) and **Define Constraints** instead; `Assembly-CSharp` has no asmdef, so
+the scripting define is what covers it.
+
+The wire shapes and failure messages are in [`docs/protocol.md`](../../docs/protocol.md); the
+reasoning is in [ADR 0007](../../docs/adr/0007-game-registered-cheats-and-behaviors.md).
+
+## Running while the window is not focused
+
+**The SDK changes one of the host game's global settings.** From the moment it
+opens its own connection to the orchestration server until that connection is
+stopped, it sets `Application.runInBackground` to `true`, then puts the previous
+value back. That covers the time the socket is down or retrying, not only the
+time it is up. A build that never connects to Artel is left with whatever its
+own Player Settings say.
+
+QA 실행에 필요한 JPEG capture·전송 상태 확인과 수신 메시지 처리는 `Update()`에서 돈다.
+Player Settings 기본값으로는 게임 창이 focus를 잃을 때 이 작업들이 멈출 수 있다.
+브라우저로 전환해도 영상과 제어가 계속되도록 연결을 소유하는 동안 background 실행을 유지한다.
+
+Performance reports also continue while the window is not focused. Their frame
+statistics include the background frames, which may reflect platform
+throttling; `status.isFocused` remains available so consumers can identify
+those reports.
+
+The setting is a desktop one. On mobile the OS suspends the app regardless, so
+the stream stops there while the game is in the background. What the SDK
+guarantees on the way back is that the session survives the resume: the stream
+lease is spent frame by frame and refuses to charge a single frame more than a
+second, so a stretch in which the process was not running is not mistaken for a
+viewer who went away. A viewer who really did go away still stops the stream —
+once the app is running again, the lease runs out normally and the session is
+torn down.
 
 ## Included dependencies
 
-The SDK vendors `websocket-sharp` under `Runtime/Plugins`, so projects that install `kr.artel.sdk` also get the WebSocket server dependency.
+The SDK vendors `websocket-sharp` under `Runtime/Plugins`. It uses Unity's
+`com.unity.nuget.newtonsoft-json` for protocol serialization and
+`com.unity.nuget.mono-cecil` for Editor-only IL post-processing.

@@ -1,147 +1,178 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using UnityEngine;
+using System.Threading;
 using WebSocketSharp;
 using WebSocketSharp.Server;
 
 namespace Artel
 {
-    internal interface IArtelWebSocketServer : IDisposable
+    internal sealed class ArtelWebSocketMessage
     {
-        void Start();
-        bool TryDequeueMessage(out ArtelClientMessage message);
-        void Send(ArtelConnection connection, string text);
-        void SendToAll(string text);
-    }
-
-    internal static class ArtelWebSocketServerFactory
-    {
-        public static IArtelWebSocketServer Create(string bindAddress, int port)
+        public ArtelWebSocketMessage(string text, Action<string> reply, Func<bool> isCurrent = null)
         {
-            return new WebSocketSharpArtelServer(bindAddress, port);
-        }
-    }
-
-    internal sealed class ArtelConnection
-    {
-        private readonly Action<string> sendText;
-
-        public ArtelConnection(string id, Action<string> sendText)
-        {
-            Id = id;
-            this.sendText = sendText;
-        }
-
-        public string Id { get; private set; }
-
-        public void Send(string text)
-        {
-            sendText?.Invoke(text);
-        }
-    }
-
-    internal sealed class ArtelClientMessage
-    {
-        public ArtelClientMessage(ArtelConnection connection, string text)
-        {
-            Connection = connection;
             Text = text;
+            Reply = reply;
+            IsCurrent = isCurrent ?? (() => true);
         }
 
-        public ArtelConnection Connection { get; private set; }
         public string Text { get; private set; }
+        public Action<string> Reply { get; private set; }
+        internal Func<bool> IsCurrent { get; private set; }
     }
 
-    internal sealed class WebSocketSharpArtelServer : IArtelWebSocketServer
+    internal sealed class ArtelWebSocketServer : IArtelWebSocketTransport, IArtelMediaWebSocketTransport, IArtelConnectionEpochSource
     {
         private readonly string bindAddress;
         private readonly int port;
-        private readonly ConcurrentQueue<ArtelClientMessage> incomingMessages = new ConcurrentQueue<ArtelClientMessage>();
-        private readonly Dictionary<string, ArtelConnection> connectionsById = new Dictionary<string, ArtelConnection>();
+        private readonly ConcurrentQueue<ArtelWebSocketMessage> incomingMessages =
+            new ConcurrentQueue<ArtelWebSocketMessage>();
+        private readonly Dictionary<string, Action<string>> sendByConnectionId =
+            new Dictionary<string, Action<string>>();
         private WebSocketServer server;
+        private long connectionEpoch;
+        public long ConnectionEpoch => System.Threading.Interlocked.Read(ref connectionEpoch);
+        private int mediaSending;
+        private int mediaGeneration;
 
-        public WebSocketSharpArtelServer(string bindAddress, int port)
+        public ArtelWebSocketServer(string bindAddress, int port)
         {
             this.bindAddress = bindAddress;
             this.port = port;
         }
 
+        public bool IsConnected
+        {
+            get { return server != null; }
+        }
+
+        /// <summary>
+        /// 이쪽은 받는 자리다. 걸다 마는 중간 상태가 없어 서 있거나 아니거나 둘 중 하나다.
+        /// </summary>
+        public ArtelTransportPhase Phase
+        {
+            get
+            {
+                return server == null
+                    ? ArtelTransportPhase.Idle
+                    : ArtelTransportPhase.Connected;
+            }
+        }
+
         public void Start()
         {
-            server = new WebSocketServer("ws://" + bindAddress + ":" + port);
-            server.AddWebSocketService("/ws", () =>
+            if (server != null)
             {
-                var behavior = new ArtelWebSocketBehavior();
-                behavior.Configure(
-                    OnClientConnected,
-                    OnClientDisconnected,
-                    (connection, text) => incomingMessages.Enqueue(new ArtelClientMessage(connection, text)));
-                return behavior;
-            });
+                return;
+            }
+
+            server = new WebSocketServer("ws://" + bindAddress + ":" + port);
+            server.AddWebSocketService("/ws", CreateBehavior);
             server.Start();
         }
 
-        public bool TryDequeueMessage(out ArtelClientMessage message)
+        public bool TryDequeueMessage(out ArtelWebSocketMessage message)
         {
             return incomingMessages.TryDequeue(out message);
         }
 
-        public void Send(ArtelConnection connection, string text)
+        public void Send(string text)
         {
-            connection?.Send(text);
+            lock (sendByConnectionId)
+            {
+                foreach (var send in sendByConnectionId.Values)
+                {
+                    send(text);
+                }
+            }
         }
 
-        public void SendToAll(string text)
+        public void Stop()
         {
-            lock (connectionsById)
+            Interlocked.Increment(ref mediaGeneration);
+            Interlocked.Exchange(ref mediaSending, 0);
+            server?.Stop();
+            server = null;
+
+            lock (sendByConnectionId)
             {
-                foreach (var connection in connectionsById.Values)
+                sendByConnectionId.Clear();
+            }
+        }
+
+        public bool TrySendMedia(string text, Action<bool> completed)
+        {
+            if (text == null || System.Text.Encoding.UTF8.GetByteCount(text) > 184 * 1024) return false;
+            var current = server;
+            var generation = mediaGeneration;
+            if (current == null || Interlocked.CompareExchange(ref mediaSending, 1, 0) != 0) return false;
+            try
+            {
+                current.WebSocketServices.BroadcastAsync(text, () =>
                 {
-                    connection.Send(text);
-                }
+                    if (generation == mediaGeneration) Interlocked.Exchange(ref mediaSending, 0);
+                    completed(generation == mediaGeneration);
+                });
+                return true;
+            }
+            catch (Exception)
+            {
+                if (generation == mediaGeneration) Interlocked.Exchange(ref mediaSending, 0);
+                return false;
             }
         }
 
         public void Dispose()
         {
-            server?.Stop();
-            server = null;
-
-            lock (connectionsById)
-            {
-                connectionsById.Clear();
-            }
+            Stop();
         }
 
-        private void OnClientConnected(ArtelConnection connection)
+        private ArtelWebSocketBehavior CreateBehavior()
         {
-            lock (connectionsById)
-            {
-                connectionsById[connection.Id] = connection;
-            }
-        }
-
-        private void OnClientDisconnected(string connectionId)
-        {
-            lock (connectionsById)
-            {
-                connectionsById.Remove(connectionId);
-            }
+            var behavior = new ArtelWebSocketBehavior();
+            string currentConnectionId = null;
+            behavior.Configure(
+                (connectionId, send) =>
+                {
+                    lock (sendByConnectionId)
+                    {
+                        sendByConnectionId[connectionId] = send;
+                        currentConnectionId = connectionId;
+                        System.Threading.Interlocked.Increment(ref connectionEpoch);
+                    }
+                },
+                connectionId =>
+                {
+                    lock (sendByConnectionId)
+                    {
+                        sendByConnectionId.Remove(connectionId);
+                        System.Threading.Interlocked.Increment(ref connectionEpoch);
+                    }
+                },
+                (text, reply) =>
+                {
+                    var messageEpoch = ConnectionEpoch;
+                    incomingMessages.Enqueue(new ArtelWebSocketMessage(text, reply, () =>
+                    {
+                        lock (sendByConnectionId)
+                            return currentConnectionId != null && sendByConnectionId.ContainsKey(currentConnectionId) &&
+                                   messageEpoch == ConnectionEpoch;
+                    }));
+                });
+            return behavior;
         }
     }
 
     internal sealed class ArtelWebSocketBehavior : WebSocketBehavior
     {
-        private Action<ArtelConnection> onOpen;
+        private Action<string, Action<string>> onOpen;
         private Action<string> onClose;
-        private Action<ArtelConnection, string> onMessage;
-        private ArtelConnection connection;
+        private Action<string, Action<string>> onMessage;
 
         public void Configure(
-            Action<ArtelConnection> onOpen,
+            Action<string, Action<string>> onOpen,
             Action<string> onClose,
-            Action<ArtelConnection, string> onMessage)
+            Action<string, Action<string>> onMessage)
         {
             this.onOpen = onOpen;
             this.onClose = onClose;
@@ -150,8 +181,7 @@ namespace Artel
 
         protected override void OnOpen()
         {
-            connection = new ArtelConnection(ID, Send);
-            onOpen?.Invoke(connection);
+            onOpen?.Invoke(ID, Send);
         }
 
         protected override void OnClose(CloseEventArgs e)
@@ -163,7 +193,7 @@ namespace Artel
         {
             if (e.IsText)
             {
-                onMessage?.Invoke(connection, e.Data);
+                onMessage?.Invoke(e.Data, Send);
             }
         }
     }

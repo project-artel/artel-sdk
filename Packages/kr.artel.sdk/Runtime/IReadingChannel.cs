@@ -1,0 +1,27 @@
+namespace Artel
+{
+    /// <summary>
+    /// 실행을 모는 쪽을 위해 라이브 판독을 켜고 끄는 일.
+    /// </summary>
+    /// <remarks>
+    /// 매니저 자체가 아니라 이음매다. executor 가 하는 일 전부는 게임에 무언가를 하는 것이고 이것은 SDK 에 하는 유일한
+    /// 것이다 — 따로 이름 붙이는 것이 그것을 보이게 하고, 테스트가 채널 없이 executor 를 만들 수 있게 한다.
+    /// </remarks>
+    internal interface IReadingChannel
+    {
+        /// <summary>판독을 시작하거나, 왜 안 되는지 말한다. 그 뒤에 돌고 있으면 참.</summary>
+        bool StartReadings();
+
+        /// <summary>속도를 정해 시작한다. <c>start_readings</c> 의 params 가 여기로 온다.</summary>
+        bool StartReadings(Affordances.Live.Pulse.Pace pace);
+
+        /// <summary>그것들을 끝낸다. 한 번도 시작하지 않았을 때도 안전하다.</summary>
+        void StopReadings();
+
+        /// <summary>지금 한 번 읽어 바로 보낸다. 돌고 있지 않으면 false.</summary>
+        bool FlushReadings();
+
+        /// <summary>다음 판독을 whole 로 보낸다. 받는 쪽이 누락을 알아챘을 때 청한다(ARTEL-1299). 돌고 있지 않으면 false.</summary>
+        bool ResyncReadings();
+    }
+}

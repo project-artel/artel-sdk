@@ -1,0 +1,19 @@
+{
+  "name": "Artel.GameFunctions.Fixtures",
+  "rootNamespace": "Artel.Tests.GameFunctions",
+  "references": [
+    "Artel.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS",
+    "UNITY_EDITOR || !UNITY_WEBGL"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
