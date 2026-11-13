@@ -8,7 +8,6 @@ using Artel.Evidence;
 using Artel.Pointer;
 using Artel.Protocol.Dto;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace Artel
 {
@@ -64,11 +63,6 @@ namespace Artel
         // speed the game was actually running at rather than assuming 1. Null means not paused.
         private float? scaleBeforePause;
 
-        // The scene the run began in, read while it is still the one on screen. reset_game reloads
-        // it, so "initial" means where this session started rather than a build index guessed later.
-        private readonly int startupSceneBuildIndex;
-        private readonly string startupScenePath;
-
         public ActionExecutor(
             SceneScanner scanner,
             CursorController cursorController,
@@ -96,9 +90,11 @@ namespace Artel
             this.evidenceUploader = evidenceUploader;
             this.scanProgress = scanProgress;
 
-            var startupScene = SceneManager.GetActiveScene();
-            startupSceneBuildIndex = startupScene.buildIndex;
-            startupScenePath = startupScene.path;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            var reset = new ResetGameCheat(this.gameFunctions, ReleaseOsInput, RestoreTimeScale,
+                () => virtualInput.ReleaseAll(), () => scanner?.Scan());
+            this.gameFunctions.Registry.RegisterBuiltInCheat(reset.Function, reset.Wrap);
+#endif
 
             // Moving onto a target keeps the reported pointer under the drawn cursor, but stays a
             // silent move: firing hover events out of button_click would change what an existing
@@ -265,10 +261,6 @@ namespace Artel
 
                 case "resume_time":
                     completed(ExecuteResumeTime(actionId));
-                    yield break;
-
-                case "reset_game":
-                    yield return ExecuteResetGame(actionId, parameters, completed);
                     yield break;
 
                 case "subscribe_pulse":
@@ -470,96 +462,6 @@ namespace Artel
                 Time.timeScale = scaleBeforePause.Value;
                 scaleBeforePause = null;
             }
-        }
-
-        /// <summary>
-        /// 실행이 처음 만난 자리로 게임을 되돌린다. 시작 씬을 다시 열고, 호출이 그렇게 말하면
-        /// 게임의 <c>PlayerPrefs</c> 도 함께 비운다.
-        /// </summary>
-        /// <remarks>
-        /// 로드 한 번이 열려 있는 모든 씬을 허물고, 실행이 처음 썼던 것과 같은 직렬화 데이터로
-        /// 시작 씬을 다시 세운다. 게임의 <c>DontDestroyOnLoad</c> 오브젝트도 함께 사라진다 —
-        /// 점수·인벤토리·진행도를 쥐고 있는 매니저야말로 리셋이 지워야 할 것이고, 다시 열린
-        /// 씬이 예전 것을 살려 두었던 바로 그 싱글턴 가드를 통해 자기 것을 새로 만든다.
-        ///
-        /// 씬 상태는 언제나 사라진다. <c>PlayerPrefs</c> 는 <c>clearPlayerPrefs</c> 가 그렇게
-        /// 말할 때만 사라지고, 그때도 SDK 자신의 <c>Artel.*</c> 항목은 지우기 앞뒤로 꺼냈다가
-        /// 되쓴다 — 그러지 않으면 리셋을 시킨 서버로부터 이 세션이 스스로 로그아웃한다.
-        /// 정적 필드와 디스크의 파일은 어느 쪽으로도 사라지지 않는다.
-        ///
-        /// 약속하는 것은 저장소를 비웠다는 것까지다. 게임이 첫 실행 상태라는 뜻은 아니다 —
-        /// 리로드로 죽는 매니저가 <c>OnDestroy</c> 에서 자기 키를 다시 쓸 수 있고, 이 코루틴
-        /// 안의 어떤 순서도 그것을 막지 못한다.
-        /// </remarks>
-        private IEnumerator ExecuteResetGame(
-            int actionId, List<object> parameters, Action<ActionResultDto> completed)
-        {
-            // params 를 먼저 읽는다. Build Settings 가드보다 뒤에 두면 잘못 만든 호출이
-            // "씬이 Build Settings 에 없다" 로 잘못 진단되어 돌아간다.
-            if (!ResetRequestReader.TryRead(parameters, out var request, out var error))
-            {
-                completed(ActionResultDto.Failure(actionId, error));
-                yield break;
-            }
-
-            if (startupSceneBuildIndex < 0)
-            {
-                // Loading by path fails the same way, so there is nothing to try: the scene has to
-                // be in Build Settings for the player to ever reach it again.
-                completed(ActionResultDto.Failure(
-                    actionId,
-                    "reset_game: the scene the game started in is not in Build Settings: " +
-                    startupScenePath));
-                yield break;
-            }
-
-            // behavior 는 리로드보다 먼저 끝낸다. 그래야 그 finally 가 아직 살아 있는 씬 위에서 돈다.
-            gameFunctions.EndRun("reset_game");
-
-            var inputReleaseError = ReleaseOsInput();
-            if (inputReleaseError != null)
-            {
-                completed(ActionResultDto.Failure(actionId, inputReleaseError));
-                yield break;
-            }
-
-            // A pause and a held button belong to the run, not to the game. Carried across the
-            // reload they would hand the fresh scene a frozen clock and a press it never saw begin.
-            RestoreTimeScale();
-            virtualInput.ReleaseAll();
-
-            DoomPersistentObjects();
-            if (request.ResetStatics)
-            {
-                // 옛 씬을 먼저 다 내린다. 그 OnDestroy 가 static 을 읽고 쓰므로(리스너 해제 · 저장), 비우기는 그것이 끝난 뒤여야
-                // 하고 새 씬의 Awake 보다는 앞서야 한다.
-                yield return UnloadEveryScene();
-                var outcome = GameStatics.ResetBeforeSceneLoad();
-                Debug.Log($"[Artel] reset_game reset {outcome.Fields} static field(s) in {outcome.Types} game type(s)" +
-                          (outcome.Failed.Count > 0 ? "; left as they were: " + string.Join("; ", outcome.Failed) : ""));
-            }
-
-            // 리로드 바로 앞에서 지운다. 게임이 세이브 데이터를 처음 읽는 자리는 시작 씬의
-            // Awake/Start 이므로, 로드한 뒤에 지우면 구조적으로 한 프레임 늦어 이미 읽힌
-            // 진행도를 남긴 채 Success 를 돌려주게 된다. 옛 씬이 내려가며 저장한 것도 지우도록
-            // 내리기보다 뒤에 둔다. 사이에 yield 를 두지 않는다.
-            if (request.ClearPlayerPrefs)
-            {
-                ArtelOwnedPlayerPrefs.DeleteAllExceptOwn();
-            }
-
-            yield return SceneManager.LoadSceneAsync(startupSceneBuildIndex, LoadSceneMode.Single);
-            if (request.ResetStatics)
-            {
-                GameStatics.RunAfterSceneLoad();
-            }
-
-            yield return new WaitForSecondsRealtime(AllSceneScanner.SettleSeconds);
-
-            // Every target id named an object of the scene that just died, so a button_click later
-            // in this batch would otherwise address a corpse.
-            scanner.Scan();
-            completed(ActionResultDto.Success(actionId));
         }
 
         /// <summary>
@@ -837,89 +739,6 @@ namespace Artel
 
             readings.UnsubscribePulse();
             return ActionResultDto.Success(actionId);
-        }
-
-        /// <summary>
-        /// Hands the game's <c>DontDestroyOnLoad</c> objects to the scene that is about to be
-        /// unloaded, so the reload destroys them the way it destroys everything else.
-        /// </summary>
-        /// <remarks>
-        /// Moving them beats destroying them outright: <c>Destroy</c> only takes effect at the end
-        /// of the frame, which is after the new scene's <c>Awake</c> has already asked whether a
-        /// manager exists. Moved objects die with the unload, before anything in the new scene runs.
-        /// This SDK is the one root that stays — it is running the coroutine that does this, and it
-        /// owns the socket the result goes out on.
-        /// </remarks>
-        /// <summary>
-        /// 열린 씬을 모두 내린다. 빈 자리 씬 하나를 남겨 두고 내리며, 시작 씬을 <see cref="LoadSceneMode.Single"/> 로 열 때 그것도 내려간다.
-        /// </summary>
-        private static IEnumerator UnloadEveryScene()
-        {
-            var holding = SceneManager.CreateScene("Artel reset " + Time.frameCount);
-            var opened = new List<Scene>();
-            for (var index = 0; index < SceneManager.sceneCount; index++)
-            {
-                var scene = SceneManager.GetSceneAt(index);
-                if (scene != holding)
-                {
-                    opened.Add(scene);
-                }
-            }
-
-            SceneManager.SetActiveScene(holding);
-            foreach (var scene in opened)
-            {
-                var unloading = SceneManager.UnloadSceneAsync(scene);
-                if (unloading != null)
-                {
-                    yield return unloading;
-                }
-            }
-        }
-
-        /// <summary>
-        /// SDK 가 제 일을 하려고 띄운 영구 오브젝트(연결 · 라이브 판독 등)인지. 게임의 것이 아니므로 리셋이 지우지 않는다.
-        /// </summary>
-        /// <remarks>
-        /// <see cref="ArtelManager"/> 만 살리면 라이브 판독을 보내는 <c>Artel Pulse</c> 가 첫 리셋에 함께 지워지고, 그 뒤의 런은 화면이
-        /// 무엇인지 모르는 채로 좌표로만 조작하게 된다.
-        /// </remarks>
-        internal static bool IsSdkOwned(GameObject root)
-        {
-            foreach (var component in root.GetComponentsInChildren<MonoBehaviour>(true))
-            {
-                var space = component == null ? null : component.GetType().Namespace;
-                if (space == "Artel" || (space != null && space.StartsWith("Artel.", StringComparison.Ordinal)))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static void DoomPersistentObjects()
-        {
-            var doomed = SceneManager.GetActiveScene();
-            var dropped = new List<string>();
-            foreach (var root in StraySpawnTracker.DontDestroyOnLoadScene().GetRootGameObjects())
-            {
-                if (IsSdkOwned(root))
-                {
-                    continue;
-                }
-
-                SceneManager.MoveGameObjectToScene(root, doomed);
-                dropped.Add(root.name);
-            }
-
-            if (dropped.Count > 0)
-            {
-                // Named, because a game whose bootstrap lives outside the start scene loses these
-                // for good — the one way reset_game can leave it worse off than it found it.
-                Debug.Log("[Artel] reset_game dropped persistent object(s): " +
-                          string.Join(", ", dropped));
-            }
         }
 
         /// <summary>

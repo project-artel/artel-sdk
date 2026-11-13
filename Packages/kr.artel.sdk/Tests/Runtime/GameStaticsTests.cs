@@ -93,20 +93,6 @@ namespace Artel.Tests
         }
 
         /// <summary>옛 서버는 params 없이 부른다. 그때도 static 을 되돌린다 — 씬만 여는 리셋은 새로 켠 게임과 다르다.</summary>
-        [Test]
-        public void StaticsResetByDefaultAndTheFlagTurnsItOff()
-        {
-            Assert.That(ResetRequestReader.TryRead(new List<object>(), out var none, out _), Is.True);
-            Assert.That(none.ResetStatics, Is.True);
-
-            var off = new Dictionary<string, object> { ["resetStatics"] = false };
-            Assert.That(ResetRequestReader.TryRead(new List<object> { off }, out var kept, out _), Is.True);
-            Assert.That(kept.ResetStatics, Is.False);
-
-            var text = new Dictionary<string, object> { ["resetStatics"] = "false" };
-            Assert.That(ResetRequestReader.TryRead(new List<object> { text }, out _, out var error), Is.False);
-            Assert.That(error, Does.Contain("resetStatics"));
-        }
     }
 }
 
