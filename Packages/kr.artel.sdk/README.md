@@ -549,23 +549,12 @@ across scene reloads, object recreation, or Unity restarts.
 game has opened since and rebuilds the first one from the data the launch used.
 
 ```json
-{ "type": "ACTION", "id": 5, "actions": [{ "id": 1, "method": "reset_game", "params": [] }] }
+{ "type": "ACTION", "id": 5, "actions": [{ "id": 1, "method": "invoke_cheat", "params": [{ "name": "reset_game" }] }] }
 ```
 
-`params: [{ "clearPlayerPrefs": true }]` empties the game's `PlayerPrefs` as
-well, immediately before the reload — so the startup scene's `Awake` and `Start`
-read a store that is already gone rather than one cleared a frame too late.
-
-```json
-{ "type": "ACTION", "id": 5, "actions": [{ "id": 1, "method": "reset_game", "params": [{ "clearPlayerPrefs": true }] }] }
-```
-
-Omitting `params` keeps the original behaviour: the scene reload only, with the
-store left alone. The field takes `true` or `false` and nothing else — a string
-`"true"` or a `1` is refused, because a flag this destructive must never be
-coerced from something that merely looks truthy. A build that predates this flag
-ignores it and resets scene state only; there is no version field in the `ACTION`
-protocol to detect that from the server side.
+The built-in cheat clears the game's `PlayerPrefs` and resets its static state.
+A game can replace the full reset flow with `[ArtelOverrideCheat("reset_game", "...")]`
+on a parameterless static method.
 
 The SDK's own `Artel.*` entries are read out before the wipe and written back
 after it, so a reset does not log the game out of the server that ordered it.

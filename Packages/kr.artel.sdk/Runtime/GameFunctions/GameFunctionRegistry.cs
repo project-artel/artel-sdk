@@ -1,6 +1,7 @@
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
@@ -42,7 +43,27 @@ namespace Artel
         /// <summary>프로세스마다 1 에서 시작하고, 실제로 더하거나 뺄 때마다 하나 오른다.</summary>
         public long Revision { get; private set; } = 1;
 
-        public IEnumerable<GameFunction> Cheats => cheats.Values;
+        private readonly Dictionary<string, (GameFunction Function, Func<GameFunctionCall, GameFunctionCall> Wrap)>
+            builtInCheats = new Dictionary<string, (GameFunction, Func<GameFunctionCall, GameFunctionCall>)>(StringComparer.Ordinal);
+
+        public IEnumerable<GameFunction> Cheats =>
+            cheats.Values.Concat(builtInCheats.Values.Select(entry => entry.Function)
+                .Where(function => !cheats.ContainsKey(function.Name)));
+
+        public void RegisterBuiltInCheat(GameFunction function, Func<GameFunctionCall, GameFunctionCall> wrap)
+        {
+            if (!BuiltInCheats.TryGetParameters(function.Name, out var parameters))
+            {
+                throw new ArgumentException($"Unknown built-in cheat: {function.Name}", nameof(function));
+            }
+
+            function.Params.AddRange(parameters);
+            builtInCheats[function.Name] = (function, wrap);
+            Revision++;
+        }
+
+        public GameFunctionCall ResolveCheatCall(GameFunction function) =>
+            builtInCheats.TryGetValue(function.Name, out var builtIn) ? builtIn.Wrap(function.Call) : function.Call;
 
         public IEnumerable<GameFunction> Behaviors => behaviors.Values;
 
@@ -61,6 +82,13 @@ namespace Artel
             {
                 error = "A " + KindWord(function.Kind) + " named " + function.Name + " is already registered.";
                 return false;
+            }
+
+            if (function.Kind == GameFunctionKind.Cheat &&
+                BuiltInCheats.TryGetParameters(function.Name, out var parameters))
+            {
+                function.Params.Clear();
+                function.Params.AddRange(parameters);
             }
 
             table[function.Name] = function;
@@ -83,7 +111,18 @@ namespace Artel
         public bool TryGet(GameFunctionKind kind, string name, out GameFunction function)
         {
             function = null;
-            return name != null && TableFor(kind).TryGetValue(name, out function);
+            if (name != null && TableFor(kind).TryGetValue(name, out function))
+            {
+                return true;
+            }
+
+            if (kind == GameFunctionKind.Cheat && name != null && builtInCheats.TryGetValue(name, out var builtIn))
+            {
+                function = builtIn.Function;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>테스트가 등록 자리를 잠시 바꾼다. 돌려받은 것을 Dispose 하면 원래 것이 돌아온다.</summary>
