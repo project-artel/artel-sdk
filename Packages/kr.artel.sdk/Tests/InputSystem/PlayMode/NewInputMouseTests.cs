@@ -204,6 +204,47 @@ namespace Artel.Tests
         }
 
         [UnityTest]
+        public IEnumerator VirtualOnlyMouseUser_ReceivesDeltaAndReleasesPairing()
+        {
+            yield return Move(new Vector2(100, 100));
+            var virtualMouse = Mouse.current;
+            var user = InputUser.PerformPairingWithDevice(virtualMouse);
+            users.Add(user);
+            var actions = ScriptableObject.CreateInstance<InputActionAsset>();
+            try
+            {
+                var map = actions.AddActionMap("game");
+                var look = map.AddAction("look", InputActionType.Value, "<Pointer>/delta");
+                var deltas = new List<Vector2>();
+                look.performed += context => deltas.Add(context.ReadValue<Vector2>());
+                user.AssociateActionsWithUser(actions);
+                actions.Enable();
+                ArtelInput.MoveMouse(new Vector2(130, 120));
+                yield return WaitFrames(2);
+                Assert.That(user.pairedDevices.Contains(virtualMouse), Is.True);
+                Assert.That(deltas, Does.Contain(new Vector2(30, 20)));
+                ArtelInput.ReleaseAllVirtualInput();
+                yield return WaitFrames(4);
+                Assert.That(user.pairedDevices.Contains(virtualMouse), Is.False);
+                Assert.That(virtualMouse.added, Is.False);
+            }
+            finally { Object.DestroyImmediate(actions); }
+        }
+
+        [UnityTest]
+        public IEnumerator VirtualOnlyAndPhysicalMouseUsers_AreRejectedWithoutSharingDevice()
+        {
+            yield return Move(new Vector2(100, 100));
+            var virtualMouse = Mouse.current;
+            users.Add(InputUser.PerformPairingWithDevice(virtualMouse));
+            users.Add(InputUser.PerformPairingWithDevice(physicalMouse));
+            yield return ExpectFailure("move_mouse", 130, 120);
+            Assert.That(users[0].pairedDevices.Contains(virtualMouse), Is.True);
+            Assert.That(users[1].pairedDevices.Contains(virtualMouse), Is.False);
+            Assert.That(users[1].pairedDevices.Contains(physicalMouse), Is.True);
+        }
+
+        [UnityTest]
         public IEnumerator ShortClick_WaitsForFixedInputAndUiBeforeRelease()
         {
             var source = BuildUi();
