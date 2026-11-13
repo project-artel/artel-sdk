@@ -72,7 +72,6 @@ sequenceDiagram
 | `set_button` | `[axisName, pressed]` | 놓으면 실제 입력에 축을 돌려준다 |
 | `pause_time` | `[]` | `Time.timeScale = 0`. SDK 자신은 unscaled 로 돈다 |
 | `resume_time` | `[]` | `pause_time` 이 없었으면 실패 |
-| `reset_game` | `[]` 또는 `[{ "clearPlayerPrefs": bool }]` | 시작 씬을 다시 연다 |
 | `start_readings` | `[]` 또는 `[{ "interval"?, "delivery"?, "minDelivery"? }]` | `pulse` 를 켠다. 여러 번 불러도 같음. 초 단위 속도 셋은 아래 |
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
@@ -83,10 +82,15 @@ sequenceDiagram
 | `resync_readings` | `[]` | 다음 `PULSE` 를 `whole` 로 보낸다(ARTEL-1299). 받는 쪽이 `seq` 의 빈자리로 누락을 알아챘을 때 청한다. 돌고 있지 않으면 실패 |
 | `capture_screen` | `[]` · `[targetId]` · `[targetId, options]` | 전체는 JPEG, 잘라내기는 PNG |
 | `scan_evidence` | `[]` | 출시 빌드에서는 거절. `returnValue` 는 아래 |
-| `invoke_cheat` | `[{ "name", "args"?, "target"? }]` | 게임이 등록한 cheat. 출시 빌드에서는 거절. 아래 |
+| `invoke_cheat` | `[{ "name", "args"?, "target"? }]` | SDK 내장 또는 게임이 등록한 cheat. 출시 빌드에서는 거절. 아래 |
 | `start_behavior` | `[{ "name", "args"?, "target"?, "maxSeconds"? }]` | 게임이 등록한 behavior 를 시작한다. 아래 |
 | `stop_behavior` | `[{ "behaviorId", "reason"? }]` · `[{ "all": true, "reason"? }]` | |
 | `extend_behavior` | `[{ "behaviorId", "seconds" }]` | |
+
+`reset_game`은 Editor와 development build에서 제공하는 내장 cheat다.
+`invoke_cheat`의 `name`에 `"reset_game"`을 넣는다. SDK 기본 구현은 게임의
+`PlayerPrefs`와 static 상태를 초기화하고 시작 씬을 다시 연다.
+`[ArtelOverrideCheat("reset_game", "...")]`는 인자 없는 static 메서드에 붙인다.
 
 `ArtelManager` 가 배치 안에서 직접 처리하는 둘.
 

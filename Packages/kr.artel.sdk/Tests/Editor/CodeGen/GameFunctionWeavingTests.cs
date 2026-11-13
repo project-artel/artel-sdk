@@ -166,6 +166,56 @@ namespace Artel.CodeGen.Tests
         }
 
         [Test]
+        public void ResetOverrideReplacesTheBuiltInEntry()
+        {
+            var builder = new FixtureModule();
+            var method = builder.AddMethod(builder.AddStaticType("Cheats"), "CustomReset",
+                builder.Module.TypeSystem.String, isStatic: true);
+            builder.MarkOverrideCheat(method, "reset_game");
+
+            using (var module = builder.Build())
+            {
+                var weaver = GameFunctionWeaver.TryCreate(module);
+                Assert.That(weaver.Process(), Is.True, string.Join("\n", weaver.Errors));
+
+                var registry = new GameFunctionRegistry();
+                using (GameFunctionRegistry.Replace(registry))
+                {
+                    RunRegistration(module);
+                }
+
+                var actions = new GameFunctionActions(() => registry);
+                _ = new ActionExecutor(null, null, new PointerEventDispatcher(), gameFunctions: actions);
+                var reset = registry.Cheats.Single(cheat => cheat.Name == "reset_game");
+                Assert.That(reset.Description, Is.EqualTo("Resets the game."));
+                Assert.That(reset.Params, Is.Empty);
+                Assert.That(reset.Call(null, Array.Empty<object>()), Is.EqualTo("ok"));
+            }
+        }
+
+        [Test]
+        public void OverridingAnUnknownBuiltInCheat_IsACompileError()
+        {
+            AssertRefused(builder =>
+            {
+                var method = builder.AddMethod(builder.AddStaticType("Cheats"), "Reset",
+                    builder.Module.TypeSystem.Void, isStatic: true);
+                builder.MarkOverrideCheat(method, "unknown_cheat");
+            }, "requires a supported built-in cheat name");
+        }
+
+        [Test]
+        public void OverridingResetWithParameters_IsACompileError()
+        {
+            AssertRefused(builder =>
+            {
+                var method = builder.AddMethod(builder.AddStaticType("Cheats"), "Reset",
+                    builder.Module.TypeSystem.Void, isStatic: true, ("unexpected", builder.Module.TypeSystem.Boolean));
+                builder.MarkOverrideCheat(method, "reset_game");
+            }, "does not match the built-in cheat signature");
+        }
+
+        [Test]
         public void AnInstanceMethodOutsideAMonoBehaviour_IsACompileError()
         {
             AssertRefused(builder =>
@@ -290,6 +340,11 @@ namespace Artel.CodeGen.Tests
             public void MarkBehavior(MethodDefinition method, string description)
             {
                 Mark(method, typeof(ArtelBehaviorAttribute), description, null, null, null);
+            }
+
+            public void MarkOverrideCheat(MethodDefinition method, string name)
+            {
+                Mark(method, typeof(ArtelOverrideCheatAttribute), name, "Resets the game.");
             }
 
             public void AddRange(ParameterDefinition parameter, double min, double max)

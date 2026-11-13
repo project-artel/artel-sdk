@@ -13,3 +13,5 @@ using System.Runtime.CompilerServices;
 // optional adapter와 해당 입력 테스트에만 internal 상태를 공유한다.
 [assembly: InternalsVisibleTo("Artel.InputSystem")]
 [assembly: InternalsVisibleTo("Artel.InputSystem.PlayModeTests")]
+
+[assembly: InternalsVisibleTo("Unity.Artel.CodeGen")]
