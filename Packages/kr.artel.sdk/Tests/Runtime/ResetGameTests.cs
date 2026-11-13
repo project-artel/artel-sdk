@@ -31,7 +31,7 @@ namespace Artel.Tests
         {
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
 
-            var result = Run(executor, 1, "reset_game");
+            var result = RunReset(executor, 1);
 
             Assert.That(result.IsSuccess, Is.False);
             Assert.That(result.Error, Does.Contain("Build Settings"));
@@ -50,7 +50,7 @@ namespace Artel.Tests
                 var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
                 Run(executor, 1, "pause_time");
 
-                Run(executor, 2, "reset_game");
+                RunReset(executor, 2);
 
                 Assert.That(Time.timeScale, Is.EqualTo(0f));
                 Assert.That(Run(executor, 3, "resume_time").IsSuccess, Is.True);
@@ -69,7 +69,7 @@ namespace Artel.Tests
         {
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
 
-            var result = Run(executor, 1, "reset_game", "true");
+            var result = RunReset(executor, 1, "true");
 
             Assert.That(result.IsSuccess, Is.False);
             Assert.That(result.Error, Does.Contain("object"));
@@ -84,33 +84,13 @@ namespace Artel.Tests
         {
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
 
-            var result = Run(
+            var result = RunReset(
                 executor,
                 1,
-                "reset_game",
                 new Dictionary<string, object> { { "clearPlayerPrefs", "true" } });
 
             Assert.That(result.IsSuccess, Is.False);
             Assert.That(result.Error, Does.Contain("clearPlayerPrefs"));
-        }
-
-        [Test]
-        public void ResetRejectsMoreThanOneParam()
-        {
-            var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
-
-            var result = Run(
-                executor,
-                1,
-                "reset_game",
-                new Dictionary<string, object> { { "clearPlayerPrefs", true } },
-                new Dictionary<string, object>());
-
-            Assert.That(result.IsSuccess, Is.False);
-
-            // Build Settings 실패가 아니라 params 실패여야 한다. 메시지를 보지 않으면 개수
-            // 검사를 지워도 테스트가 그대로 통과한다 — 가드가 어차피 실패를 돌려주기 때문이다.
-            Assert.That(result.Error, Does.Contain("params are [] or [options]"));
         }
 
         /// <summary>
@@ -127,10 +107,9 @@ namespace Artel.Tests
             PlayerPrefs.SetString(GameKey, "kept");
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
 
-            var result = Run(
+            var result = RunReset(
                 executor,
                 1,
-                "reset_game",
                 new Dictionary<string, object> { { "clearPlayerPrefs", true } });
 
             Assert.That(result.IsSuccess, Is.False);
@@ -148,15 +127,15 @@ namespace Artel.Tests
         {
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
 
-            var result = Run(executor, 1, "reset_game");
+            var result = RunReset(executor, 1);
 
             Assert.That(result.IsSuccess, Is.False);
             Assert.That(result.Error, Does.Contain("Build Settings"));
         }
 
-        [TestCase("reset_game", false, true)]
-        [TestCase("invoke_cheat", true, false)]
-        public void BothResetActionsUseTheGameOverride(string method, bool clearPlayerPrefs, bool resetStatics)
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        public void ResetCheatUsesTheGameOverride(bool clearPlayerPrefs, bool resetStatics)
         {
             var registry = new GameFunctionRegistry();
             var actions = new GameFunctionActions(() => registry);
@@ -177,29 +156,20 @@ namespace Artel.Tests
                 }
             }, out var error), Is.True, error);
 
-            var result = method == "reset_game"
-                ? Run(executor, 1, method)
-                : Run(executor, 1, method, new Dictionary<string, object>
-                {
-                    { "name", "reset_game" },
-                    { "args", new Dictionary<string, object>
-                        { { "clearPlayerPrefs", clearPlayerPrefs }, { "resetStatics", resetStatics } } }
-                });
+            var result = RunReset(executor, 1, new Dictionary<string, object>
+                { { "clearPlayerPrefs", clearPlayerPrefs }, { "resetStatics", resetStatics } });
 
             Assert.That(result.IsSuccess, Is.True, result.Error);
             Assert.That(calls, Is.EqualTo(1));
             Assert.That(preferencesSeen, Is.EqualTo(clearPlayerPrefs));
             Assert.That(staticsSeen, Is.EqualTo(resetStatics));
-            if (method == "invoke_cheat")
-            {
-                Assert.That(((CheatInvokedDto)result.ReturnValue).Message, Is.EqualTo("ready"));
-            }
+            Assert.That(((CheatInvokedDto)result.ReturnValue).Message, Is.EqualTo("ready"));
         }
 
         [Test]
         public void InvokeCheatUsesTheBuiltInResetWhenNoOverrideExists()
         {
-            var actions = new GameFunctionActions(() => new GameFunctionRegistry());
+            var actions = new GameFunctionActions();
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher(), gameFunctions: actions);
 
             var result = Run(executor, 1, "invoke_cheat", new Dictionary<string, object> { { "name", "reset_game" } });
@@ -223,14 +193,23 @@ namespace Artel.Tests
                 pulse.AddComponent<Artel.Affordances.Live.Pulse>();
                 game.AddComponent<GameStaticsFixtures.GameOwnedBehaviour>();
 
-                Assert.That(ActionExecutor.IsSdkOwned(pulse), Is.True);
-                Assert.That(ActionExecutor.IsSdkOwned(game), Is.False);
+                Assert.That(ResetGameCheat.IsSdkOwned(pulse), Is.True);
+                Assert.That(ResetGameCheat.IsSdkOwned(game), Is.False);
             }
             finally
             {
                 Object.DestroyImmediate(pulse);
                 Object.DestroyImmediate(game);
             }
+        }
+
+        private static ActionResultDto RunReset(ActionExecutor executor, int actionId, object args = null)
+        {
+            return Run(executor, actionId, "invoke_cheat", new Dictionary<string, object>
+            {
+                { "name", "reset_game" },
+                { "args", args }
+            });
         }
 
         private static ActionResultDto Run(

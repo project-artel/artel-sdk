@@ -24,7 +24,6 @@ namespace Artel
     internal sealed class GameFunctionActions
     {
         public const string InvokeCheatMethod = "invoke_cheat";
-        public const string ResetGameMethod = "reset_game";
         public const string StartBehaviorMethod = "start_behavior";
         public const string StopBehaviorMethod = "stop_behavior";
         public const string ExtendBehaviorMethod = "extend_behavior";
@@ -91,36 +90,12 @@ namespace Artel
 #endif
         }
 
-        public IEnumerator InvokeCheat(
-            int actionId, List<object> parameters, Action<ActionResultDto> completed,
-            Func<ResetRequest, Action<ActionResultDto>, IEnumerator> resetGame = null)
+        public IEnumerator InvokeCheat(int actionId, List<object> parameters, Action<ActionResultDto> completed)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (!TryPrepare(GameFunctionKind.Cheat, parameters, null, out var call, out var error))
             {
                 completed(Fail(actionId, InvokeCheatMethod, error));
-                yield break;
-            }
-
-            if (call.Function.Name == ResetGameMethod)
-            {
-                if (resetGame == null)
-                {
-                    completed(Fail(actionId, InvokeCheatMethod, "reset_game requires the action executor"));
-                    yield break;
-                }
-
-                yield return resetGame(
-                    new ResetRequest { ClearPlayerPrefs = (bool)call.Values[0], ResetStatics = (bool)call.Values[1] },
-                    result =>
-                    {
-                        result.Action = InvokeCheatMethod;
-                        if (result.IsSuccess)
-                        {
-                            result.ReturnValue = new CheatInvokedDto { Message = result.ReturnValue as string };
-                        }
-                        completed(result);
-                    });
                 yield break;
             }
 
@@ -132,13 +107,13 @@ namespace Artel
         }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-        internal static IEnumerator InvokePreparedCheat(
+        private IEnumerator InvokePreparedCheat(
             int actionId, GameFunction function, Component target, object[] values, Action<ActionResultDto> completed)
         {
             object result;
             try
             {
-                result = function.Call(target, values);
+                result = Registry.ResolveCheatCall(function)(target, values);
             }
             catch (Exception exception)
             {

@@ -20,7 +20,6 @@ namespace Artel
     internal sealed class GameFunctionRegistry
     {
         private static readonly Regex NamePattern = new Regex("^[a-z][a-z0-9_]*$");
-        private static readonly GameFunction BuiltInReset = CreateBuiltInReset();
 
         internal static GameFunctionRegistry Shared { get; private set; } = new GameFunctionRegistry();
 
@@ -44,9 +43,31 @@ namespace Artel
         /// <summary>프로세스마다 1 에서 시작하고, 실제로 더하거나 뺄 때마다 하나 오른다.</summary>
         public long Revision { get; private set; } = 1;
 
-        public IEnumerable<GameFunction> Cheats => cheats.ContainsKey(GameFunctionActions.ResetGameMethod)
-            ? cheats.Values
-            : cheats.Values.Append(BuiltInReset);
+        private readonly Dictionary<string, (GameFunction Function, Func<GameFunctionCall, GameFunctionCall> Wrap)>
+            builtInCheats = new Dictionary<string, (GameFunction, Func<GameFunctionCall, GameFunctionCall>)>(StringComparer.Ordinal);
+
+        public IEnumerable<GameFunction> Cheats =>
+            cheats.Values.Concat(builtInCheats.Values.Select(entry => entry.Function)
+                .Where(function => !cheats.ContainsKey(function.Name)));
+
+        public void RegisterBuiltInCheat(GameFunction function, Func<GameFunctionCall, GameFunctionCall> wrap)
+        {
+            builtInCheats[function.Name] = (function, wrap);
+            if (cheats.TryGetValue(function.Name, out var replacement))
+            {
+                UseBuiltInParameters(replacement, function);
+            }
+            Revision++;
+        }
+
+        public GameFunctionCall ResolveCheatCall(GameFunction function) =>
+            builtInCheats.TryGetValue(function.Name, out var builtIn) ? builtIn.Wrap(function.Call) : function.Call;
+
+        private static void UseBuiltInParameters(GameFunction replacement, GameFunction builtIn)
+        {
+            replacement.Params.Clear();
+            replacement.Params.AddRange(builtIn.Params);
+        }
 
         public IEnumerable<GameFunction> Behaviors => behaviors.Values;
 
@@ -67,10 +88,9 @@ namespace Artel
                 return false;
             }
 
-            if (function.Kind == GameFunctionKind.Cheat && function.Name == GameFunctionActions.ResetGameMethod)
+            if (function.Kind == GameFunctionKind.Cheat && builtInCheats.TryGetValue(function.Name, out var builtIn))
             {
-                function.Params.Clear();
-                function.Params.AddRange(BuiltInReset.Params);
+                UseBuiltInParameters(function, builtIn.Function);
             }
 
             table[function.Name] = function;
@@ -98,32 +118,13 @@ namespace Artel
                 return true;
             }
 
-            if (kind == GameFunctionKind.Cheat && name == GameFunctionActions.ResetGameMethod)
+            if (kind == GameFunctionKind.Cheat && name != null && builtInCheats.TryGetValue(name, out var builtIn))
             {
-                function = BuiltInReset;
+                function = builtIn.Function;
                 return true;
             }
 
             return false;
-        }
-
-        private static GameFunction CreateBuiltInReset()
-        {
-            var function = new GameFunction
-            {
-                Kind = GameFunctionKind.Cheat,
-                Name = GameFunctionActions.ResetGameMethod,
-                Description = "Resets the game to its startup scene. Set clearPlayerPrefs to erase game preferences."
-            };
-            function.Params.Add(new GameFunctionParam
-            {
-                Name = "clearPlayerPrefs", Type = CheatParamType.Bool, IsOptional = true, Default = false
-            });
-            function.Params.Add(new GameFunctionParam
-            {
-                Name = "resetStatics", Type = CheatParamType.Bool, IsOptional = true, Default = true
-            });
-            return function;
         }
 
         /// <summary>테스트가 등록 자리를 잠시 바꾼다. 돌려받은 것을 Dispose 하면 원래 것이 돌아온다.</summary>

@@ -186,6 +186,8 @@ namespace Artel.CodeGen.Tests
                     RunRegistration(module);
                 }
 
+                var actions = new GameFunctionActions(() => registry);
+                _ = new ActionExecutor(null, null, new PointerEventDispatcher(), gameFunctions: actions);
                 var reset = registry.Cheats.Single(cheat => cheat.Name == "reset_game");
                 Assert.That(reset.Description, Is.EqualTo("Resets the game."));
                 Assert.That(reset.Params.Select(parameter => parameter.Default), Is.EqualTo(new[] { false, true }));

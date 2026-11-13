@@ -72,7 +72,6 @@ sequenceDiagram
 | `set_button` | `[axisName, pressed]` | 놓으면 실제 입력에 축을 돌려준다 |
 | `pause_time` | `[]` | `Time.timeScale = 0`. SDK 자신은 unscaled 로 돈다 |
 | `resume_time` | `[]` | `pause_time` 이 없었으면 실패 |
-| `reset_game` | `[]` 또는 `[{ "clearPlayerPrefs": bool, "resetStatics": bool }]` | 게임을 초기화한다. 기본 구현은 시작 씬을 다시 연다 |
 | `start_readings` | `[]` 또는 `[{ "interval"?, "delivery"?, "minDelivery"? }]` | `pulse` 를 켠다. 여러 번 불러도 같음. 초 단위 속도 셋은 아래 |
 | `stop_readings` | `[]` | 돌고 있었든 아니든 성공 |
 | `watch` | `[["Type::member", ...]]` | 이름을 풀어 watch list 에 더한다. `returnValue` 는 아래 |
@@ -88,12 +87,11 @@ sequenceDiagram
 | `stop_behavior` | `[{ "behaviorId", "reason"? }]` · `[{ "all": true, "reason"? }]` | |
 | `extend_behavior` | `[{ "behaviorId", "seconds" }]` | |
 
-`reset_game`은 Editor와 development build에서 내장 cheat로도 제공한다.
-`invoke_cheat`에 `name: "reset_game"`을 보내고 같은 options를 `args`에 넣을 수 있다.
-두 경로 모두 `clearPlayerPrefs` 기본값은 `false`, `resetStatics` 기본값은 `true`다.
-게임이 `[ArtelOverrideCheat("reset_game", "...")]`를 등록하면 두 경로 모두 게임의
-구현을 호출한다. 그 메서드는 `static`이어야 하며 `bool clearPlayerPrefs`와
-`bool resetStatics`를 순서대로 받는다.
+`reset_game`은 Editor와 development build에서 제공하는 내장 cheat다.
+`invoke_cheat`의 `name`에 `"reset_game"`을 넣고, 필요하면 `args`에
+`clearPlayerPrefs`(기본값 `false`)와 `resetStatics`(기본값 `true`)를 보낸다.
+게임에서 `[ArtelOverrideCheat("reset_game", "...")]`를 등록하면 cheat registry가
+게임의 구현을 선택한다. 메서드는 `static`이어야 하며 두 `bool` 옵션을 순서대로 받는다.
 
 `ArtelManager` 가 배치 안에서 직접 처리하는 둘.
 
