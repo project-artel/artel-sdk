@@ -88,10 +88,9 @@ sequenceDiagram
 | `extend_behavior` | `[{ "behaviorId", "seconds" }]` | |
 
 `reset_game`은 Editor와 development build에서 제공하는 내장 cheat다.
-`invoke_cheat`의 `name`에 `"reset_game"`을 넣고, 필요하면 `args`에
-`clearPlayerPrefs`(기본값 `false`)와 `resetStatics`(기본값 `true`)를 보낸다.
-게임에서 `[ArtelOverrideCheat("reset_game", "...")]`를 등록하면 cheat registry가
-게임의 구현을 선택한다. 메서드는 `static`이어야 하며 두 `bool` 옵션을 순서대로 받는다.
+`invoke_cheat`의 `name`에 `"reset_game"`을 넣는다. SDK 기본 구현은 게임의
+`PlayerPrefs`와 static 상태를 초기화하고 시작 씬을 다시 연다.
+`[ArtelOverrideCheat("reset_game", "...")]`는 인자 없는 static 메서드에 붙인다.
 
 `ArtelManager` 가 배치 안에서 직접 처리하는 둘.
 

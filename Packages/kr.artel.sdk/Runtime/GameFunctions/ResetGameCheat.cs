@@ -10,8 +10,6 @@ namespace Artel
 {
     internal sealed class ResetGameCheat
     {
-        public const string Name = "reset_game";
-
         private readonly GameFunctionActions actions;
         private readonly Func<string> releaseOsInput;
         private readonly Action restoreTimeScale;
@@ -33,38 +31,23 @@ namespace Artel
             this.scan = scan;
         }
 
-        public GameFunction Function
+        public GameFunction Function => new GameFunction
         {
-            get
-            {
-                var function = new GameFunction
-                {
-                    Kind = GameFunctionKind.Cheat,
-                    Name = Name,
-                    Description = "Resets the game to its startup scene.",
-                    Call = (target, args) => ReloadStartupScene((bool)args[0], (bool)args[1]),
-                    Condition = _ => startupSceneBuildIndex < 0
-                        ? "the scene the game started in is not in Build Settings: " + startupScenePath
-                        : null
-                };
-                function.Params.Add(new GameFunctionParam
-                {
-                    Name = "clearPlayerPrefs", Type = CheatParamType.Bool, IsOptional = true, Default = false
-                });
-                function.Params.Add(new GameFunctionParam
-                {
-                    Name = "resetStatics", Type = CheatParamType.Bool, IsOptional = true, Default = true
-                });
-                return function;
-            }
-        }
+            Kind = GameFunctionKind.Cheat,
+            Name = BuiltInCheats.ResetGame,
+            Description = "Clears game preferences and static state, then reloads the startup scene.",
+            Call = (_, __) => ReloadStartupScene(),
+            Condition = _ => startupSceneBuildIndex < 0
+                ? "the scene the game started in is not in Build Settings: " + startupScenePath
+                : null
+        };
 
         public GameFunctionCall Wrap(GameFunctionCall call) =>
             (target, args) => Run(call, target, args);
 
         private IEnumerator Run(GameFunctionCall call, object target, object[] args)
         {
-            actions.EndRun(Name);
+            actions.EndRun(BuiltInCheats.ResetGame);
             var error = releaseOsInput();
             if (error != null)
             {
@@ -93,27 +76,17 @@ namespace Artel
             }
         }
 
-        private IEnumerator ReloadStartupScene(bool clearPlayerPrefs, bool resetStatics)
+        private IEnumerator ReloadStartupScene()
         {
             DoomPersistentObjects();
-            if (resetStatics)
-            {
-                yield return UnloadEveryScene();
-                var outcome = GameStatics.ResetBeforeSceneLoad();
-                Debug.Log($"[Artel] reset_game reset {outcome.Fields} static field(s) in {outcome.Types} game type(s)" +
-                          (outcome.Failed.Count > 0 ? "; left as they were: " + string.Join("; ", outcome.Failed) : ""));
-            }
+            yield return UnloadEveryScene();
+            var outcome = GameStatics.ResetBeforeSceneLoad();
+            Debug.Log($"[Artel] reset_game reset {outcome.Fields} static field(s) in {outcome.Types} game type(s)" +
+                      (outcome.Failed.Count > 0 ? "; left as they were: " + string.Join("; ", outcome.Failed) : ""));
 
-            if (clearPlayerPrefs)
-            {
-                ArtelOwnedPlayerPrefs.DeleteAllExceptOwn();
-            }
-
+            ArtelOwnedPlayerPrefs.DeleteAllExceptOwn();
             yield return SceneManager.LoadSceneAsync(startupSceneBuildIndex, LoadSceneMode.Single);
-            if (resetStatics)
-            {
-                GameStatics.RunAfterSceneLoad();
-            }
+            GameStatics.RunAfterSceneLoad();
         }
 
         /// <summary>

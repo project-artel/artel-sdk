@@ -80,14 +80,14 @@ namespace Artel.Tests
         /// 서버가 실수로 보낸 "false" 조차 저장소를 비우는 명령이 된다.
         /// </summary>
         [Test]
-        public void ResetRejectsANonBooleanClearFlag()
+        public void ResetRejectsAnUnexpectedArgument()
         {
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
 
             var result = RunReset(
                 executor,
                 1,
-                new Dictionary<string, object> { { "clearPlayerPrefs", "true" } });
+                new Dictionary<string, object> { { "clearPlayerPrefs", true } });
 
             Assert.That(result.IsSuccess, Is.False);
             Assert.That(result.Error, Does.Contain("clearPlayerPrefs"));
@@ -107,10 +107,7 @@ namespace Artel.Tests
             PlayerPrefs.SetString(GameKey, "kept");
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher());
 
-            var result = RunReset(
-                executor,
-                1,
-                new Dictionary<string, object> { { "clearPlayerPrefs", true } });
+            var result = RunReset(executor, 1);
 
             Assert.That(result.IsSuccess, Is.False);
             Assert.That(result.Error, Does.Contain("Build Settings"));
@@ -133,16 +130,13 @@ namespace Artel.Tests
             Assert.That(result.Error, Does.Contain("Build Settings"));
         }
 
-        [TestCase(false, true)]
-        [TestCase(true, false)]
-        public void ResetCheatUsesTheGameOverride(bool clearPlayerPrefs, bool resetStatics)
+        [Test]
+        public void ResetCheatUsesTheGameOverride()
         {
             var registry = new GameFunctionRegistry();
             var actions = new GameFunctionActions(() => registry);
             var executor = new ActionExecutor(null, null, new PointerEventDispatcher(), gameFunctions: actions);
             var calls = 0;
-            var preferencesSeen = false;
-            var staticsSeen = false;
             Assert.That(registry.TryAdd(new GameFunction
             {
                 Kind = GameFunctionKind.Cheat,
@@ -150,19 +144,15 @@ namespace Artel.Tests
                 Call = (target, values) =>
                 {
                     calls++;
-                    preferencesSeen = (bool)values[0];
-                    staticsSeen = (bool)values[1];
+                    Assert.That(values, Is.Empty);
                     return "ready";
                 }
             }, out var error), Is.True, error);
 
-            var result = RunReset(executor, 1, new Dictionary<string, object>
-                { { "clearPlayerPrefs", clearPlayerPrefs }, { "resetStatics", resetStatics } });
+            var result = RunReset(executor, 1);
 
             Assert.That(result.IsSuccess, Is.True, result.Error);
             Assert.That(calls, Is.EqualTo(1));
-            Assert.That(preferencesSeen, Is.EqualTo(clearPlayerPrefs));
-            Assert.That(staticsSeen, Is.EqualTo(resetStatics));
             Assert.That(((CheatInvokedDto)result.ReturnValue).Message, Is.EqualTo("ready"));
         }
 

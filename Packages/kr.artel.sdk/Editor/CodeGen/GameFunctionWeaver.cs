@@ -201,25 +201,42 @@ namespace Artel.CodeGen
                 AddError(method, "may set group only for a behavior");
             }
 
-            if (isOverride && ArgumentAt(arguments, 0) != "reset_game")
-            {
-                AddError(method, "[ArtelOverrideCheat] requires a supported built-in cheat name (reset_game)");
-            }
-            else if (isOverride && (!method.IsStatic || method.Parameters.Count != 2 ||
-                method.Parameters[0].Name != "clearPlayerPrefs" || method.Parameters[0].ParameterType.FullName != "System.Boolean" ||
-                method.Parameters[1].Name != "resetStatics" || method.Parameters[1].ParameterType.FullName != "System.Boolean"))
-            {
-                AddError(method, "overrides reset_game and requires a static method with parameters (bool clearPlayerPrefs, bool resetStatics)");
-            }
-
-            if (!isOverride && !isBehavior && candidate.Name == "reset_game")
-            {
-                AddError(method, "uses the reserved cheat name reset_game; use [ArtelOverrideCheat]");
-            }
-
             ReadParameters(candidate, isBehavior);
+            if (isOverride)
+            {
+                CheckBuiltInOverride(candidate, ArgumentAt(arguments, 0));
+            }
+            else if (!isBehavior && BuiltInCheats.TryGetParameters(candidate.Name, out _))
+            {
+                AddError(method, "uses the reserved cheat name " + candidate.Name + "; use [ArtelOverrideCheat]");
+            }
+
             ReadCondition(candidate);
             return Errors.Count == errorsBefore ? candidate : null;
+        }
+
+        private void CheckBuiltInOverride(GameFunctionCandidate candidate, string name)
+        {
+            var method = candidate.Method;
+            if (!BuiltInCheats.TryGetParameters(name, out var expected))
+            {
+                AddError(method, "[ArtelOverrideCheat] requires a supported built-in cheat name: " + name);
+                return;
+            }
+
+            if (!method.IsStatic)
+            {
+                AddError(method, "overrides " + name + " and requires a static method");
+            }
+
+            if (candidate.Parameters.Count != expected.Length ||
+                candidate.Parameters.Where((parameter, index) =>
+                    parameter.Name != expected[index].Name || parameter.Type != expected[index].Type ||
+                    (parameter.Type == CheatParamType.Enum &&
+                     parameter.Enum?.FullName != expected[index].EnumType?.FullName)).Any())
+            {
+                AddError(method, "does not match the built-in cheat signature for " + name);
+            }
         }
 
         private void CheckShape(MethodDefinition method, bool isBehavior)

@@ -52,22 +52,18 @@ namespace Artel
 
         public void RegisterBuiltInCheat(GameFunction function, Func<GameFunctionCall, GameFunctionCall> wrap)
         {
-            builtInCheats[function.Name] = (function, wrap);
-            if (cheats.TryGetValue(function.Name, out var replacement))
+            if (!BuiltInCheats.TryGetParameters(function.Name, out var parameters))
             {
-                UseBuiltInParameters(replacement, function);
+                throw new ArgumentException($"Unknown built-in cheat: {function.Name}", nameof(function));
             }
+
+            function.Params.AddRange(parameters);
+            builtInCheats[function.Name] = (function, wrap);
             Revision++;
         }
 
         public GameFunctionCall ResolveCheatCall(GameFunction function) =>
             builtInCheats.TryGetValue(function.Name, out var builtIn) ? builtIn.Wrap(function.Call) : function.Call;
-
-        private static void UseBuiltInParameters(GameFunction replacement, GameFunction builtIn)
-        {
-            replacement.Params.Clear();
-            replacement.Params.AddRange(builtIn.Params);
-        }
 
         public IEnumerable<GameFunction> Behaviors => behaviors.Values;
 
@@ -88,9 +84,11 @@ namespace Artel
                 return false;
             }
 
-            if (function.Kind == GameFunctionKind.Cheat && builtInCheats.TryGetValue(function.Name, out var builtIn))
+            if (function.Kind == GameFunctionKind.Cheat &&
+                BuiltInCheats.TryGetParameters(function.Name, out var parameters))
             {
-                UseBuiltInParameters(function, builtIn.Function);
+                function.Params.Clear();
+                function.Params.AddRange(parameters);
             }
 
             table[function.Name] = function;

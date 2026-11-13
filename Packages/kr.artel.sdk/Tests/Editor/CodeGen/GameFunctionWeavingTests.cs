@@ -166,13 +166,11 @@ namespace Artel.CodeGen.Tests
         }
 
         [Test]
-        public void ResetOverrideReplacesTheBuiltInEntryAndKeepsItsDefaults()
+        public void ResetOverrideReplacesTheBuiltInEntry()
         {
             var builder = new FixtureModule();
             var method = builder.AddMethod(builder.AddStaticType("Cheats"), "CustomReset",
-                builder.Module.TypeSystem.String, isStatic: true,
-                ("clearPlayerPrefs", builder.Module.TypeSystem.Boolean),
-                ("resetStatics", builder.Module.TypeSystem.Boolean));
+                builder.Module.TypeSystem.String, isStatic: true);
             builder.MarkOverrideCheat(method, "reset_game");
 
             using (var module = builder.Build())
@@ -190,8 +188,8 @@ namespace Artel.CodeGen.Tests
                 _ = new ActionExecutor(null, null, new PointerEventDispatcher(), gameFunctions: actions);
                 var reset = registry.Cheats.Single(cheat => cheat.Name == "reset_game");
                 Assert.That(reset.Description, Is.EqualTo("Resets the game."));
-                Assert.That(reset.Params.Select(parameter => parameter.Default), Is.EqualTo(new[] { false, true }));
-                Assert.That(reset.Call(null, new object[] { false, true }), Is.EqualTo("ok"));
+                Assert.That(reset.Params, Is.Empty);
+                Assert.That(reset.Call(null, Array.Empty<object>()), Is.EqualTo("ok"));
             }
         }
 
@@ -207,14 +205,14 @@ namespace Artel.CodeGen.Tests
         }
 
         [Test]
-        public void OverridingResetWithoutItsOptions_IsACompileError()
+        public void OverridingResetWithParameters_IsACompileError()
         {
             AssertRefused(builder =>
             {
                 var method = builder.AddMethod(builder.AddStaticType("Cheats"), "Reset",
-                    builder.Module.TypeSystem.Void, isStatic: true);
+                    builder.Module.TypeSystem.Void, isStatic: true, ("unexpected", builder.Module.TypeSystem.Boolean));
                 builder.MarkOverrideCheat(method, "reset_game");
-            }, "requires a static method with parameters");
+            }, "does not match the built-in cheat signature");
         }
 
         [Test]

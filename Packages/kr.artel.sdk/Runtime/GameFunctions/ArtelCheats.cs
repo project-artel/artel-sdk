@@ -28,9 +28,9 @@ namespace Artel
             string name, string description, IReadOnlyList<CheatParam> parameters, Func<CheatArgs, object> handler)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (name == ResetGameCheat.Name)
+            if (BuiltInCheats.TryGetParameters(name, out _))
             {
-                Debug.LogWarning("[Artel] Override reset_game with [ArtelOverrideCheat].");
+                Debug.LogWarning($"[Artel] Override {name} with [ArtelOverrideCheat].");
                 return false;
             }
 

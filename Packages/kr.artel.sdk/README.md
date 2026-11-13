@@ -552,18 +552,9 @@ game has opened since and rebuilds the first one from the data the launch used.
 { "type": "ACTION", "id": 5, "actions": [{ "id": 1, "method": "invoke_cheat", "params": [{ "name": "reset_game" }] }] }
 ```
 
-`args: { "clearPlayerPrefs": true }` empties the game's `PlayerPrefs` as
-well, immediately before the reload — so the startup scene's `Awake` and `Start`
-read a store that is already gone rather than one cleared a frame too late.
-
-```json
-{ "type": "ACTION", "id": 5, "actions": [{ "id": 1, "method": "invoke_cheat", "params": [{ "name": "reset_game", "args": { "clearPlayerPrefs": true } }] }] }
-```
-
-The cheat defaults to `clearPlayerPrefs: false` and `resetStatics: true`.
-A game can register `[ArtelOverrideCheat("reset_game", "...")]` on a static method
-that takes both boolean options. The registry selects the override in Editor
-and development builds.
+The built-in cheat clears the game's `PlayerPrefs` and resets its static state.
+A game can replace the full reset flow with `[ArtelOverrideCheat("reset_game", "...")]`
+on a parameterless static method.
 
 The SDK's own `Artel.*` entries are read out before the wipe and written back
 after it, so a reset does not log the game out of the server that ordered it.
