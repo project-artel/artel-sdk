@@ -1,6 +1,7 @@
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
@@ -19,6 +20,7 @@ namespace Artel
     internal sealed class GameFunctionRegistry
     {
         private static readonly Regex NamePattern = new Regex("^[a-z][a-z0-9_]*$");
+        private static readonly GameFunction BuiltInReset = CreateBuiltInReset();
 
         internal static GameFunctionRegistry Shared { get; private set; } = new GameFunctionRegistry();
 
@@ -42,7 +44,9 @@ namespace Artel
         /// <summary>프로세스마다 1 에서 시작하고, 실제로 더하거나 뺄 때마다 하나 오른다.</summary>
         public long Revision { get; private set; } = 1;
 
-        public IEnumerable<GameFunction> Cheats => cheats.Values;
+        public IEnumerable<GameFunction> Cheats => cheats.ContainsKey(GameFunctionActions.ResetGameMethod)
+            ? cheats.Values
+            : cheats.Values.Append(BuiltInReset);
 
         public IEnumerable<GameFunction> Behaviors => behaviors.Values;
 
@@ -61,6 +65,12 @@ namespace Artel
             {
                 error = "A " + KindWord(function.Kind) + " named " + function.Name + " is already registered.";
                 return false;
+            }
+
+            if (function.Kind == GameFunctionKind.Cheat && function.Name == GameFunctionActions.ResetGameMethod)
+            {
+                function.Params.Clear();
+                function.Params.AddRange(BuiltInReset.Params);
             }
 
             table[function.Name] = function;
@@ -83,7 +93,37 @@ namespace Artel
         public bool TryGet(GameFunctionKind kind, string name, out GameFunction function)
         {
             function = null;
-            return name != null && TableFor(kind).TryGetValue(name, out function);
+            if (name != null && TableFor(kind).TryGetValue(name, out function))
+            {
+                return true;
+            }
+
+            if (kind == GameFunctionKind.Cheat && name == GameFunctionActions.ResetGameMethod)
+            {
+                function = BuiltInReset;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static GameFunction CreateBuiltInReset()
+        {
+            var function = new GameFunction
+            {
+                Kind = GameFunctionKind.Cheat,
+                Name = GameFunctionActions.ResetGameMethod,
+                Description = "Resets the game to its startup scene. Set clearPlayerPrefs to erase game preferences."
+            };
+            function.Params.Add(new GameFunctionParam
+            {
+                Name = "clearPlayerPrefs", Type = CheatParamType.Bool, IsOptional = true, Default = false
+            });
+            function.Params.Add(new GameFunctionParam
+            {
+                Name = "resetStatics", Type = CheatParamType.Bool, IsOptional = true, Default = true
+            });
+            return function;
         }
 
         /// <summary>테스트가 등록 자리를 잠시 바꾼다. 돌려받은 것을 Dispose 하면 원래 것이 돌아온다.</summary>

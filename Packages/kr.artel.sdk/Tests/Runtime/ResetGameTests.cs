@@ -154,6 +154,61 @@ namespace Artel.Tests
             Assert.That(result.Error, Does.Contain("Build Settings"));
         }
 
+        [TestCase("reset_game", false, true)]
+        [TestCase("invoke_cheat", true, false)]
+        public void BothResetActionsUseTheGameOverride(string method, bool clearPlayerPrefs, bool resetStatics)
+        {
+            var registry = new GameFunctionRegistry();
+            var actions = new GameFunctionActions(() => registry);
+            var executor = new ActionExecutor(null, null, new PointerEventDispatcher(), gameFunctions: actions);
+            var calls = 0;
+            var preferencesSeen = false;
+            var staticsSeen = false;
+            Assert.That(registry.TryAdd(new GameFunction
+            {
+                Kind = GameFunctionKind.Cheat,
+                Name = "reset_game",
+                Call = (target, values) =>
+                {
+                    calls++;
+                    preferencesSeen = (bool)values[0];
+                    staticsSeen = (bool)values[1];
+                    return "ready";
+                }
+            }, out var error), Is.True, error);
+
+            var result = method == "reset_game"
+                ? Run(executor, 1, method)
+                : Run(executor, 1, method, new Dictionary<string, object>
+                {
+                    { "name", "reset_game" },
+                    { "args", new Dictionary<string, object>
+                        { { "clearPlayerPrefs", clearPlayerPrefs }, { "resetStatics", resetStatics } } }
+                });
+
+            Assert.That(result.IsSuccess, Is.True, result.Error);
+            Assert.That(calls, Is.EqualTo(1));
+            Assert.That(preferencesSeen, Is.EqualTo(clearPlayerPrefs));
+            Assert.That(staticsSeen, Is.EqualTo(resetStatics));
+            if (method == "invoke_cheat")
+            {
+                Assert.That(((CheatInvokedDto)result.ReturnValue).Message, Is.EqualTo("ready"));
+            }
+        }
+
+        [Test]
+        public void InvokeCheatUsesTheBuiltInResetWhenNoOverrideExists()
+        {
+            var actions = new GameFunctionActions(() => new GameFunctionRegistry());
+            var executor = new ActionExecutor(null, null, new PointerEventDispatcher(), gameFunctions: actions);
+
+            var result = Run(executor, 1, "invoke_cheat", new Dictionary<string, object> { { "name", "reset_game" } });
+
+            Assert.That(result.IsSuccess, Is.False);
+            Assert.That(result.Action, Is.EqualTo("invoke_cheat"));
+            Assert.That(result.Error, Does.Contain("Build Settings"));
+        }
+
         /// <summary>
         /// 리셋은 게임의 영구 오브젝트를 지우지만 SDK 의 것은 남긴다. 라이브 판독(<c>Artel Pulse</c>)이 첫 리셋에 지워지면
         /// 그 뒤의 런은 화면이 무엇인지 모른 채 좌표로만 조작한다.

@@ -267,7 +267,7 @@ namespace Artel
                     completed(ExecuteResumeTime(actionId));
                     yield break;
 
-                case "reset_game":
+                case GameFunctionActions.ResetGameMethod:
                     yield return ExecuteResetGame(actionId, parameters, completed);
                     yield break;
 
@@ -312,7 +312,8 @@ namespace Artel
                     yield break;
 
                 case GameFunctionActions.InvokeCheatMethod:
-                    yield return gameFunctions.InvokeCheat(actionId, parameters, completed);
+                    yield return gameFunctions.InvokeCheat(actionId, parameters, completed,
+                        (request, finish) => ExecuteResetGame(actionId, request, finish));
                     yield break;
 
                 case GameFunctionActions.StartBehaviorMethod:
@@ -471,24 +472,8 @@ namespace Artel
         }
 
         /// <summary>
-        /// 실행이 처음 만난 자리로 게임을 되돌린다. 시작 씬을 다시 열고, 호출이 그렇게 말하면
-        /// 게임의 <c>PlayerPrefs</c> 도 함께 비운다.
+        /// 기존 <c>reset_game</c> action의 options를 읽고 내장 cheat를 실행한다.
         /// </summary>
-        /// <remarks>
-        /// 로드 한 번이 열려 있는 모든 씬을 허물고, 실행이 처음 썼던 것과 같은 직렬화 데이터로
-        /// 시작 씬을 다시 세운다. 게임의 <c>DontDestroyOnLoad</c> 오브젝트도 함께 사라진다 —
-        /// 점수·인벤토리·진행도를 쥐고 있는 매니저야말로 리셋이 지워야 할 것이고, 다시 열린
-        /// 씬이 예전 것을 살려 두었던 바로 그 싱글턴 가드를 통해 자기 것을 새로 만든다.
-        ///
-        /// 씬 상태는 언제나 사라진다. <c>PlayerPrefs</c> 는 <c>clearPlayerPrefs</c> 가 그렇게
-        /// 말할 때만 사라지고, 그때도 SDK 자신의 <c>Artel.*</c> 항목은 지우기 앞뒤로 꺼냈다가
-        /// 되쓴다 — 그러지 않으면 리셋을 시킨 서버로부터 이 세션이 스스로 로그아웃한다.
-        /// 정적 필드와 디스크의 파일은 어느 쪽으로도 사라지지 않는다.
-        ///
-        /// 약속하는 것은 저장소를 비웠다는 것까지다. 게임이 첫 실행 상태라는 뜻은 아니다 —
-        /// 리로드로 죽는 매니저가 <c>OnDestroy</c> 에서 자기 키를 다시 쓸 수 있고, 이 코루틴
-        /// 안의 어떤 순서도 그것을 막지 못한다.
-        /// </remarks>
         private IEnumerator ExecuteResetGame(
             int actionId, List<object> parameters, Action<ActionResultDto> completed)
         {
@@ -500,7 +485,22 @@ namespace Artel
                 yield break;
             }
 
-            if (startupSceneBuildIndex < 0)
+            yield return ExecuteResetGame(actionId, request, result =>
+            {
+                result.ReturnValue = null;
+                completed(result);
+            });
+        }
+
+        private IEnumerator ExecuteResetGame(int actionId, ResetRequest request, Action<ActionResultDto> completed)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            gameFunctions.Registry.TryGet(GameFunctionKind.Cheat, GameFunctionActions.ResetGameMethod, out var reset);
+            var hasOverride = reset.Call != null;
+#else
+            const bool hasOverride = false;
+#endif
+            if (!hasOverride && startupSceneBuildIndex < 0)
             {
                 // Loading by path fails the same way, so there is nothing to try: the scene has to
                 // be in Build Settings for the player to ever reach it again.
@@ -512,7 +512,7 @@ namespace Artel
             }
 
             // behavior 는 리로드보다 먼저 끝낸다. 그래야 그 finally 가 아직 살아 있는 씬 위에서 돈다.
-            gameFunctions.EndRun("reset_game");
+            gameFunctions.EndRun(GameFunctionActions.ResetGameMethod);
 
             var inputReleaseError = ReleaseOsInput();
             if (inputReleaseError != null)
@@ -526,6 +526,36 @@ namespace Artel
             RestoreTimeScale();
             virtualInput.ReleaseAll();
 
+            object returnValue = null;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (hasOverride)
+            {
+                ActionResultDto result = null;
+                yield return GameFunctionActions.InvokePreparedCheat(
+                    actionId, reset, null, new object[] { request.ClearPlayerPrefs, request.ResetStatics },
+                    value => result = value);
+                if (!result.IsSuccess)
+                {
+                    scanner?.Scan();
+                    completed(ActionResultDto.Failure(actionId, result.Error));
+                    yield break;
+                }
+                returnValue = (result.ReturnValue as CheatInvokedDto)?.Message;
+            }
+            else
+#endif
+            {
+                yield return ReloadStartupScene(request);
+            }
+
+            yield return new WaitForSecondsRealtime(AllSceneScanner.SettleSeconds);
+            // Refresh scene targets for the remaining actions in the batch.
+            scanner?.Scan();
+            completed(ActionResultDto.Success(actionId, returnValue));
+        }
+
+        private IEnumerator ReloadStartupScene(ResetRequest request)
+        {
             DoomPersistentObjects();
             if (request.ResetStatics)
             {
@@ -551,13 +581,6 @@ namespace Artel
             {
                 GameStatics.RunAfterSceneLoad();
             }
-
-            yield return new WaitForSecondsRealtime(AllSceneScanner.SettleSeconds);
-
-            // Every target id named an object of the scene that just died, so a button_click later
-            // in this batch would otherwise address a corpse.
-            scanner.Scan();
-            completed(ActionResultDto.Success(actionId));
         }
 
         /// <summary>

@@ -27,6 +27,7 @@ namespace Artel.CodeGen
     {
         internal const string RuntimeAssemblyName = "Artel.Runtime";
         internal const string CheatAttributeName = "Artel.ArtelCheatAttribute";
+        internal const string OverrideCheatAttributeName = "Artel.ArtelOverrideCheatAttribute";
         internal const string BehaviorAttributeName = "Artel.ArtelBehaviorAttribute";
         internal const string FunctionAttributeName = "Artel.ArtelGameFunctionAttribute";
         internal const string RangeAttributeName = "Artel.CheatRangeAttribute";
@@ -120,7 +121,8 @@ namespace Artel.CodeGen
                     var attributes = method.CustomAttributes.Where(item =>
                         item.AttributeType.FullName == CheatAttributeName ||
                         item.AttributeType.FullName == BehaviorAttributeName ||
-                        item.AttributeType.FullName == FunctionAttributeName).ToArray();
+                        item.AttributeType.FullName == FunctionAttributeName ||
+                        item.AttributeType.FullName == OverrideCheatAttributeName).ToArray();
                     if (attributes.Length == 0)
                     {
                         continue;
@@ -155,6 +157,7 @@ namespace Artel.CodeGen
 
         private GameFunctionCandidate Read(MethodDefinition method, CustomAttribute attribute)
         {
+            var isOverride = attribute.AttributeType.FullName == OverrideCheatAttributeName;
             var arguments = attribute.ConstructorArguments;
             var unified = attribute.AttributeType.FullName == FunctionAttributeName;
             var mode = unified ? (ArtelGameFunctionMode)(int)arguments[1].Value : ArtelGameFunctionMode.Setup;
@@ -171,10 +174,10 @@ namespace Artel.CodeGen
                 Method = method,
                 Kind = isBehavior ? GameFunctionKind.Behavior : GameFunctionKind.Cheat,
                 ReadOnly = mode == ArtelGameFunctionMode.ReadOnly,
-                Description = ArgumentAt(arguments, 0),
+                Description = ArgumentAt(arguments, isOverride ? 1 : 0),
                 Group = unified ? ArgumentAt(arguments, 4) : isBehavior ? ArgumentAt(arguments, 1) : null,
-                Name = ArgumentAt(arguments, unified || isBehavior ? 2 : 1),
-                WhenName = ArgumentAt(arguments, unified || isBehavior ? 3 : 2)
+                Name = ArgumentAt(arguments, isOverride ? 0 : unified || isBehavior ? 2 : 1),
+                WhenName = isOverride ? null : ArgumentAt(arguments, unified || isBehavior ? 3 : 2)
             };
 
             var errorsBefore = Errors.Count;
@@ -197,6 +200,23 @@ namespace Artel.CodeGen
             {
                 AddError(method, "may set group only for a behavior");
             }
+
+            if (isOverride && ArgumentAt(arguments, 0) != "reset_game")
+            {
+                AddError(method, "[ArtelOverrideCheat] requires a supported built-in cheat name (reset_game)");
+            }
+            else if (isOverride && (!method.IsStatic || method.Parameters.Count != 2 ||
+                method.Parameters[0].Name != "clearPlayerPrefs" || method.Parameters[0].ParameterType.FullName != "System.Boolean" ||
+                method.Parameters[1].Name != "resetStatics" || method.Parameters[1].ParameterType.FullName != "System.Boolean"))
+            {
+                AddError(method, "overrides reset_game and requires a static method with parameters (bool clearPlayerPrefs, bool resetStatics)");
+            }
+
+            if (!isOverride && !isBehavior && candidate.Name == "reset_game")
+            {
+                AddError(method, "uses the reserved cheat name reset_game; use [ArtelOverrideCheat]");
+            }
+
             ReadParameters(candidate, isBehavior);
             ReadCondition(candidate);
             return Errors.Count == errorsBefore ? candidate : null;

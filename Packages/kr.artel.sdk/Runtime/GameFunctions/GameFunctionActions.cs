@@ -24,6 +24,7 @@ namespace Artel
     internal sealed class GameFunctionActions
     {
         public const string InvokeCheatMethod = "invoke_cheat";
+        public const string ResetGameMethod = "reset_game";
         public const string StartBehaviorMethod = "start_behavior";
         public const string StopBehaviorMethod = "stop_behavior";
         public const string ExtendBehaviorMethod = "extend_behavior";
@@ -90,7 +91,9 @@ namespace Artel
 #endif
         }
 
-        public IEnumerator InvokeCheat(int actionId, List<object> parameters, Action<ActionResultDto> completed)
+        public IEnumerator InvokeCheat(
+            int actionId, List<object> parameters, Action<ActionResultDto> completed,
+            Func<ResetRequest, Action<ActionResultDto>, IEnumerator> resetGame = null)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (!TryPrepare(GameFunctionKind.Cheat, parameters, null, out var call, out var error))
@@ -99,10 +102,43 @@ namespace Artel
                 yield break;
             }
 
+            if (call.Function.Name == ResetGameMethod)
+            {
+                if (resetGame == null)
+                {
+                    completed(Fail(actionId, InvokeCheatMethod, "reset_game requires the action executor"));
+                    yield break;
+                }
+
+                yield return resetGame(
+                    new ResetRequest { ClearPlayerPrefs = (bool)call.Values[0], ResetStatics = (bool)call.Values[1] },
+                    result =>
+                    {
+                        result.Action = InvokeCheatMethod;
+                        if (result.IsSuccess)
+                        {
+                            result.ReturnValue = new CheatInvokedDto { Message = result.ReturnValue as string };
+                        }
+                        completed(result);
+                    });
+                yield break;
+            }
+
+            yield return InvokePreparedCheat(actionId, call.Function, call.Target, call.Values, completed);
+#else
+            completed(NotInThisBuild(actionId, InvokeCheatMethod));
+            yield break;
+#endif
+        }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        internal static IEnumerator InvokePreparedCheat(
+            int actionId, GameFunction function, Component target, object[] values, Action<ActionResultDto> completed)
+        {
             object result;
             try
             {
-                result = call.Function.Call(call.Target, call.Values);
+                result = function.Call(target, values);
             }
             catch (Exception exception)
             {
@@ -118,15 +154,12 @@ namespace Artel
 
             // 결과는 상자에 담아 돌려받는다. iterator 안에서는 out 도 ref 도 쓸 수 없다.
             var outcome = new CheatOutcome();
-            yield return DriveCheat(call.Function.Name, routine, outcome);
+            yield return DriveCheat(function.Name, routine, outcome);
             completed(outcome.Error == null
                 ? Succeed(actionId, InvokeCheatMethod, new CheatInvokedDto { Message = outcome.Message })
                 : Fail(actionId, InvokeCheatMethod, outcome.Error));
-#else
-            completed(NotInThisBuild(actionId, InvokeCheatMethod));
-            yield break;
-#endif
         }
+#endif
 
         public ActionResultDto StartBehavior(int actionId, List<object> parameters)
         {
