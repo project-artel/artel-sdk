@@ -55,6 +55,9 @@ namespace Artel
             new System.Diagnostics.Stopwatch();
 
         private WebSocket client;
+        // client 를 걸 때 쓴 자격증명. Start 가 열린 연결을 그대로 둘지, 다시 걸지를 이것으로 가른다.
+        private string dialedToken;
+        private string dialedInstanceId;
         private Timer reconnectTimer;
         private Timer keepAliveTimer;
         private Timer handshakeTimer;
@@ -96,19 +99,65 @@ namespace Artel
         /// </remarks>
         public void Start()
         {
+            WebSocket stale;
             lock (gate)
             {
                 stopped = false;
                 reconnectAttempt = 0;
                 DisposeTimer(ref reconnectTimer);
 
-                if (mediaAborting || IsLive(client))
+                if (mediaAborting)
+                {
+                    return;
+                }
+
+                if (!IsLive(client))
+                {
+                    Connect();
+                    return;
+                }
+
+                if (DialedWithCurrentCredentials())
+                {
+                    return;
+                }
+
+                // 열린 연결이 지금과 다른 인스턴스나 토큰으로 걸려 있다. 오버레이에서 프로젝트를 바꾸면 등록이 새
+                // 인스턴스를 받고 이 자리를 부르는데, 여기서 돌아가면 소켓은 옛 인스턴스로 남고 새 인스턴스는 서버에서
+                // 끝내 연결되지 않는다(ARTEL-1455). 옛 소켓을 떼어 내 닫고 새 자격증명으로 다시 건다. 떼어 낸 소켓의
+                // 늦은 닫힘은 HandleClose 가 client 와 다른 소켓이라 무시한다.
+                stale = client;
+                client = null;
+                DisposeTimer(ref keepAliveTimer);
+                DisposeTimer(ref handshakeTimer);
+                DisposeTimer(ref mediaDeadline);
+                Interlocked.Increment(ref connectionEpoch);
+                UnityEngine.Debug.Log(
+                    "[Artel] Credentials changed while connected. Closing the old connection and dialing instance " +
+                    instanceIdSource() + ".");
+            }
+
+            // CloseAsync 는 막힐 수 있다. gate 를 놓고 부른다.
+            stale.CloseAsync();
+
+            lock (gate)
+            {
+                if (stopped || mediaAborting || IsLive(client))
                 {
                     return;
                 }
 
                 Connect();
             }
+        }
+
+        /// <summary>
+        /// 지금 연결이 지금의 토큰·인스턴스로 걸린 것인지. gate 를 쥔 채 부른다.
+        /// </summary>
+        private bool DialedWithCurrentCredentials()
+        {
+            return string.Equals(dialedToken, tokenSource(), StringComparison.Ordinal) &&
+                   string.Equals(dialedInstanceId, instanceIdSource(), StringComparison.Ordinal);
         }
 
         // websocket-sharp opens its own TcpClient and negotiates TLS through Mono's SslStream,
@@ -465,8 +514,11 @@ namespace Artel
             try
             {
                 var instanceId = instanceIdSource();
+                var token = tokenSource();
                 ActionDelivery = ActionDeliveryJournal.ForTarget(server.WebSocketBaseUri, instanceId);
-                endpoint = BuildEndpoint(server, tokenSource(), instanceId, ActionDelivery);
+                endpoint = BuildEndpoint(server, token, instanceId, ActionDelivery);
+                dialedToken = token;
+                dialedInstanceId = instanceId;
             }
             catch (Exception exception)
             {
