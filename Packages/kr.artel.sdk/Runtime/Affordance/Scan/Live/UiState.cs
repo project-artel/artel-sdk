@@ -52,6 +52,11 @@ namespace Artel.Affordances.Live
 
         private static readonly Dictionary<Type, bool> PressableAnswered = new Dictionary<Type, bool>();
 
+        /// <summary>클릭을 받는 uGUI 컴포넌트가 구현하는 인터페이스. 이름으로 맞춘다.</summary>
+        private const string ClickHandler = "UnityEngine.EventSystems.IPointerClickHandler";
+
+        private static readonly Dictionary<Type, bool> ClickAnswered = new Dictionary<Type, bool>();
+
         private static readonly List<Component> Holding = new List<Component>();
 
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
@@ -199,6 +204,51 @@ namespace Artel.Affordances.Live
         {
             Answered.Clear();
             PressableAnswered.Clear();
+        }
+
+        /// <summary>
+        /// 이 타입이 포인터 클릭을 받는 uGUI 컴포넌트인가: <c>Selectable</c> 이면서 <c>IPointerClickHandler</c> 를 구현한다(<c>Button</c> 등).
+        /// </summary>
+        /// <remarks>
+        /// 인스펙터 배선은 <see cref="PersistentCallReader"/> 가 읽지만, 코드가 <c>onClick.AddListener</c> 로 붙인 listener 는
+        /// 직렬화되지 않아 어디에도 남지 않는다. 실행 중에 만든 버튼의 클릭은 대개 그렇게 붙는다 — WordVenture 의 업그레이드 창은
+        /// 줄마다 버튼을 만들고 <c>AddListener(() =&gt; Upgrade(...))</c> 로 연결해, 그 버튼이 <c>offers</c> 없이 보고되고 macro 의
+        /// <c>actionable()</c> 이 늘 거짓이었다. 공개된 사실(타입이 클릭을 받는다)만 쓴다: 런타임 listener 목록은 비공개 필드라
+        /// IL2CPP 에서 남는다는 보장이 없다. 대가로 listener 가 하나도 없는 장식 버튼도 클릭을 받는 것으로 나간다.
+        /// </remarks>
+        internal static bool TakesClicks(Type type)
+        {
+            if (type == null)
+            {
+                return false;
+            }
+
+            if (ClickAnswered.TryGetValue(type, out var already))
+            {
+                return already;
+            }
+
+            if (ClickAnswered.Count >= MaxRemembered)
+            {
+                ClickAnswered.Clear();
+            }
+
+            var answer = false;
+
+            if (IsPressable(type))
+            {
+                foreach (var face in type.GetInterfaces())
+                {
+                    if (face.FullName == ClickHandler)
+                    {
+                        answer = true;
+                        break;
+                    }
+                }
+            }
+
+            ClickAnswered[type] = answer;
+            return answer;
         }
 
         private static bool IsPressable(Type type)

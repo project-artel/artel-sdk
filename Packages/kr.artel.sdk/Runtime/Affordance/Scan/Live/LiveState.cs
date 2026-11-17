@@ -431,7 +431,7 @@ namespace Artel.Affordances.Live
             {
                 if (member.Holders == null)
                 {
-                    written += Static(text, member, null, -1, ledger, member.Key, written);
+                    written += Static(text, member, null, -1, ledger, member.LedgerKey, written);
                     continue;
                 }
 
@@ -440,7 +440,7 @@ namespace Artel.Affordances.Live
                 if (holders.Count == 0)
                 {
                     // 안 보내는 것과 안 아는 것은 다르다. 청한 멤버를 쥔 것이 지금 없으면 그렇다고 적는다.
-                    written += Static(text, member, null, -1, ledger, member.Key, written);
+                    written += Static(text, member, null, -1, ledger, member.LedgerKey, written);
                     continue;
                 }
 
@@ -448,7 +448,7 @@ namespace Artel.Affordances.Live
                 {
                     written += Static(
                         text, member, holders[at], holders.Count > 1 ? at : -1, ledger,
-                        member.Key + "#" + at.ToString(Invariant), written);
+                        member.LedgerKey + "#" + at.ToString(Invariant), written);
                 }
             }
         }
@@ -507,7 +507,7 @@ namespace Artel.Affordances.Live
             if (member.Static || holders == null || holders.Count == 0)
             {
                 text.Append('{');
-                Value(text, member, null, ledger, member.Key, true);
+                Value(text, member, null, ledger, member.LedgerKey, true);
                 text.Append('}');
             }
             else
@@ -538,7 +538,7 @@ namespace Artel.Affordances.Live
                         text.Append(',');
                     }
 
-                    Value(text, member, holders[at], ledger, member.Key + "#" + at.ToString(Invariant), true);
+                    Value(text, member, holders[at], ledger, member.LedgerKey + "#" + at.ToString(Invariant), true);
                     text.Append('}');
                 }
             }
@@ -836,7 +836,7 @@ namespace Artel.Affordances.Live
                     // 장부는 언제나 말한다. 안 보내는 것과 안 아는 것은 다르다 — 여기서 빼먹으면
                     // 다음 판독이 그 값을 처음 보는 것으로 알고 전부 변화라고 보고한다.
                     var wrote = Value(
-                        said, member, component, ledger, identity + "|" + among + member.Key,
+                        said, member, component, ledger, identity + "|" + among + member.LedgerKey,
                         everything);
 
                     if (!wrote || silent)
@@ -1371,6 +1371,9 @@ namespace Artel.Affordances.Live
 
         private static readonly Dictionary<int, string> Offers = new Dictionary<int, string>();
 
+        /// <summary>클릭을 받는 uGUI 컴포넌트가 <c>offers.pointers</c> 에 내놓는 이름. 코드 스캔이 모은 핸들러 이름과 같은 꼴이다.</summary>
+        private const string PointerClick = "OnPointerClick";
+
         /// <summary>
         /// <see cref="Offers"/> 중 포인터로 겨누는 것(클릭 배선이나 포인터 핸들러)을 내놓는 객체. <see cref="Shown"/> 이 읽는다.
         /// </summary>
@@ -1423,6 +1426,12 @@ namespace Artel.Affordances.Live
                 catch (Exception)
                 {
                     // 컴포넌트 하나의 배선이지, 나머지가 내놓는 것을 잃을 이유가 아니다.
+                }
+
+                if (UiState.TakesClicks(component.GetType()) && !pointers.Contains(PointerClick))
+                {
+                    // 코드로 붙인 클릭은 persistent call 에 없다. 클릭을 받는 uGUI 컴포넌트는 그 사실로 내놓는다(`UiState.TakesClicks`).
+                    pointers.Add(PointerClick);
                 }
 
                 var offer = WatchList.OfferedBy(component.GetType().FullName);
