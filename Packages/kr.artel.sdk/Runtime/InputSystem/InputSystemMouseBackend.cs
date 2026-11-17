@@ -223,7 +223,7 @@ namespace Artel
             var count = 0;
             foreach (var user in InputUser.all)
                 foreach (var device in user.pairedDevices)
-                    if (device is Mouse && device != mouse) { count++; break; }
+                    if (device is Mouse) { count++; break; }
             return count;
         }
 
@@ -240,7 +240,8 @@ namespace Artel
                     else if (device is Mouse) hasPhysicalMouse = true;
                 }
                 if (hasPhysicalMouse && !hasVirtualMouse) InputUser.PerformPairingWithDevice(mouse, user);
-                else if (!hasPhysicalMouse && hasVirtualMouse) user.UnpairDevice(mouse);
+                // PlayerInput이 새 씬에서 이미 있던 QA 마우스만 선택할 수 있다. 이 연결도 유지한다.
+                // 해제할 때는 Dispose의 RemoveDevice가 모든 사용자에서 QA 마우스를 제거한다.
             }
         }
     }
