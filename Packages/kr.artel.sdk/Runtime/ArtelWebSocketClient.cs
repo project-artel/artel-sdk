@@ -1,13 +1,16 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Security.Authentication;
 using System.Threading;
+using System.Threading.Tasks;
 using Artel.Domain;
 using WebSocketSharp;
 
 namespace Artel
 {
-    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelMediaWebSocketTransport, IArtelConnectionEpochSource, IArtelActionDeliverySource
+    internal sealed class ArtelWebSocketClient : IArtelWebSocketTransport, IArtelMediaWebSocketTransport,
+        IArtelConnectionEpochSource, IArtelActionDeliverySource, IArtelPulseWebSocketTransport
     {
         private const string SdkWebSocketPath = "/ws/sdk";
         private long connectionEpoch;
@@ -35,6 +38,7 @@ namespace Artel
         // handshake 에 두는 마감. 아래 AbandonStalledHandshake 참고. Windows 가 대답 없는 SYN 을
         // 포기하는 데 약 21초가 걸리므로, 그보다 넉넉해야 TCP 가 스스로 낼 닫힘을 앞지르지 않는다.
         private const double HandshakeDeadlineSeconds = 30;
+        private static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(10);
 
         private readonly Server server;
 
@@ -55,6 +59,7 @@ namespace Artel
             new System.Diagnostics.Stopwatch();
 
         private WebSocket client;
+        private OrderedWebSocketWrites outboundWrites;
         private Timer reconnectTimer;
         private Timer keepAliveTimer;
         private Timer handshakeTimer;
@@ -192,6 +197,9 @@ namespace Artel
                 }
 
                 DisposeTimer(ref handshakeTimer);
+                outboundWrites?.Close();
+                outboundWrites = new OrderedWebSocketWrites(
+                    text => WriteAsync(socket, text), () => AbortFailedWrites(socket));
                 connectionUptime.Restart();
                 Interlocked.Increment(ref connectionEpoch);
                 phase = ArtelTransportPhase.Connected;
@@ -223,6 +231,7 @@ namespace Artel
                 DisposeTimer(ref keepAliveTimer);
                 DisposeTimer(ref handshakeTimer);
                 DisposeTimer(ref mediaDeadline);
+                CloseOutboundWrites();
 
                 Interlocked.Increment(ref connectionEpoch);
 
@@ -257,13 +266,57 @@ namespace Artel
 
         public void Send(string text)
         {
-            var socket = client;
-            if (socket == null || socket.ReadyState != WebSocketState.Open)
+            if (!TryEnqueueWrite(new[] { text }, isPulse: false))
             {
-                throw new InvalidOperationException("Artel WebSocket client is not connected.");
+                throw new InvalidOperationException("The Artel WebSocket send queue is unavailable.");
+            }
+        }
+
+        public bool TrySendPulse(IEnumerable<string> frames)
+        {
+            return TryEnqueueWrite(frames, isPulse: true);
+        }
+
+        private bool TryEnqueueWrite(IEnumerable<string> frames, bool isPulse, WebSocket expectedSocket = null)
+        {
+            lock (gate)
+            {
+                return !stopped && IsConnected && outboundWrites != null &&
+                       (expectedSocket == null || ReferenceEquals(expectedSocket, client)) &&
+                       outboundWrites.TryEnqueue(frames, isPulse);
+            }
+        }
+
+        private static async Task<bool> WriteAsync(WebSocket socket, string text)
+        {
+            var completed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            socket.SendAsync(text, success => completed.TrySetResult(success));
+            using (var deadline = new CancellationTokenSource())
+            {
+                var timeout = Task.Delay(WriteTimeout, deadline.Token);
+                if (await Task.WhenAny(completed.Task, timeout).ConfigureAwait(false) != completed.Task)
+                    return false;
+
+                deadline.Cancel();
+                return await completed.Task.ConfigureAwait(false);
+            }
+        }
+
+        private void AbortFailedWrites(WebSocket socket)
+        {
+            lock (gate)
+            {
+                if (stopped || !ReferenceEquals(socket, client)) return;
             }
 
-            socket.Send(text);
+            // 송신 중인 stream을 해제해야 다음 연결로 상태를 다시 보낼 수 있다.
+            socket.Close(CloseStatusCode.Abnormal);
+        }
+
+        private void CloseOutboundWrites()
+        {
+            outboundWrites?.Close();
+            outboundWrites = null;
         }
 
         public bool TrySendMedia(string text, Action<bool> completed)
@@ -324,6 +377,7 @@ namespace Artel
                 DisposeTimer(ref keepAliveTimer);
                 DisposeTimer(ref handshakeTimer);
                 client = null;
+                CloseOutboundWrites();
                 mediaGeneration++;
                 mediaAborting = true;
             }
@@ -367,6 +421,7 @@ namespace Artel
                 DisposeTimer(ref keepAliveTimer);
                 DisposeTimer(ref handshakeTimer);
                 DisposeTimer(ref mediaDeadline);
+                CloseOutboundWrites();
                 connectionUptime.Reset();
                 phase = ArtelTransportPhase.Idle;
 
@@ -435,7 +490,11 @@ namespace Artel
             }
 
             var messageEpoch = ConnectionEpoch;
-            incomingMessages.Enqueue(new ArtelWebSocketMessage(eventArgs.Data, Send,
+            incomingMessages.Enqueue(new ArtelWebSocketMessage(eventArgs.Data, text =>
+                {
+                    if (!TryEnqueueWrite(new[] { text }, isPulse: false, expectedSocket: socket))
+                        throw new InvalidOperationException("The Artel WebSocket send queue is unavailable.");
+                },
                 () => ReferenceEquals(socket, client) && IsConnected && ConnectionEpoch == messageEpoch));
         }
 
@@ -457,6 +516,7 @@ namespace Artel
         {
             var previous = client;
             client = null;
+            CloseOutboundWrites();
             Discard(previous);
             DisposeTimer(ref handshakeTimer);
             DisposeTimer(ref mediaDeadline);
