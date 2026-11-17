@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using Artel.Affordances.Live;
 using Artel.Protocol.Dto;
@@ -61,11 +62,25 @@ namespace Artel
 
             var id = nextMessageId();
             var message = Framed(document, id);
+            var frames = EncodeFrames(message, id);
+            if (transport is IArtelPulseWebSocketTransport pulseTransport)
+            {
+                if (!pulseTransport.TrySendPulse(frames))
+                    throw new InvalidOperationException("The Artel Pulse send queue could not accept the reading.");
+                return;
+            }
+
+            foreach (var frame in frames)
+                transport.Send(frame);
+        }
+
+        private static IEnumerable<string> EncodeFrames(string message, long id)
+        {
             int byteCount = Encoding.UTF8.GetByteCount(message);
             if (byteCount <= MaxPulseBytes)
             {
-                transport.Send(message);
-                return;
+                yield return message;
+                yield break;
             }
 
             // UTF-8 바이트를 그대로 나누므로 멀티바이트 문자와 원본 JSON을 복원할 수 있다.
@@ -81,7 +96,7 @@ namespace Artel
                     Count = count,
                     Data = Convert.ToBase64String(bytes, offset, Math.Min(ChunkBytes, bytes.Length - offset))
                 };
-                transport.Send(JsonConvert.SerializeObject(chunk, Formatting.None));
+                yield return JsonConvert.SerializeObject(chunk, Formatting.None);
             }
         }
 

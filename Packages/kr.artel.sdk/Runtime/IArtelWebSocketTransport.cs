@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Artel
 {
@@ -10,6 +11,11 @@ namespace Artel
     internal interface IArtelMediaWebSocketTransport
     {
         bool TrySendMedia(string text, Action<bool> completed);
+    }
+
+    internal interface IArtelPulseWebSocketTransport
+    {
+        bool TrySendPulse(IEnumerable<string> frames);
     }
 
     internal interface IArtelWebSocketTransport : IDisposable
