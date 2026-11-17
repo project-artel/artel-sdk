@@ -6,12 +6,13 @@ using Artel.Protocol;
 
 namespace Artel
 {
-    /// <summary><c>start_readings</c> 의 params. <c>[]</c> 이면 기본 속도, <c>[{ interval?, delivery?, minDelivery? }]</c> 이면 그 값.</summary>
+    /// <summary><c>subscribe_pulse</c> 의 params. <c>[]</c> 이면 기본 속도, 옵션 객체에서 속도와 <c>force</c>를 읽는다.</summary>
     internal static class PaceReader
     {
-        public static bool TryRead(List<object> parameters, out Pulse.Pace pace, out string error)
+        public static bool TryRead(List<object> parameters, out Pulse.Pace pace, out bool force, out string error)
         {
             pace = Pulse.Pace.Default;
+            force = false;
             error = null;
 
             // params 없는 호출은 속도를 받기 전의 서버가 보내는 모양 그대로다.
@@ -30,6 +31,16 @@ namespace Artel
             {
                 error = "start_readings options must be an object.";
                 return false;
+            }
+
+            if (options.TryGetValue("force", out var forceValue))
+            {
+                if (!(forceValue is bool boolean))
+                {
+                    error = "subscribe_pulse force must be a boolean.";
+                    return false;
+                }
+                force = boolean;
             }
 
             if (!Seconds(options, "interval", ref pace.Interval, ref error) ||

@@ -263,10 +263,12 @@ namespace Artel
                     completed(ExecuteResumeTime(actionId));
                     yield break;
 
+                case "subscribe_pulse":
                 case "start_readings":
                     completed(ExecuteStartReadings(actionId, parameters));
                     yield break;
 
+                case "unsubscribe_pulse":
                 case "stop_readings":
                     completed(ExecuteStopReadings(actionId));
                     yield break;
@@ -476,12 +478,12 @@ namespace Artel
                 return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
             }
 
-            if (!PaceReader.TryRead(parameters, out var pace, out var error))
+            if (!PaceReader.TryRead(parameters, out var pace, out var force, out var error))
             {
                 return ActionResultDto.Failure(actionId, error);
             }
 
-            return readings.StartReadings(pace)
+            return readings.SubscribePulse(pace, force)
                 ? ActionResultDto.Success(actionId)
                 : ActionResultDto.Failure(
                     actionId, "Live readings could not start. A release build does not take them.");
@@ -735,7 +737,7 @@ namespace Artel
                 return ActionResultDto.Failure(actionId, "This build cannot take live readings.");
             }
 
-            readings.StopReadings();
+            readings.UnsubscribePulse();
             return ActionResultDto.Success(actionId);
         }
 

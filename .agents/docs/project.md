@@ -35,6 +35,11 @@ Fill this document during project initialization. Agents must verify commands ag
 
 ## Running package tests
 
+When validating reconnect recovery, assert that a new consumer receives a whole
+`PULSE`, not only that the socket opened or `start_readings` returned success.
+An already-running stream can stay silent in a settled scene; use
+`subscribe_pulse [{"force":true}]` when a new QA needs its first snapshot.
+
 The repository root is not a Unity project — the only one is the `samples/WordVenture`
 submodule, and its `Packages/manifest.json` has no `testables` entry, so the Test Runner
 does not discover `Packages/kr.artel.sdk/Tests` there. Tests run against a throwaway
