@@ -163,6 +163,9 @@ namespace Artel
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void InstallLaunchSession()
         {
+#if DEVELOPMENT_BUILD && !UNITY_EDITOR
+            Debug.developerConsoleEnabled = false;
+#endif
             LaunchArguments.LogErrors();
             if (LaunchArguments.ClearsSessionOnly)
             {
@@ -286,10 +289,6 @@ namespace Artel
             }
 
             var keyboardStatus = GetComponent<KeyboardStatusController>();
-            if (keyboardStatus == null)
-            {
-                keyboardStatus = gameObject.AddComponent<KeyboardStatusController>();
-            }
 
             pointerEvents = new PointerEventDispatcher();
             jsonCodec = new NewtonsoftJsonCodec();
