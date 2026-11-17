@@ -1371,6 +1371,9 @@ namespace Artel.Affordances.Live
 
         private static readonly Dictionary<int, string> Offers = new Dictionary<int, string>();
 
+        /// <summary>클릭을 받는 uGUI 컴포넌트가 <c>offers.pointers</c> 에 내놓는 이름. 코드 스캔이 모은 핸들러 이름과 같은 꼴이다.</summary>
+        private const string PointerClick = "OnPointerClick";
+
         /// <summary>
         /// <see cref="Offers"/> 중 포인터로 겨누는 것(클릭 배선이나 포인터 핸들러)을 내놓는 객체. <see cref="Shown"/> 이 읽는다.
         /// </summary>
@@ -1423,6 +1426,12 @@ namespace Artel.Affordances.Live
                 catch (Exception)
                 {
                     // 컴포넌트 하나의 배선이지, 나머지가 내놓는 것을 잃을 이유가 아니다.
+                }
+
+                if (UiState.TakesClicks(component.GetType()) && !pointers.Contains(PointerClick))
+                {
+                    // 코드로 붙인 클릭은 persistent call 에 없다. 클릭을 받는 uGUI 컴포넌트는 그 사실로 내놓는다(`UiState.TakesClicks`).
+                    pointers.Add(PointerClick);
                 }
 
                 var offer = WatchList.OfferedBy(component.GetType().FullName);

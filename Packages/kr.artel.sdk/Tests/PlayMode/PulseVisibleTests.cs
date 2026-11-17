@@ -19,7 +19,8 @@ namespace Artel.Tests
     /// <remarks>
     /// macro 의 <c>actionable</c> 이 이 값으로 덮인 버튼을 거른다. 덮개는 <see cref="BlockVisibilityTests"/> 와 같은 방식으로
     /// 만든다 — 나중에 붙인 형제가 위에 그려지고 raycast 도 먼저 맞는다. 클릭 배선은
-    /// <c>UnityEventTools.AddPersistentListener</c> 로 인스펙터 배선을 흉내 낸다. <c>offers.clicks</c> 는 persistent call 만 읽는다.
+    /// <c>UnityEventTools.AddPersistentListener</c> 로 인스펙터 배선을 흉내 낸다. <c>offers.clicks</c> 는 persistent call 만 읽고,
+    /// 코드로 붙인 클릭은 버튼 타입이 클릭을 받는다는 사실로 <c>offers.pointers</c> 에 나간다.
     /// </remarks>
     public sealed class PulseVisibleTests
     {
@@ -93,16 +94,31 @@ namespace Artel.Tests
         }
 
         [UnityTest]
-        public IEnumerator AnObjectThatOffersNoClick_CarriesNoVisible()
+        public IEnumerator AButtonWiredOnlyInCode_OffersItsClick_AndCarriesVisible()
         {
+            // 코드가 onClick.AddListener 로 붙인 클릭은 persistent call 에 없다. 버튼은 클릭을 받는 타입이라는 사실로 내놓는다.
             var canvas = UiCanvas();
-            var button = Panel("artel pulse visible unwired", canvas.transform, new Vector2(100f, 100f));
-            button.AddComponent<Button>();
+            var button = Panel("artel pulse visible code wired", canvas.transform, new Vector2(100f, 100f));
+            button.AddComponent<Button>().onClick.AddListener(() => { });
             yield return null;
 
             var document = Compose();
-            Assert.That(Entry(document, button.name), Is.Not.Null, "a Selectable is walked");
-            Assert.That(VisibleOf(document, button.name), Is.Null);
+            var entry = Entry(document, button.name);
+            Assert.That(entry, Is.Not.Null, "a Selectable is walked");
+            Assert.That(entry["offers"]?["pointers"]?.ToObject<string[]>(), Does.Contain("OnPointerClick"));
+            Assert.That(VisibleOf(document, button.name), Is.EqualTo(true));
+        }
+
+        [UnityTest]
+        public IEnumerator AnObjectThatTakesNoClick_CarriesNoVisible()
+        {
+            var canvas = UiCanvas();
+            var label = Panel("artel pulse visible label", canvas.transform, new Vector2(100f, 100f));
+            yield return null;
+
+            var document = Compose();
+            Assert.That(Entry(document, label.name)?["offers"], Is.Null);
+            Assert.That(VisibleOf(document, label.name), Is.Null);
         }
 
         [UnityTest]
