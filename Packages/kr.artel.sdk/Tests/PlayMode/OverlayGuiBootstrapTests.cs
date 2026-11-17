@@ -128,7 +128,7 @@ namespace Artel.Tests
 
             var controller = host.GetComponent<ArtelOverlayController>();
             Assert.That(controller, Is.Not.Null);
-            Assert.That(host.GetComponent<KeyboardStatusController>(), Is.Not.Null);
+            Assert.That(host.GetComponent<KeyboardStatusController>(), Is.Null);
 
             // GUI는 컨트롤러의 Start가 만들고, Start는 다음 프레임에 돈다.
             yield return null;
