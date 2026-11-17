@@ -247,6 +247,36 @@ namespace Artel.Tests
             Assert.That(document, Does.Contain("\"declaring\":\"Artel.Tests.LookupProgress\",\"member\":\"stage\""));
             Assert.That(document, Does.Contain("\"value\":3"));
         }
+
+        [Test]
+        public void 같은_static_을_지나는_두_값은_장부를_나눠_쓰지_않는다()
+        {
+            // 형제의 직전 값과 같아진 값이 "안 움직였다" 로 읽혀 빠졌다. 슬롯 두 개 중 나중에 찬 쪽이 0 으로 남았다.
+            LedgerZone.Instance = new LedgerZone();
+            LedgerZone.Instance.Spells.Add(1);
+            Lookup.Watch(
+                new[] { "Artel.Tests.LedgerZone::Instance.Elements.Count", "Artel.Tests.LedgerZone::Instance.Spells.Count" },
+                new Lookup.Walk());
+
+            var since = new Dictionary<string, string>();
+            LiveState.Compose(1, default, new Restless(), new Restless(1f), since, false, out _);
+
+            LedgerZone.Instance.Elements.Add(1);
+            var document = LiveState.Compose(2, default, new Restless(), new Restless(1f), since, false, out _);
+
+            Assert.That(
+                document,
+                Does.Match("\"member\":\"Instance\\.Elements\\.Count\",\"type\":\"[^\"]*\",\"value\":1"));
+        }
+    }
+
+    internal sealed class LedgerZone
+    {
+        public static LedgerZone Instance;
+
+        public List<int> Spells = new List<int>();
+
+        public List<int> Elements = new List<int>();
     }
 
     internal static class LookupRoots

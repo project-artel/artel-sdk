@@ -431,7 +431,7 @@ namespace Artel.Affordances.Live
             {
                 if (member.Holders == null)
                 {
-                    written += Static(text, member, null, -1, ledger, member.Key, written);
+                    written += Static(text, member, null, -1, ledger, member.LedgerKey, written);
                     continue;
                 }
 
@@ -440,7 +440,7 @@ namespace Artel.Affordances.Live
                 if (holders.Count == 0)
                 {
                     // 안 보내는 것과 안 아는 것은 다르다. 청한 멤버를 쥔 것이 지금 없으면 그렇다고 적는다.
-                    written += Static(text, member, null, -1, ledger, member.Key, written);
+                    written += Static(text, member, null, -1, ledger, member.LedgerKey, written);
                     continue;
                 }
 
@@ -448,7 +448,7 @@ namespace Artel.Affordances.Live
                 {
                     written += Static(
                         text, member, holders[at], holders.Count > 1 ? at : -1, ledger,
-                        member.Key + "#" + at.ToString(Invariant), written);
+                        member.LedgerKey + "#" + at.ToString(Invariant), written);
                 }
             }
         }
@@ -507,7 +507,7 @@ namespace Artel.Affordances.Live
             if (member.Static || holders == null || holders.Count == 0)
             {
                 text.Append('{');
-                Value(text, member, null, ledger, member.Key, true);
+                Value(text, member, null, ledger, member.LedgerKey, true);
                 text.Append('}');
             }
             else
@@ -538,7 +538,7 @@ namespace Artel.Affordances.Live
                         text.Append(',');
                     }
 
-                    Value(text, member, holders[at], ledger, member.Key + "#" + at.ToString(Invariant), true);
+                    Value(text, member, holders[at], ledger, member.LedgerKey + "#" + at.ToString(Invariant), true);
                     text.Append('}');
                 }
             }
@@ -836,7 +836,7 @@ namespace Artel.Affordances.Live
                     // 장부는 언제나 말한다. 안 보내는 것과 안 아는 것은 다르다 — 여기서 빼먹으면
                     // 다음 판독이 그 값을 처음 보는 것으로 알고 전부 변화라고 보고한다.
                     var wrote = Value(
-                        said, member, component, ledger, identity + "|" + among + member.Key,
+                        said, member, component, ledger, identity + "|" + among + member.LedgerKey,
                         everything);
 
                     if (!wrote || silent)

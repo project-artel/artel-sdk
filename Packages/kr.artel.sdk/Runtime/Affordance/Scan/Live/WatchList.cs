@@ -72,6 +72,14 @@ namespace Artel.Affordances.Live
 
         /// <summary>이 멤버를 다른 어떤 것과도 구별해 부르는 이름.</summary>
         internal string Key => Declaring + "::" + Member;
+
+        /// <summary>장부가 이 멤버의 값을 기억하는 이름. <see cref="Key"/> 에 걸어간 경로까지 붙인다.</summary>
+        /// <remarks>
+        /// 같은 필드를 거쳐 닿는 값은 여럿일 수 있다 — <c>Instance.spellCards.Count</c> 와 <c>Instance.magicTypeCards.Count</c>
+        /// 는 둘 다 <c>Instance</c> 를 지난다. 그 둘이 한 이름을 나눠 쓰면 장부는 새 값을 자기 직전 값이 아니라 형제의 직전 값과
+        /// 비교하고, 형제의 옛 값과 같아진 값은 "안 움직였다" 로 읽혀 다시 나가지 않는다. 읽는 쪽은 옛 값을 계속 쥔다.
+        /// </remarks>
+        internal string LedgerKey => Via == null ? Key : Key + "." + Via;
     }
 
     /// <summary>
