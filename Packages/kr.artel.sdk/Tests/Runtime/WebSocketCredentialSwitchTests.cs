@@ -38,21 +38,22 @@ namespace Artel.Tests.Transport
             {
                 server.Start();
                 client.Start();
-                yield return WaitFor(() => client.IsConnected);
+                yield return WaitFor(() => client.IsConnected && Dialed.Count == 1);
                 var firstEpoch = client.ConnectionEpoch;
 
                 // 같은 자격증명이면 열린 연결을 그대로 둔다.
                 client.Start();
-                yield return null;
+                Assert.That(client.IsConnected, Is.True);
+                Assert.That(client.ConnectionEpoch, Is.EqualTo(firstEpoch));
                 Assert.That(Dialed.Count, Is.EqualTo(1));
 
                 instance = "instance-b";
                 client.Start();
-                yield return WaitFor(() => Dialed.Count == 2 && client.IsConnected);
+                var sessions = server.WebSocketServices["/ws/sdk"].Sessions;
+                yield return WaitFor(() => Dialed.Count == 2 && client.IsConnected && sessions.Count == 1);
 
                 Assert.That(Dialed.ToArray(), Is.EqualTo(new[] { "instance-a", "instance-b" }));
                 Assert.That(client.ConnectionEpoch, Is.GreaterThan(firstEpoch));
-                Assert.That(server.WebSocketServices["/ws/sdk"].Sessions.Count, Is.EqualTo(1));
             }
             finally
             {
