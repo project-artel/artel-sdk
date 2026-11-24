@@ -446,6 +446,42 @@ namespace Artel.Tests
             AssertSamePixel((Vector2)ArtelInput.mousePosition, UnityPointOf(new Vector2(260f, 90f)));
         }
 
+        [UnityTest]
+        public IEnumerator MoveMouse_ByAdditiveSceneSelector_UsesTheScannedScene()
+        {
+            var manager = CreateManager(new RecordingTransport());
+            yield return null;
+            var target = CreateDragTarget("Selecte", UnityPointOf(new Vector2(260f, 90f)));
+            var gameplay = SceneManager.CreateScene("GamePlay QA");
+            var other = SceneManager.CreateScene("OtherGamePlay QA");
+            AsyncOperation unload = null;
+            try
+            {
+                SceneManager.MoveGameObjectToScene(canvasObject, gameplay);
+                var decoy = new GameObject(canvasObject.name);
+                SceneManager.MoveGameObjectToScene(decoy, other);
+                new GameObject(target.name).transform.SetParent(decoy.transform);
+                yield return null;
+                IsolateFixtureRaycaster();
+
+                string selector = ScenePath.SelectorOf(target.transform, 0);
+                Assert.That(selector, Does.StartWith("@scene/GamePlay%20QA/"));
+                Assert.That(Artel.Pointer.ScenePathSelectorResolver.TryResolve(selector, out var found, out _), Is.True);
+                Assert.That(found, Is.EqualTo(target.transform));
+                yield return RunBatch(manager, NewAction(1, "move_mouse", Params(selector)));
+                AssertSamePixel((Vector2)ArtelInput.mousePosition, UnityPointOf(new Vector2(260f, 90f)));
+
+                unload = SceneManager.UnloadSceneAsync(gameplay);
+                yield return unload;
+                Assert.That(Artel.Pointer.ScenePathSelectorResolver.TryResolve(selector, out _, out _), Is.False);
+            }
+            finally
+            {
+                if (unload == null && gameplay.isLoaded) SceneManager.UnloadSceneAsync(gameplay);
+                if (other.isLoaded) SceneManager.UnloadSceneAsync(other);
+            }
+        }
+
 #if UNITY_EDITOR
         [UnityTest]
         public IEnumerator MoveMouse_ByPersistentScanSelector_ResolvesAfterSceneTransfer()

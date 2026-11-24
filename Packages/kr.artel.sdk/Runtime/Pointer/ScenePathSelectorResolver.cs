@@ -7,7 +7,7 @@ using UnityEngine.SceneManagement;
 namespace Artel.Pointer
 {
     /// <summary>
-    /// <c>ScenePath.SelectorOf</c>의 문자열로 active scene 또는 명시된 persistent scene의
+    /// <c>ScenePath.SelectorOf</c>의 문자열로 active, additive 또는 persistent scene의
     /// <see cref="Transform"/>을 찾는다.
     /// </summary>
     /// <remarks>
@@ -41,8 +41,8 @@ namespace Artel.Pointer
                 return false;
             }
 
-            var persistent = selector.StartsWith(ScenePath.PersistentSelectorPrefix, StringComparison.Ordinal);
-            var path = persistent ? selector.Substring(ScenePath.PersistentSelectorPrefix.Length) : selector;
+            if (!TryGetScene(selector, out var scene, out var path, out error))
+                return false;
             if (path.StartsWith(TruncatedPrefix, StringComparison.Ordinal))
             {
                 error = "Selector was truncated by the scan and cannot be resolved: " + selector;
@@ -57,13 +57,6 @@ namespace Artel.Pointer
                 return false;
             }
 
-            if (persistent && !Application.isPlaying)
-            {
-                error = "Persistent selector requires play mode: " + selector;
-                return false;
-            }
-
-            var scene = persistent ? StraySpawnTracker.DontDestroyOnLoadScene() : SceneManager.GetActiveScene();
             var roots = scene.GetRootGameObjects();
             if (rootIndex < 0 || rootIndex >= roots.Length || roots[rootIndex].name != rootName)
             {
@@ -102,6 +95,53 @@ namespace Artel.Pointer
             transform = current;
             error = null;
             return true;
+        }
+
+        private static bool TryGetScene(string selector, out Scene scene, out string path, out string error)
+        {
+            scene = default;
+            path = selector;
+            error = null;
+            if (selector.StartsWith(ScenePath.PersistentSelectorPrefix, StringComparison.Ordinal))
+            {
+                if (!Application.isPlaying)
+                {
+                    error = "Persistent selector requires play mode: " + selector;
+                    return false;
+                }
+                scene = StraySpawnTracker.DontDestroyOnLoadScene();
+                path = selector.Substring(ScenePath.PersistentSelectorPrefix.Length);
+                return true;
+            }
+            if (!selector.StartsWith(ScenePath.SceneSelectorPrefix, StringComparison.Ordinal))
+            {
+                scene = SceneManager.GetActiveScene();
+                return true;
+            }
+
+            int start = ScenePath.SceneSelectorPrefix.Length;
+            int end = selector.IndexOf('/', start);
+            if (end <= start)
+            {
+                error = "Invalid scene selector: " + selector;
+                return false;
+            }
+            string key = Uri.UnescapeDataString(selector.Substring(start, end - start));
+            path = selector.Substring(end + 1);
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var candidate = SceneManager.GetSceneAt(i);
+                if (!candidate.isLoaded || ScenePath.SceneKey(candidate) != key) continue;
+                if (scene.IsValid())
+                {
+                    error = "Ambiguous scene in selector: " + selector;
+                    return false;
+                }
+                scene = candidate;
+            }
+            if (scene.IsValid()) return true;
+            error = "Scene is not loaded for selector: " + selector;
+            return false;
         }
 
         /// <summary>

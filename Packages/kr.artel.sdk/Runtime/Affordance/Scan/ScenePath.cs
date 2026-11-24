@@ -1,5 +1,6 @@
 using System.Text;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Artel.Affordances.Scan
 {
@@ -16,6 +17,7 @@ namespace Artel.Affordances.Scan
         private const int MaxDepth = 64;
 
         internal const string PersistentSelectorPrefix = "@persistent/";
+        internal const string SceneSelectorPrefix = "@scene/";
 
         internal static string Of(Transform transform)
         {
@@ -40,11 +42,17 @@ namespace Artel.Affordances.Scan
         internal static string SelectorOf(Transform transform, int rootIndex)
         {
             var path = Of(transform, rootIndex);
-            // Persistent scene과 active scene의 같은 이름·root index를 구분한다.
-            return transform != null && Application.isPlaying && transform.gameObject.scene.name == "DontDestroyOnLoad"
-                ? PersistentSelectorPrefix + path
-                : path;
+            if (transform == null) return null;
+            var scene = transform.gameObject.scene;
+            if (Application.isPlaying && scene.name == "DontDestroyOnLoad")
+                return PersistentSelectorPrefix + path;
+            if (!scene.isLoaded || (scene == SceneManager.GetActiveScene() && SceneManager.sceneCount == 1))
+                return path;
+            return SceneSelectorPrefix + System.Uri.EscapeDataString(SceneKey(scene)) + "/" + path;
         }
+
+        // 빌드에 포함된 씬은 전체 asset 경로로, 런타임에 만든 씬은 이름으로 찾는다.
+        internal static string SceneKey(Scene scene) => string.IsNullOrEmpty(scene.path) ? scene.name : scene.path;
 
         private static string Of(Transform transform, int rootIndex = -1)
         {
